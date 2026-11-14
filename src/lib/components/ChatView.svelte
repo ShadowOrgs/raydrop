@@ -35,6 +35,7 @@
     Ban,
     Image as ImageIcon,
     Clipboard,
+    Download,
   } from 'lucide-svelte';
   import { contacts, lanContacts } from '../stores/contacts';
   import { cloudContacts, cloudMyDevices, activeChatPeerId, appSettings, incomingRequestQueue, activeMainTab } from '../stores/state';
@@ -70,6 +71,7 @@
   let showEmojiPicker = false;
   let relativeTimeTicker = 0;
   let localThumbnails: Record<string, string> = {};
+  let previewModalImage: string | null = null;
 
   async function ensureLocalThumbnail(path: string | null) {
     if (!path || localThumbnails[path]) return;
@@ -557,12 +559,33 @@
     }
   }
 
-  function copyMessageText(content: string, id: string) {
-    navigator.clipboard.writeText(content);
+  async function copyMessageText(content: string, id: string) {
+    if (content.startsWith('data:image/')) {
+      try {
+        await raydropApi.writeSystemClipboard(content);
+      } catch (_) {
+        navigator.clipboard.writeText(content);
+      }
+    } else {
+      navigator.clipboard.writeText(content);
+    }
     copiedMessageId = id;
     setTimeout(() => {
       copiedMessageId = '';
     }, 1800);
+  }
+
+  async function handleCopyImage(imgDataUrl: string, id: string) {
+    try {
+      await raydropApi.writeSystemClipboard(imgDataUrl);
+      copiedMessageId = id;
+      setTimeout(() => {
+        copiedMessageId = '';
+      }, 1800);
+    } catch (e) {
+      console.error('Failed to copy image to clipboard:', e);
+      navigator.clipboard.writeText(imgDataUrl);
+    }
   }
 
   // Intercept links in Markdown to open via system browser instead of webview
@@ -803,6 +826,7 @@
             {@const linkedTransfer = msg.transfer_session_id ? $transfers.find((t) => t.id === msg.transfer_session_id) : undefined}
             {@const pendingRequest = msg.transfer_session_id ? $incomingRequestQueue.find((q) => q.session_id === msg.transfer_session_id) : undefined}
             {@const hasContent = !!(msg.content && msg.content.trim().length > 0)}
+            {@const isDataImage = !!(msg.content && msg.content.trim().startsWith('data:image/'))}
 
             <div class="flex flex-col {isOutgoing ? 'items-end' : 'items-start'} group">
               <div
@@ -815,7 +839,7 @@
                   type="button"
                   on:click={() => copyMessageText(msg.content, msg.id)}
                   class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 rounded-md bg-slate-950/80 hover:bg-slate-800 text-slate-400 hover:text-cyan-300 border border-slate-800 transition-all cursor-pointer z-10"
-                  title="Copy message"
+                  title={isDataImage ? 'Copy image to clipboard' : 'Copy message'}
                 >
                   {#if copiedMessageId === msg.id}
                     <Check class="w-3 h-3 text-emerald-400" />
@@ -825,14 +849,60 @@
                 </button>
 
                 {#if msg.msg_type === 'clipboard'}
-                  <div class="mb-1.5 flex items-center gap-1 text-[10px] font-mono font-bold text-indigo-400">
-                    <Clipboard class="w-3 h-3" />
-                    <span>Universal Clipboard</span>
+                  <div class="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-mono font-bold text-indigo-400">
+                    <span class="flex items-center gap-1">
+                      <Clipboard class="w-3 h-3" />
+                      <span>Universal Clipboard</span>
+                    </span>
+                    {#if isDataImage}
+                      <span class="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-sans text-[9px]">Image</span>
+                    {/if}
                   </div>
                 {/if}
 
-                <!-- Markdown Content -->
-                {#if hasContent}
+                <!-- Direct Image Content (Clipboard Image Screenshot) -->
+                {#if isDataImage}
+                  <div class="mt-1 space-y-2">
+                    <div class="relative group/img rounded-xl overflow-hidden border border-slate-700/80 bg-slate-950/80 shadow-md inline-block max-w-full">
+                      <!-- svelte-ignore a11y-click-events-have-key-events -->
+                      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+                      <img
+                        src={msg.content.trim()}
+                        alt="Clipboard Screenshot"
+                        class="max-h-64 sm:max-h-80 w-auto rounded-lg object-contain cursor-pointer transition-transform duration-200 group-hover/img:scale-[1.01]"
+                        loading="lazy"
+                        on:click={() => (previewModalImage = msg.content.trim())}
+                      />
+                      <!-- Overlay Hover Action Bar -->
+                      <div class="absolute bottom-2 right-2 flex items-center gap-1.5 opacity-90 group-hover/img:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          on:click|stopPropagation={() => handleCopyImage(msg.content.trim(), msg.id)}
+                          class="px-2.5 py-1 rounded-lg bg-slate-900/95 hover:bg-slate-800 text-slate-200 hover:text-white text-[11px] font-semibold border border-slate-700/80 flex items-center gap-1.5 shadow-lg backdrop-blur-sm transition-all"
+                          title="Copy image directly to system clipboard (ready to Ctrl+V)"
+                        >
+                          {#if copiedMessageId === msg.id}
+                            <Check class="w-3.5 h-3.5 text-emerald-400" />
+                            <span class="text-emerald-400">Copied!</span>
+                          {:else}
+                            <Copy class="w-3.5 h-3.5 text-indigo-400" />
+                            <span>Copy Image</span>
+                          {/if}
+                        </button>
+                        <a
+                          href={msg.content.trim()}
+                          download="raydrop-clipboard-{Date.now()}.png"
+                          on:click|stopPropagation
+                          class="p-1.5 rounded-lg bg-slate-900/95 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 shadow-lg backdrop-blur-sm transition-all"
+                          title="Save image to file"
+                        >
+                          <Download class="w-3.5 h-3.5 text-cyan-400" />
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                {:else if hasContent}
+                  <!-- Markdown Content -->
                   <div class="text-slate-100 text-xs leading-relaxed font-sans break-words markdown-body select-text pr-6">
                     {@html renderMarkdown(msg.content)}
                   </div>
@@ -1146,6 +1216,75 @@
     {/if}
   </section>
 </div>
+
+<!-- Full Image Lightbox Modal -->
+{#if previewModalImage}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+  <div
+    class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-3 sm:p-6"
+    role="dialog"
+    aria-modal="true"
+    on:click={() => (previewModalImage = null)}
+  >
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <div
+      class="relative max-w-4xl w-full max-h-[92vh] flex flex-col bg-slate-900 border border-slate-700/80 rounded-2xl p-3 sm:p-4 shadow-2xl overflow-hidden"
+      role="document"
+      on:click|stopPropagation
+    >
+      <!-- Top Action Bar -->
+      <div class="w-full flex items-center justify-between pb-3 mb-3 border-b border-slate-800 text-xs">
+        <span class="text-slate-200 font-semibold flex items-center gap-2">
+          <ImageIcon class="w-4 h-4 text-cyan-400" />
+          <span>Clipboard Image Preview</span>
+        </span>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            on:click={() => previewModalImage && handleCopyImage(previewModalImage, 'modal-preview')}
+            class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 flex items-center gap-1.5 transition-all text-xs font-medium cursor-pointer"
+            title="Copy image directly to system clipboard"
+          >
+            {#if copiedMessageId === 'modal-preview'}
+              <Check class="w-3.5 h-3.5 text-emerald-400" />
+              <span class="text-emerald-400">Copied!</span>
+            {:else}
+              <Copy class="w-3.5 h-3.5 text-indigo-400" />
+              <span>Copy Image</span>
+            {/if}
+          </button>
+          <a
+            href={previewModalImage}
+            download="raydrop-image-{Date.now()}.png"
+            class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white flex items-center gap-1.5 transition-all text-xs font-semibold shadow-md shadow-cyan-500/20"
+            title="Download image file"
+          >
+            <Download class="w-3.5 h-3.5" />
+            <span>Download</span>
+          </a>
+          <button
+            type="button"
+            on:click={() => (previewModalImage = null)}
+            class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors ml-1 cursor-pointer"
+            title="Close preview (Esc)"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+      <!-- Image Viewport -->
+      <div class="flex items-center justify-center overflow-auto max-h-[75vh] p-2 bg-slate-950/60 rounded-xl border border-slate-800/80">
+        <img
+          src={previewModalImage}
+          alt="Full size preview"
+          class="max-w-full max-h-[72vh] object-contain rounded-lg select-none"
+        />
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   :global(.markdown-body a) {

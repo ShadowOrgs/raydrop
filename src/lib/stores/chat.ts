@@ -139,7 +139,9 @@ export function addChatToast(msg: ChatMessage, peerName: string) {
     id: msg.id,
     peerDeviceId: msg.peer_device_id,
     peerName,
-    content: msg.content || (msg.msg_type === 'file_transfer' ? '📎 Mengirim file' : 'Pesan baru'),
+    content: msg.content?.startsWith('data:image/')
+      ? '🖼️ [Gambar Clipboard]'
+      : msg.content || (msg.msg_type === 'file_transfer' ? '📎 Mengirim file' : 'Pesan baru'),
     timestamp: Date.now(),
   };
 
