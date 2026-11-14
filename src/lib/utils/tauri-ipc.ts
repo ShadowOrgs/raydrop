@@ -147,6 +147,8 @@ export interface WebShareItem {
 
 export interface WebShareInfo {
   url: string;
+  local_url?: string;
+  share_id?: string;
   local_ip: string;
   port: number;
   total_files: number;

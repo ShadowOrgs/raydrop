@@ -45,6 +45,26 @@ struct ServerState {
     peers: Arc<DashMap<String, PeerSession>>,
     auth_limiter: Arc<DashMap<String, RateLimitBucket>>,
     db: Arc<Mutex<Connection>>,
+    web_shares: Arc<DashMap<String, WebShareSession>>,
+    pending_downloads: Arc<DashMap<String, mpsc::Sender<Result<axum::body::Bytes, String>>>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebShareItem {
+    pub id: usize,
+    pub name: String,
+    pub size_bytes: u64,
+}
+
+#[allow(dead_code)]
+#[derive(Clone)]
+struct WebShareSession {
+    share_id: String,
+    sender_device_id: String,
+    sender_alias: String,
+    files: Vec<WebShareItem>,
+    total_bytes: u64,
+    created_at: u64,
 }
 
 #[allow(dead_code)]
@@ -166,6 +186,33 @@ enum SignalMessage {
         from_device_id: String,
         target_device_id: String,
         payload_json: String,
+    },
+    #[serde(rename = "REGISTER_WEB_SHARE")]
+    RegisterWebShare {
+        share_id: String,
+        sender_device_id: String,
+        sender_alias: String,
+        files: Vec<WebShareItem>,
+        total_bytes: u64,
+    },
+    #[serde(rename = "UNREGISTER_WEB_SHARE")]
+    UnregisterWebShare {
+        share_id: String,
+        sender_device_id: String,
+    },
+    #[serde(rename = "WEB_SHARE_CHUNK")]
+    WebShareChunk {
+        download_id: String,
+        data_base64: String,
+    },
+    #[serde(rename = "WEB_SHARE_EOF")]
+    WebShareEof {
+        download_id: String,
+    },
+    #[serde(rename = "WEB_SHARE_ERROR")]
+    WebShareError {
+        download_id: String,
+        error: String,
     },
 }
 
@@ -370,10 +417,13 @@ async fn main() {
         peers: Arc::new(DashMap::new()),
         auth_limiter: Arc::new(DashMap::new()),
         db: Arc::new(Mutex::new(conn)),
+        web_shares: Arc::new(DashMap::new()),
+        pending_downloads: Arc::new(DashMap::new()),
     };
 
     // Periodically prune expired rate-limit entries every 10 minutes
     let limiter_cleanup = state.auth_limiter.clone();
+    let web_shares_cleanup = state.web_shares.clone();
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(600)).await;
@@ -381,6 +431,7 @@ async fn main() {
             limiter_cleanup.retain(|_, v| {
                 v.locked_until > now || now.saturating_sub(v.window_start) <= AUTH_RATE_WINDOW_SECS
             });
+            web_shares_cleanup.retain(|_, v| now.saturating_sub(v.created_at) < 86400);
         }
     });
 
@@ -432,6 +483,12 @@ async fn main() {
             post(add_contact_handler).patch(update_contact_trust_handler),
         )
         .route("/api/contacts/:email", delete(delete_contact_handler))
+        .route("/share/:share_id", get(web_share_page_handler))
+        .route(
+            "/share/:share_id/download/:file_id",
+            get(web_share_download_handler),
+        )
+        .route("/share/:share_id/api/info", get(web_share_info_handler))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -455,6 +512,277 @@ async fn health_handler() -> impl IntoResponse {
         "service": "raydrop-signal-server",
         "version": "2.1.0"
     }))
+}
+
+fn format_bytes_human(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
+}
+
+async fn web_share_page_handler(
+    State(state): State<ServerState>,
+    Path(share_id): Path<String>,
+) -> impl IntoResponse {
+    let session_opt = state.web_shares.get(&share_id).map(|s| s.clone());
+    let (status, html) = match session_opt {
+        Some(session) => (
+            StatusCode::OK,
+            generate_web_receiver_html(
+                &session.files,
+                &session.sender_alias,
+                &share_id,
+                session.total_bytes,
+            ),
+        ),
+        None => (
+            StatusCode::NOT_FOUND,
+            generate_expired_share_html(&share_id),
+        ),
+    };
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        "text/html; charset=utf-8".parse().unwrap(),
+    );
+    (status, headers, html).into_response()
+}
+
+async fn web_share_info_handler(
+    State(state): State<ServerState>,
+    Path(share_id): Path<String>,
+) -> impl IntoResponse {
+    match state.web_shares.get(&share_id) {
+        Some(session) => Json(json!({
+            "status": "ok",
+            "share_id": share_id,
+            "sender_alias": session.sender_alias,
+            "files": session.files,
+            "total_bytes": session.total_bytes,
+            "total_human": format_bytes_human(session.total_bytes),
+        }))
+        .into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Share not found or expired" })),
+        )
+            .into_response(),
+    }
+}
+
+async fn web_share_download_handler(
+    State(state): State<ServerState>,
+    Path((share_id, file_id)): Path<(String, usize)>,
+) -> impl IntoResponse {
+    let session = match state.web_shares.get(&share_id) {
+        Some(s) => s.clone(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                "Web Share session expired or not found",
+            )
+                .into_response();
+        }
+    };
+
+    let target_file = match session.files.iter().find(|f| f.id == file_id) {
+        Some(f) => f.clone(),
+        None => return (StatusCode::NOT_FOUND, "File not found in share session").into_response(),
+    };
+
+    let sender = match state.peers.get(&session.sender_device_id) {
+        Some(p) => p,
+        None => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                "Sender device is currently offline",
+            )
+                .into_response();
+        }
+    };
+
+    let download_id = Uuid::new_v4().to_string();
+    let (tx, rx) = mpsc::channel::<Result<axum::body::Bytes, String>>(64);
+    state.pending_downloads.insert(download_id.clone(), tx);
+
+    let req_msg = json!({
+        "type": "WEB_SHARE_REQ",
+        "download_id": download_id.clone(),
+        "share_id": share_id,
+        "file_id": file_id
+    })
+    .to_string();
+
+    if sender.tx.send(req_msg).await.is_err() {
+        state.pending_downloads.remove(&download_id);
+        return (StatusCode::BAD_GATEWAY, "Failed to reach sender device").into_response();
+    }
+
+    let stream = tokio_stream::wrappers::ReceiverStream::new(rx)
+        .map(|res| res.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)));
+
+    let safe_filename = target_file.name.replace('"', "\\\"");
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        "application/octet-stream".parse().unwrap(),
+    );
+    headers.insert(
+        axum::http::header::CONTENT_LENGTH,
+        target_file.size_bytes.to_string().parse().unwrap(),
+    );
+    headers.insert(
+        axum::http::header::CONTENT_DISPOSITION,
+        format!("attachment; filename=\"{safe_filename}\"")
+            .parse()
+            .unwrap(),
+    );
+    headers.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        "*".parse().unwrap(),
+    );
+
+    (StatusCode::OK, headers, axum::body::Body::from_stream(stream)).into_response()
+}
+
+fn generate_web_receiver_html(
+    files: &[WebShareItem],
+    sender_name: &str,
+    share_id: &str,
+    total_bytes: u64,
+) -> String {
+    let mut files_html = String::new();
+    let total_human = format_bytes_human(total_bytes);
+
+    for f in files {
+        let size_str = format_bytes_human(f.size_bytes);
+        files_html.push_str(&format!(
+            r#"<div class="file-card">
+                <div class="file-info">
+                  <div class="file-icon">📄</div>
+                  <div class="file-meta">
+                    <div class="file-name" title="{0}">{0}</div>
+                    <div class="file-size">{1}</div>
+                  </div>
+                </div>
+                <a href="/share/{2}/download/{3}" download class="btn-dl">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  <span>Download</span>
+                </a>
+              </div>"#,
+            f.name, size_str, share_id, f.id
+        ));
+    }
+
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Raydrop - Download Shared Files</title>
+  <link rel="icon" href="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png">
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+    body {{ background: #070b13; color: #f1f5f9; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 28px 16px; }}
+    .container {{ width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 20px; }}
+    .header {{ text-align: center; margin-top: 12px; }}
+    .logo-badge {{ display: inline-flex; align-items: center; gap: 8px; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); padding: 6px 14px; border-radius: 999px; color: #38bdf8; font-size: 13px; font-weight: 700; letter-spacing: 0.03em; margin-bottom: 12px; }}
+    .pulse {{ width: 8px; height: 8px; border-radius: 999px; background: #38bdf8; box-shadow: 0 0 12px #38bdf8; }}
+    h1 {{ font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: -0.02em; }}
+    .subtitle {{ font-size: 14px; color: #94a3b8; margin-top: 6px; }}
+    .sender-box {{ background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 16px; padding: 16px; display: flex; justify-content: space-between; align-items: center; backdrop-filter: blur(12px); }}
+    .sender-title {{ font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.05em; }}
+    .sender-name {{ font-size: 16px; font-weight: 700; color: #38bdf8; margin-top: 2px; }}
+    .total-badge {{ background: #0f172a; border: 1px solid #334155; padding: 6px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; color: #cbd5e1; }}
+    .files-list {{ display: flex; flex-direction: column; gap: 10px; }}
+    .file-card {{ background: rgba(17, 24, 39, 0.9); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 16px; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); transition: transform 0.2s; }}
+    .file-card:active {{ transform: scale(0.98); }}
+    .file-info {{ display: flex; align-items: center; gap: 12px; min-width: 0; }}
+    .file-icon {{ font-size: 24px; }}
+    .file-meta {{ min-width: 0; }}
+    .file-name {{ font-size: 14px; font-weight: 600; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px; }}
+    .file-size {{ font-size: 12px; color: #94a3b8; margin-top: 2px; }}
+    .btn-dl {{ display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #0284c7, #4f46e5); color: #ffffff; text-decoration: none; padding: 9px 15px; border-radius: 12px; font-size: 13px; font-weight: 700; shrink-0; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4); transition: filter 0.2s; }}
+    .btn-dl:hover {{ filter: brightness(1.1); }}
+    .footer {{ text-align: center; font-size: 12px; color: #64748b; margin-top: 24px; }}
+    .footer a {{ color: #38bdf8; text-decoration: none; font-weight: 600; }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo-badge">
+        <span class="pulse"></span>
+        <span>RAYDROP WEB SHARE</span>
+      </div>
+      <h1>Download Shared Files</h1>
+      <p class="subtitle">Direct browser download over encrypted P2P relay</p>
+    </div>
+
+    <div class="sender-box">
+      <div>
+        <div class="sender-title">Sender Device</div>
+        <div class="sender-name">{sender_name}</div>
+      </div>
+      <div class="total-badge">
+        {total_human} • {0} File(s)
+      </div>
+    </div>
+
+    <div class="files-list">
+      {files_html}
+    </div>
+
+    <div class="footer">
+      Powered by <a href="https://raydrop.web.id" target="_blank" rel="noopener">Raydrop Universal P2P</a> • Zero Cloud Storage
+    </div>
+  </div>
+</body>
+</html>"#,
+        files.len()
+    )
+}
+
+fn generate_expired_share_html(share_id: &str) -> String {
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Raydrop - Share Expired</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+    body {{ background: #070b13; color: #f1f5f9; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 16px; text-align: center; }}
+    .card {{ background: rgba(17, 24, 39, 0.9); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 20px; padding: 32px 24px; max-width: 440px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }}
+    .icon {{ font-size: 48px; margin-bottom: 16px; }}
+    h1 {{ font-size: 20px; font-weight: 800; color: #ffffff; margin-bottom: 8px; }}
+    p {{ font-size: 14px; color: #94a3b8; line-height: 1.5; margin-bottom: 20px; }}
+    .btn {{ display: inline-block; background: #0284c7; color: #fff; padding: 10px 20px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 13px; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⌛</div>
+    <h1>Share Session Expired</h1>
+    <p>This Web Share session (<code>{share_id}</code>) has expired or the sender device is offline.</p>
+    <a href="https://raydrop.web.id" class="btn">Learn More about Raydrop</a>
+  </div>
+</body>
+</html>"#
+    )
 }
 
 fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
@@ -1385,6 +1713,65 @@ async fn handle_socket(socket: WebSocket, client_ip: String, state: ServerState)
                             });
                         }
                     }
+                    SignalMessage::RegisterWebShare {
+                        share_id,
+                        sender_device_id,
+                        sender_alias,
+                        files,
+                        total_bytes,
+                    } => {
+                        if let Some(ref authed_id) = registered_id {
+                            if &sender_device_id == authed_id {
+                                info!(
+                                    "Registered Public Web Share {share_id} for peer {authed_id} ({} files, {total_bytes} bytes)",
+                                    files.len()
+                                );
+                                state.web_shares.insert(
+                                    share_id.clone(),
+                                    WebShareSession {
+                                        share_id,
+                                        sender_device_id: authed_id.clone(),
+                                        sender_alias,
+                                        files,
+                                        total_bytes,
+                                        created_at: now_secs(),
+                                    },
+                                );
+                            }
+                        }
+                    }
+                    SignalMessage::UnregisterWebShare {
+                        share_id,
+                        sender_device_id,
+                    } => {
+                        if let Some(ref authed_id) = registered_id {
+                            if &sender_device_id == authed_id {
+                                info!("Unregistered Public Web Share {share_id} for {authed_id}");
+                                state.web_shares.remove(&share_id);
+                            }
+                        }
+                    }
+                    SignalMessage::WebShareChunk {
+                        download_id,
+                        data_base64,
+                    } => {
+                        if let Some(tx) = state.pending_downloads.get(&download_id) {
+                            use base64::Engine;
+                            if let Ok(bytes) =
+                                base64::engine::general_purpose::STANDARD.decode(data_base64)
+                            {
+                                let _ = tx.send(Ok(axum::body::Bytes::from(bytes))).await;
+                            }
+                        }
+                    }
+                    SignalMessage::WebShareEof { download_id } => {
+                        state.pending_downloads.remove(&download_id);
+                    }
+                    SignalMessage::WebShareError { download_id, error } => {
+                        if let Some((_, tx)) = state.pending_downloads.remove(&download_id) {
+                            let _ = tx.send(Err(error)).await;
+                        }
+                    }
                 }
             }
         }
@@ -1398,6 +1785,7 @@ async fn handle_socket(socket: WebSocket, client_ip: String, state: ServerState)
         };
         if is_current {
             state.peers.remove(&id);
+            state.web_shares.retain(|_, v| v.sender_device_id != id);
             info!("Peer disconnected: {id}");
             if let Some(uid) = registered_user_id {
                 broadcast_presence_update(&state, &uid);

@@ -24,7 +24,9 @@ pub struct WebShareItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebShareInfo {
-    pub url: String,
+    pub url: String, // Public relay URL by default (works over public internet)
+    pub local_url: String, // Local LAN Wi-Fi URL (superfast direct transfer)
+    pub share_id: String,
     pub local_ip: String,
     pub port: u16,
     pub total_files: usize,
@@ -34,12 +36,15 @@ pub struct WebShareInfo {
 }
 
 #[derive(Debug, Clone)]
-struct SharedFileEntry {
-    id: usize,
-    name: String,
-    path: PathBuf,
-    size_bytes: u64,
+pub struct SharedFileEntry {
+    pub id: usize,
+    pub name: String,
+    pub path: PathBuf,
+    pub size_bytes: u64,
 }
+
+static ACTIVE_SHARE: std::sync::RwLock<Option<(String, Vec<SharedFileEntry>)>> =
+    std::sync::RwLock::new(None);
 
 pub async fn start_web_share_server(
     app: AppHandle,
@@ -111,9 +116,26 @@ pub async fn start_web_share_server(
         .local_addr()
         .map_err(|e| format!("Failed to read socket addr: {e}"))?;
     let port = bound_addr.port();
-    let share_url = format!("http://{local_ip}:{port}");
+    let local_share_url = format!("http://{local_ip}:{port}");
 
-    // 4. Cancel any previous web share session
+    // 4. Resolve signaling domain and generate clean Share ID for Over-Internet public access
+    let signaling_domain = {
+        let s_addr = state.settings.lock().unwrap().stun_addr.clone();
+        s_addr
+            .trim_start_matches("wss://")
+            .trim_start_matches("ws://")
+            .split(':')
+            .next()
+            .unwrap_or("stun.raydrop.web.id")
+            .to_string()
+    };
+    let share_id = uuid::Uuid::new_v4().simple().to_string()[..8].to_string();
+    let public_share_url = format!("https://{signaling_domain}/share/{share_id}");
+
+    // Save active files in memory for streaming
+    *ACTIVE_SHARE.write().unwrap() = Some((share_id.clone(), files.clone()));
+
+    // 5. Cancel any previous web share session
     let stop_signal = Arc::new(AtomicBool::new(false));
     {
         let mut active_lock = state.active_web_share.lock().unwrap();
@@ -123,13 +145,14 @@ pub async fn start_web_share_server(
         *active_lock = Some(stop_signal.clone());
     }
 
-    // 5. Spawn background HTTP server task
+    // 6. Spawn background HTTP server task for Local LAN
     let sender_alias = state.settings.lock().unwrap().alias_name.clone();
+    let sender_alias_task = sender_alias.clone();
     let files_arc = Arc::new(files.clone());
     let stop_signal_task = stop_signal.clone();
     let app_task = app.clone();
 
-    let log_url = share_url.clone();
+    let log_url = local_share_url.clone();
     tokio::spawn(async move {
         info!("Web Share server active on {log_url}");
         while !stop_signal_task.load(Ordering::Relaxed) {
@@ -139,7 +162,7 @@ pub async fn start_web_share_server(
                     match res {
                         Ok((mut socket, peer_addr)) => {
                             let files_ref = files_arc.clone();
-                            let sender_name = sender_alias.clone();
+                            let sender_name = sender_alias_task.clone();
                             let app_sub = app_task.clone();
                             tokio::spawn(async move {
                                 let _ = handle_http_client(&mut socket, peer_addr, &files_ref, &sender_name, &app_sub).await;
@@ -161,7 +184,7 @@ pub async fn start_web_share_server(
         info!("Web Share server on port {port} stopped.");
     });
 
-    let items_for_ui = files
+    let items_for_ui: Vec<WebShareItem> = files
         .iter()
         .map(|f| WebShareItem {
             id: f.id,
@@ -171,8 +194,25 @@ pub async fn start_web_share_server(
         })
         .collect();
 
+    // 7. Register Public Web Share Session with Signaling Server (Over-Internet access)
+    let reg_msg = serde_json::json!({
+        "type": "REGISTER_WEB_SHARE",
+        "share_id": share_id.clone(),
+        "sender_device_id": state.identity.device_id,
+        "sender_alias": sender_alias,
+        "files": items_for_ui,
+        "total_bytes": total_bytes
+    })
+    .to_string();
+
+    if let Some(tx) = state.signaling_tx.lock().unwrap().as_ref() {
+        let _ = tx.send(reg_msg);
+    }
+
     Ok(WebShareInfo {
-        url: share_url,
+        url: public_share_url,
+        local_url: local_share_url,
+        share_id,
         local_ip,
         port,
         total_files: files.len(),
@@ -188,6 +228,122 @@ pub fn stop_web_share_server(state: &AppState) {
         s.store(true, Ordering::Relaxed);
     }
     *lock = None;
+
+    if let Some((old_share_id, _)) = ACTIVE_SHARE.write().unwrap().take() {
+        let unreg_msg = serde_json::json!({
+            "type": "UNREGISTER_WEB_SHARE",
+            "share_id": old_share_id,
+            "sender_device_id": state.identity.device_id
+        })
+        .to_string();
+        if let Some(tx) = state.signaling_tx.lock().unwrap().as_ref() {
+            let _ = tx.send(unreg_msg);
+        }
+    }
+}
+
+pub async fn handle_relay_download_request(
+    app: AppHandle,
+    state: Arc<AppState>,
+    download_id: String,
+    share_id: String,
+    file_id: usize,
+) {
+    let active_opt = ACTIVE_SHARE.read().unwrap().clone();
+    let (_cur_share_id, files) = match active_opt {
+        Some(pair) if pair.0 == share_id => pair,
+        _ => {
+            send_relay_error(&state, &download_id, "Web Share session not active").await;
+            return;
+        }
+    };
+
+    let target_file = match files.iter().find(|f| f.id == file_id) {
+        Some(f) => f.clone(),
+        None => {
+            send_relay_error(&state, &download_id, "File not found").await;
+            return;
+        }
+    };
+
+    let mut f = match tokio::fs::File::open(&target_file.path).await {
+        Ok(file) => file,
+        Err(e) => {
+            send_relay_error(&state, &download_id, &format!("Cannot open file: {e}")).await;
+            return;
+        }
+    };
+
+    let _ = app.emit(
+        "web_share_download_started",
+        serde_json::json!({
+            "peer_ip": "🌐 Over Internet (Public Relay)",
+            "file_id": file_id,
+            "file_name": target_file.name,
+            "file_size": target_file.size_bytes,
+        }),
+    );
+
+    use base64::Engine;
+    let mut buf = vec![0u8; 64 * 1024]; // 64 KB chunk
+    loop {
+        match f.read(&mut buf).await {
+            Ok(0) => break,
+            Ok(n) => {
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
+                let chunk_msg = serde_json::json!({
+                    "type": "WEB_SHARE_CHUNK",
+                    "download_id": download_id.clone(),
+                    "data_base64": b64
+                })
+                .to_string();
+
+                if let Some(tx) = state.signaling_tx.lock().unwrap().as_ref() {
+                    if tx.send(chunk_msg).is_err() {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            Err(e) => {
+                send_relay_error(&state, &download_id, &e.to_string()).await;
+                return;
+            }
+        }
+    }
+
+    // Send EOF
+    let eof_msg = serde_json::json!({
+        "type": "WEB_SHARE_EOF",
+        "download_id": download_id
+    })
+    .to_string();
+
+    if let Some(tx) = state.signaling_tx.lock().unwrap().as_ref() {
+        let _ = tx.send(eof_msg);
+    }
+
+    let _ = app.emit(
+        "web_share_download_completed",
+        serde_json::json!({
+            "peer_ip": "🌐 Over Internet (Public Relay)",
+            "file_id": file_id,
+            "file_name": target_file.name,
+        }),
+    );
+}
+
+async fn send_relay_error(state: &AppState, download_id: &str, error: &str) {
+    let err_msg = serde_json::json!({
+        "type": "WEB_SHARE_ERROR",
+        "download_id": download_id,
+        "error": error
+    })
+    .to_string();
+    if let Some(tx) = state.signaling_tx.lock().unwrap().as_ref() {
+        let _ = tx.send(err_msg);
+    }
 }
 
 async fn handle_http_client(

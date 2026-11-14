@@ -421,6 +421,35 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 let _ = tx.send(bytes);
             }
         }
+        "WEB_SHARE_REQ" => {
+            let download_id = val
+                .get("download_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let share_id = val
+                .get("share_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let file_id = val
+                .get("file_id")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_default() as usize;
+
+            let state_c = state.clone();
+            let app_c = app.clone();
+            tauri::async_runtime::spawn(async move {
+                crate::network::web_share::handle_relay_download_request(
+                    app_c,
+                    state_c,
+                    download_id,
+                    share_id,
+                    file_id,
+                )
+                .await;
+            });
+        }
         _ => {}
     }
 }
