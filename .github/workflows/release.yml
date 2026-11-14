@@ -86,6 +86,10 @@ jobs:
             ---
 
             ### 🚀 Features & Highlights
+            - **Universal Web Share Over Internet (Public Relay Tunnel):** Zero-app browser downloads anywhere in the world via dynamic QR code or web link (`https://stun.raydrop.web.id/share/...`).
+            - **1-Click Copy QR Code Image & Social Share:** Direct bitmap copying to clipboard ready to paste into WhatsApp, Telegram, Discord, and 1-tap social share buttons.
+            - **In-Chat Clipboard Image Formatting:** Interactive visual cards in chat with 1-click native bitmap copy, file download, and full-resolution lightbox preview modal.
+            - **Responsive UI Dashboard:** Streamlined top transfer hub with eliminated overflow and elastic drop zone.
             - **Seamless Universal Clipboard Sync:** Automatically writes directly to the recipient's system clipboard without manual copying. Full support for **Clipboard Images** and Screenshots.
             - **Android P2P Transfer & Magic-Bytes Engine:** Accurate file extension and naming detection directly from Android media pickers.
             - **Zero-Server P2P High-Speed File Transfer:** Direct LAN mDNS & WAN NAT hole-punching with zero cloud file storage.

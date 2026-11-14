@@ -194,6 +194,13 @@ try {
     Write-Host "Created new GitHub release: $($release.html_url)" -ForegroundColor Green
 }
 
+# Update rich release notes via UTF-8 safe python script
+try {
+    python "$repoRoot/scripts/update_release_notes.py" $tag
+} catch {
+    Write-Host "Warning: Could not run update_release_notes.py: $_" -ForegroundColor Yellow
+}
+
 # Remove existing assets for idempotency
 foreach ($asset in $release.assets) {
     Write-Host "Removing existing asset: $($asset.name)" -ForegroundColor Gray

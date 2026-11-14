@@ -18,7 +18,7 @@ def get_git_token():
             return line[len("password="):].strip()
     return None
 
-def update_release(tag="v1.2.6", title=None, body=None):
+def update_release(tag="v1.2.7", title=None, body=None):
     token = get_git_token()
     if not token:
         print("ERROR: GitHub token not found in git credentials.", file=sys.stderr)
@@ -55,14 +55,15 @@ def update_release(tag="v1.2.6", title=None, body=None):
         print(f"URL: {result.get('html_url')}")
 
 if __name__ == "__main__":
-    tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.6"
-    title = f"Raydrop {tag}: Universal Clipboard Auto-Paste, Image Sync & Mobile P2P"
+    tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.7"
+    ver = tag.lstrip("v")
+    title = f"Raydrop {tag}: Universal Web Share Over Internet, QR Copy & In-Chat Media"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Universal Clipboard Sync & Mobile P2P Enhancements</h2>
+<h2 align="center">Raydrop {tag}: Over-Internet Web Share, QR Copy & In-Chat Media</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage.</strong><br/>
@@ -75,33 +76,36 @@ if __name__ == "__main__":
 
 | Operating System | Package | Architecture | Download Link |
 | :--- | :---: | :---: | :--- |
-| **Windows** | `.msi` | x64 (64-bit) | [**Raydrop_1.2.6_x64_en-US.msi**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_1.2.6_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | [**Raydrop_1.2.6_universal.dmg**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_1.2.6_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | [**Raydrop_1.2.6_amd64.deb**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_1.2.6_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | [**Raydrop_1.2.6_amd64.AppImage**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_1.2.6_amd64.AppImage) |
+| **Windows** | `.msi` | x64 (64-bit) | [**Raydrop_{ver}_x64_en-US.msi**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_{ver}_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | [**Raydrop_{ver}_universal.dmg**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_{ver}_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | [**Raydrop_{ver}_amd64.deb**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_{ver}_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | [**Raydrop_{ver}_amd64.AppImage**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_{ver}_amd64.AppImage) |
 | **Android** | `.apk` | ARM64 (`arm64-v8a`) | [**Raydrop-arm64-v8a.apk**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop-arm64-v8a.apk) |
 
 ---
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 📋 Universal Clipboard Sync (Seamless Auto-Paste & Native Image Support)
-- **Instant Cross-Device Auto-Paste:** When sending clipboard text or links to trusted devices, content is automatically written straight into the recipient's system clipboard. You can immediately press **Ctrl+V** (or paste on mobile) in any target application (Word, browser, messaging apps) without having to copy it again from chat bubbles.
-- **Full Clipboard Image & Screenshot Sync:** Copy any screenshot or image to your OS clipboard on PC 1, trigger Universal Clipboard Sync, and immediately paste the actual native image bitmap into Photoshop, WhatsApp, Discord, or graphics editors on PC 2 or mobile devices.
-- **Interactive Image Preview & Quick Paste:** The Universal Clipboard dialog features image thumbnail previews and live paste interception (`Ctrl+V`) for rapid broadcast across peers.
+#### 🌐 Universal Web Share Over Internet (Public Relay Tunnel)
+- **Zero-App Browser Downloads Anywhere in the World:** Anyone can download your shared files directly in Safari, Chrome, or Firefox without installing Raydrop or joining the same Wi-Fi. Simply share the QR code or link (`https://stun.raydrop.web.id/share/...`), and files stream on-demand directly from your device over an encrypted relay tunnel.
+- **1-Click Copy QR Code Image:** Copy the dynamic QR code PNG bitmap directly to your operating system clipboard with a single button, ready for instant paste (`Ctrl+V`) into WhatsApp, Discord, Telegram, or email.
+- **Instant Social Media Share Buttons:** Share links directly to **WhatsApp**, **Telegram**, **Twitter / X**, and **Email** with one click.
+- **Dual-Mode Toggle:** Effortlessly switch between **Over Internet (Public Relay)** and **Local Wi-Fi Only** modes.
 
-#### 📱 Android & Mobile P2P File Transfer Enhancements
-- **Smart Magic-Bytes Header Inspection:** Resolved an issue where Android MediaStore URIs caused transferred files to default to `file_1.bin`. The backend now inspects file magic bytes (JPEG, PNG, GIF, WebP, PDF, MP4, MP3, WAV, ZIP/DOCX/XLSX, MKV) to guarantee exact file extensions and recognizable filenames (`Image_...`, `Video_...`, etc.).
-- **Multi-File Queueing on Mobile:** Added an interactive **"+ Add More"** file queue picker in the transfer modal, enabling users to pick and bundle multiple items before dispatching.
-- **Android Storage & Folder Handling:** Integrated system event handlers for "Open File" and "Open Folder", directing users directly to their native Download directory (`/storage/emulated/0/Download`) and native Android file manager.
-- **SAF Sandbox Fallback:** Replaced unsupported folder browsing on mobile with seamless multi-file selection to comply with Android Storage Access Framework (SAF) security constraints.
+#### 🖼️ In-Chat Clipboard Image Formatting & Lightbox Viewer
+- **Native Image Card Rendering:** Received clipboard screenshots and images now automatically render as clean, interactive visual cards instead of massive walls of raw base64 text.
+- **Instant Bitmap Copy to OS Clipboard:** A dedicated "Copy Image" button decodes the image on-the-fly and writes the physical image bitmap directly to your system clipboard—ready for `Ctrl+V` into Photoshop, Word, or messaging apps.
+- **Full-Resolution Lightbox Modal:** Click any image in chat to open a high-res lightbox modal with zoom, quick copy, and direct file download options.
+- **Clean In-App Toasts:** Notification banners cleanly show `🖼️ [Gambar Clipboard]` instead of raw base64 text.
 
-#### ⚡ Performance & Core P2P Features
-- **Parallel Multi-Segment Engine:** Up to 6 simultaneous streaming workers for rapid chunk delivery.
-- **Bit-Perfect BLAKE3 Hash Verification:** Dynamic chunk-level integrity verification.
-- **O(1) Instant Auto-Resume (`.raypart`):** Interrupted downloads pick up right where they left off.
-- **End-to-End Encryption (E2EE):** Every packet is secured with ChaCha20-Poly1305 and X25519 ephemeral Diffie-Hellman keys.
-- **Precision Speed Limiter (QoS):** Flexible bandwidth throttling to keep Wi-Fi networks stable.
-- **Zero Cloud Storage Guarantee:** 100% direct peer-to-peer transmission.
+#### ⚡ Responsive UI Layout & Overflow Fix
+- **Streamlined Top Transfer Hub:** Eliminated the redundant Quick Send bar from the main dashboard, removing horizontal layout overflow and guaranteeing a clean, responsive interface on laptops, tablets, and phones.
+- **Elastic Drop Zone:** File drag-and-drop zone dynamically adapts to window resizing without clipping text or border boundaries.
+
+#### 📋 Universal Clipboard Sync & Mobile Enhancements (Inherited from v1.2.6)
+- **Instant Cross-Device Auto-Paste:** When sending clipboard text to trusted peers, content is written straight into the recipient's system clipboard without manual copying.
+- **Smart Magic-Bytes Header Inspection:** Automatic binary inspection (JPEG, PNG, GIF, WebP, PDF, MP4, MP3, WAV, ZIP/DOCX/XLSX, MKV) ensures files chosen from Android media pickers receive accurate extensions and clean filenames (`Image_...`, `Video_...`, etc.).
+- **Multi-File Queueing on Mobile:** Interactive "+ Add More" file queue picker in the transfer modal.
+- **Android Storage & Folder Handling:** Integrated handlers for "Open File" and "Open Folder" directing users to their native Download storage.
 """
     update_release(tag=tag, title=title, body=body)
