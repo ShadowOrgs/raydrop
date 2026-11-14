@@ -1,7 +1,12 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { appSettings, settingsModalOpen } from "../stores/state";
-  import { updateInfo, updateModalOpen, updateChecking, updateStatusMessage } from "../stores/update";
+  import {
+    updateInfo,
+    updateModalOpen,
+    updateChecking,
+    updateStatusMessage,
+  } from "../stores/update";
   import { checkForUpdates } from "../utils/updater";
   import { raydropApi } from "../utils/tauri-ipc";
   import {
@@ -32,7 +37,10 @@
     stunAddr = $appSettings.stun_addr;
     autostart = $appSettings.autostart ?? true;
     speedLimitMbps = $appSettings.speed_limit_mbps ?? 0;
-    raydropApi.getWin11DirectMenu().then((res) => (win11DirectMenu = res)).catch(() => {});
+    raydropApi
+      .getWin11DirectMenu()
+      .then((res) => (win11DirectMenu = res))
+      .catch(() => {});
   }
 
   async function browseDownloadDir() {
@@ -223,11 +231,13 @@
                 <span>Bandwidth Speed Limiter (QoS)</span>
               </p>
               <p class="text-[11px] text-slate-400 mt-0.5">
-                Cap outgoing transfer speeds so transfers don't saturate home or office Wi-Fi.
+                Cap outgoing transfer speeds so transfers don't saturate home or
+                office Wi-Fi.
               </p>
             </div>
             <span
-              class="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full {speedLimitMbps === 0
+              class="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full {speedLimitMbps ===
+              0
                 ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
                 : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'}"
             >
@@ -240,7 +250,8 @@
               <button
                 type="button"
                 on:click={() => handleSpeedLimitChange(preset)}
-                class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all {speedLimitMbps === preset
+                class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all {speedLimitMbps ===
+                preset
                   ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm shadow-cyan-500/30'
                   : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}"
               >
@@ -308,13 +319,15 @@
               <p class="text-xs font-semibold text-slate-200">
                 Windows 11 Direct Right-Click
               </p>
-              <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+              <span
+                class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20"
+              >
                 No Shift Needed
               </span>
             </div>
             <p class="text-[11px] text-slate-400 mt-0.5">
-              Bypasses Windows 11's collapsed "Show more options" so "Send with Raydrop"
-              appears immediately on normal right-click.
+              Bypasses Windows 11's collapsed "Show more options" so "Send with
+              Raydrop" appears immediately on normal right-click.
             </p>
           </div>
           <button
@@ -324,7 +337,11 @@
               ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-sm shadow-emerald-500/10'
               : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-400 hover:text-white'}"
           >
-            <span>{win11DirectMenu ? "Enabled (Direct)" : "Disabled (Default Win 11)"}</span>
+            <span
+              >{win11DirectMenu
+                ? "Enabled (Direct)"
+                : "Disabled (Default Win 11)"}</span
+            >
           </button>
         </div>
 
@@ -334,14 +351,20 @@
         >
           <div>
             <div class="flex items-center gap-2">
-              <p class="text-xs font-semibold text-slate-200">Software Updates</p>
-              <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                Current: v1.2.7
+              <p class="text-xs font-semibold text-slate-200">
+                Software Updates
+              </p>
+              <span
+                class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700"
+              >
+                Current: v1.2.8
               </span>
             </div>
             <p class="text-[11px] text-slate-400 mt-0.5">
               {#if $updateInfo?.has_update}
-                <span class="text-cyan-300 font-medium">New release {$updateInfo.latest_version} available!</span>
+                <span class="text-cyan-300 font-medium"
+                  >New release {$updateInfo.latest_version} available!</span
+                >
               {:else if $updateStatusMessage}
                 <span class="text-emerald-400">{$updateStatusMessage}</span>
               {:else}
@@ -386,7 +409,9 @@
         {/if}
       </div>
 
-      <div class="flex items-center justify-end gap-2 pt-4 border-t border-slate-800 shrink-0">
+      <div
+        class="flex items-center justify-end gap-2 pt-4 border-t border-slate-800 shrink-0"
+      >
         <button
           on:click={() => settingsModalOpen.set(false)}
           class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition-colors"
@@ -404,4 +429,3 @@
     </div>
   </div>
 {/if}
-

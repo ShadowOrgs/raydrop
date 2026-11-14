@@ -307,8 +307,13 @@ export const raydropApi = {
     invoke<WebShareInfo>('start_web_share', { paths }),
   stopWebShare: () => invoke<void>('stop_web_share'),
   readSystemClipboard: () => invoke<string>('read_system_clipboard'),
-  writeSystemClipboard: (text: string) =>
-    invoke<void>('write_system_clipboard', { text }),
+  writeSystemClipboard: (content: string) =>
+    invoke<void>('write_system_clipboard', { content, text: content }),
+  saveBase64Image: (dataUrl: string, customFilename?: string) =>
+    invoke<string>('save_base64_image', {
+      dataUrl,
+      customFilename: customFilename ?? null,
+    }),
   broadcastClipboard: (content: string, targetDeviceIds?: string[]) =>
     invoke<number>('broadcast_clipboard', {
       content,

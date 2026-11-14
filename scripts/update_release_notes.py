@@ -18,7 +18,7 @@ def get_git_token():
             return line[len("password="):].strip()
     return None
 
-def update_release(tag="v1.2.7", title=None, body=None):
+def update_release(tag="v1.2.8", title=None, body=None):
     token = get_git_token()
     if not token:
         print("ERROR: GitHub token not found in git credentials.", file=sys.stderr)
@@ -75,15 +75,15 @@ def update_release(tag="v1.2.7", title=None, body=None):
             raise
 
 if __name__ == "__main__":
-    tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.7"
+    tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.8"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Universal Web Share Over Internet, QR Copy & In-Chat Media"
+    title = f"Raydrop {tag}: Interactive Clipboard Image Actions, Native File Save & Feedback Animation"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Over-Internet Web Share, QR Copy & In-Chat Media</h2>
+<h2 align="center">Raydrop {tag}: Interactive Clipboard Image Actions & Native File Save</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage.</strong><br/>
@@ -106,26 +106,20 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
+#### 🖼️ Interactive Clipboard Image Actions & Visual Feedback
+- **Animated Confirmation for Copy:** Clicking "Copy Image" on chat bubbles or within the full-screen lightbox modal now triggers an instant green checkmark confirmation (`Copied!`) and writes the true bitmap image into the OS clipboard.
+- **Loader Spinner & Checkmark for Downloads:** The "Download" button now features an interactive real-time loading spinner (`Loader2`) while writing the image, followed by an animated success checkmark.
+- **Direct OS Downloads Directory Persistence:** Image files are decoded natively in Rust via the `save_base64_image` Tauri IPC command and saved directly into the user's Downloads directory, bypassing WebView2 data URL limitations.
+- **Resilient Multi-Layer Clipboard Fallback:** Built-in retries handle temporary OS clipboard locks on Windows, with automatic fallbacks to HTML5 Clipboard items and text representations to guarantee responsive UI feedback.
+
 #### 🌐 Universal Web Share Over Internet (Public Relay Tunnel)
 - **Zero-App Browser Downloads Anywhere in the World:** Anyone can download your shared files directly in Safari, Chrome, or Firefox without installing Raydrop or joining the same Wi-Fi. Simply share the QR code or link (`https://stun.raydrop.web.id/share/...`), and files stream on-demand directly from your device over an encrypted relay tunnel.
 - **1-Click Copy QR Code Image:** Copy the dynamic QR code PNG bitmap directly to your operating system clipboard with a single button, ready for instant paste (`Ctrl+V`) into WhatsApp, Discord, Telegram, or email.
 - **Instant Social Media Share Buttons:** Share links directly to **WhatsApp**, **Telegram**, **Twitter / X**, and **Email** with one click.
 - **Dual-Mode Toggle:** Effortlessly switch between **Over Internet (Public Relay)** and **Local Wi-Fi Only** modes.
 
-#### 🖼️ In-Chat Clipboard Image Formatting & Lightbox Viewer
-- **Native Image Card Rendering:** Received clipboard screenshots and images now automatically render as clean, interactive visual cards instead of massive walls of raw base64 text.
-- **Instant Bitmap Copy to OS Clipboard:** A dedicated "Copy Image" button decodes the image on-the-fly and writes the physical image bitmap directly to your system clipboard—ready for `Ctrl+V` into Photoshop, Word, or messaging apps.
-- **Full-Resolution Lightbox Modal:** Click any image in chat to open a high-res lightbox modal with zoom, quick copy, and direct file download options.
-- **Clean In-App Toasts:** Notification banners cleanly show `🖼️ [Gambar Clipboard]` instead of raw base64 text.
-
 #### ⚡ Responsive UI Layout & Overflow Fix
 - **Streamlined Top Transfer Hub:** Eliminated the redundant Quick Send bar from the main dashboard, removing horizontal layout overflow and guaranteeing a clean, responsive interface on laptops, tablets, and phones.
 - **Elastic Drop Zone:** File drag-and-drop zone dynamically adapts to window resizing without clipping text or border boundaries.
-
-#### 📋 Universal Clipboard Sync & Mobile Enhancements (Inherited from v1.2.6)
-- **Instant Cross-Device Auto-Paste:** When sending clipboard text to trusted peers, content is written straight into the recipient's system clipboard without manual copying.
-- **Smart Magic-Bytes Header Inspection:** Automatic binary inspection (JPEG, PNG, GIF, WebP, PDF, MP4, MP3, WAV, ZIP/DOCX/XLSX, MKV) ensures files chosen from Android media pickers receive accurate extensions and clean filenames (`Image_...`, `Video_...`, etc.).
-- **Multi-File Queueing on Mobile:** Interactive "+ Add More" file queue picker in the transfer modal.
-- **Android Storage & Folder Handling:** Integrated handlers for "Open File" and "Open Folder" directing users to their native Download storage.
 """
     update_release(tag=tag, title=title, body=body)

@@ -36,6 +36,7 @@
     Image as ImageIcon,
     Clipboard,
     Download,
+    Loader2,
   } from 'lucide-svelte';
   import { contacts, lanContacts } from '../stores/contacts';
   import { cloudContacts, cloudMyDevices, activeChatPeerId, appSettings, incomingRequestQueue, activeMainTab } from '../stores/state';
@@ -67,6 +68,8 @@
   let textareaEl: HTMLTextAreaElement;
   let isSending = false;
   let copiedMessageId = '';
+  let downloadingMessageId = '';
+  let downloadSuccessId = '';
   let attachingFiles: string[] = [];
   let showEmojiPicker = false;
   let relativeTimeTicker = 0;
@@ -560,31 +563,87 @@
   }
 
   async function copyMessageText(content: string, id: string) {
-    if (content.startsWith('data:image/')) {
-      try {
-        await raydropApi.writeSystemClipboard(content);
-      } catch (_) {
-        navigator.clipboard.writeText(content);
-      }
-    } else {
-      navigator.clipboard.writeText(content);
+    const trimmed = (content || '').trim();
+    if (trimmed.startsWith('data:image/')) {
+      await handleCopyImage(trimmed, id);
+      return;
+    }
+    try {
+      await raydropApi.writeSystemClipboard(trimmed);
+    } catch (_) {
+      navigator.clipboard.writeText(trimmed);
     }
     copiedMessageId = id;
     setTimeout(() => {
-      copiedMessageId = '';
-    }, 1800);
+      if (copiedMessageId === id) {
+        copiedMessageId = '';
+      }
+    }, 2000);
   }
 
   async function handleCopyImage(imgDataUrl: string, id: string) {
-    try {
-      await raydropApi.writeSystemClipboard(imgDataUrl);
-      copiedMessageId = id;
-      setTimeout(() => {
+    const trimmed = (imgDataUrl || '').trim();
+    if (!trimmed) return;
+
+    // Trigger visual feedback checkmark immediately
+    copiedMessageId = id;
+    setTimeout(() => {
+      if (copiedMessageId === id) {
         copiedMessageId = '';
-      }, 1800);
+      }
+    }, 2000);
+
+    try {
+      await raydropApi.writeSystemClipboard(trimmed);
     } catch (e) {
-      console.error('Failed to copy image to clipboard:', e);
-      navigator.clipboard.writeText(imgDataUrl);
+      console.warn('Native clipboard image write failed, attempting web fallback:', e);
+      try {
+        const res = await fetch(trimmed);
+        const blob = await res.blob();
+        await navigator.clipboard.write([
+          new ClipboardItem({ [blob.type || 'image/png']: blob }),
+        ]);
+      } catch (fallbackErr) {
+        console.warn('Web clipboard item write failed, falling back to text:', fallbackErr);
+        await navigator.clipboard.writeText(trimmed);
+      }
+    }
+  }
+
+  async function handleDownloadImage(imgDataUrl: string, id: string) {
+    const trimmed = (imgDataUrl || '').trim();
+    if (!trimmed || downloadingMessageId) return;
+
+    downloadingMessageId = id;
+    try {
+      const filename = `raydrop-image-${Date.now()}`;
+      try {
+        await raydropApi.saveBase64Image(trimmed, filename);
+      } catch (nativeErr) {
+        console.warn('Native save_base64_image failed, falling back to blob trigger:', nativeErr);
+        const res = await fetch(trimmed);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${filename}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      // Mark success checkmark animation
+      downloadSuccessId = id;
+      setTimeout(() => {
+        if (downloadSuccessId === id) {
+          downloadSuccessId = '';
+        }
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to download image:', err);
+    } finally {
+      downloadingMessageId = '';
     }
   }
 
@@ -878,26 +937,32 @@
                         <button
                           type="button"
                           on:click|stopPropagation={() => handleCopyImage(msg.content.trim(), msg.id)}
-                          class="px-2.5 py-1 rounded-lg bg-slate-900/95 hover:bg-slate-800 text-slate-200 hover:text-white text-[11px] font-semibold border border-slate-700/80 flex items-center gap-1.5 shadow-lg backdrop-blur-sm transition-all"
+                          class="px-2.5 py-1 rounded-lg bg-slate-900/95 hover:bg-slate-800 text-slate-200 hover:text-white text-[11px] font-semibold border border-slate-700/80 flex items-center gap-1.5 shadow-lg backdrop-blur-sm transition-all active:scale-95 cursor-pointer"
                           title="Copy image directly to system clipboard (ready to Ctrl+V)"
                         >
                           {#if copiedMessageId === msg.id}
                             <Check class="w-3.5 h-3.5 text-emerald-400" />
-                            <span class="text-emerald-400">Copied!</span>
+                            <span class="text-emerald-400 font-bold">Copied!</span>
                           {:else}
                             <Copy class="w-3.5 h-3.5 text-indigo-400" />
                             <span>Copy Image</span>
                           {/if}
                         </button>
-                        <a
-                          href={msg.content.trim()}
-                          download="raydrop-clipboard-{Date.now()}.png"
-                          on:click|stopPropagation
-                          class="p-1.5 rounded-lg bg-slate-900/95 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 shadow-lg backdrop-blur-sm transition-all"
-                          title="Save image to file"
+                        <button
+                          type="button"
+                          on:click|stopPropagation={() => handleDownloadImage(msg.content.trim(), msg.id)}
+                          class="p-1.5 rounded-lg bg-slate-900/95 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 shadow-lg backdrop-blur-sm transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[30px] min-h-[30px]"
+                          disabled={downloadingMessageId === msg.id}
+                          title="Download image to Downloads folder"
                         >
-                          <Download class="w-3.5 h-3.5 text-cyan-400" />
-                        </a>
+                          {#if downloadingMessageId === msg.id}
+                            <Loader2 class="w-3.5 h-3.5 text-cyan-400 animate-spin" />
+                          {:else if downloadSuccessId === msg.id}
+                            <Check class="w-3.5 h-3.5 text-emerald-400" />
+                          {:else}
+                            <Download class="w-3.5 h-3.5 text-cyan-400" />
+                          {/if}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1244,26 +1309,35 @@
           <button
             type="button"
             on:click={() => previewModalImage && handleCopyImage(previewModalImage, 'modal-preview')}
-            class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 flex items-center gap-1.5 transition-all text-xs font-medium cursor-pointer"
+            class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 flex items-center gap-1.5 transition-all text-xs font-medium cursor-pointer active:scale-95"
             title="Copy image directly to system clipboard"
           >
             {#if copiedMessageId === 'modal-preview'}
               <Check class="w-3.5 h-3.5 text-emerald-400" />
-              <span class="text-emerald-400">Copied!</span>
+              <span class="text-emerald-400 font-bold">Copied!</span>
             {:else}
               <Copy class="w-3.5 h-3.5 text-indigo-400" />
               <span>Copy Image</span>
             {/if}
           </button>
-          <a
-            href={previewModalImage}
-            download="raydrop-image-{Date.now()}.png"
-            class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white flex items-center gap-1.5 transition-all text-xs font-semibold shadow-md shadow-cyan-500/20"
-            title="Download image file"
+          <button
+            type="button"
+            on:click={() => previewModalImage && handleDownloadImage(previewModalImage, 'modal-preview')}
+            class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white flex items-center gap-1.5 transition-all text-xs font-semibold shadow-md shadow-cyan-500/20 active:scale-95 cursor-pointer disabled:opacity-75"
+            disabled={downloadingMessageId === 'modal-preview'}
+            title="Download image to Downloads folder"
           >
-            <Download class="w-3.5 h-3.5" />
-            <span>Download</span>
-          </a>
+            {#if downloadingMessageId === 'modal-preview'}
+              <Loader2 class="w-3.5 h-3.5 animate-spin" />
+              <span>Saving...</span>
+            {:else if downloadSuccessId === 'modal-preview'}
+              <Check class="w-3.5 h-3.5 text-emerald-300" />
+              <span class="text-emerald-300 font-bold">Saved!</span>
+            {:else}
+              <Download class="w-3.5 h-3.5" />
+              <span>Download</span>
+            {/if}
+          </button>
           <button
             type="button"
             on:click={() => (previewModalImage = null)}

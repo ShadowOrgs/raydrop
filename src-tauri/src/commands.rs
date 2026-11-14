@@ -1392,10 +1392,23 @@ pub fn read_clipboard_content() -> Result<String, String> {
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn write_clipboard_content(content: &str) -> Result<(), String> {
-    let mut cb = arboard::Clipboard::new().map_err(|e| format!("Clipboard error: {e}"))?;
-    if content.starts_with("data:image/") {
-        if let Some(comma_pos) = content.find(',') {
-            let b64_str = &content[comma_pos + 1..];
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+
+    let mut cb = match arboard::Clipboard::new() {
+        Ok(c) => c,
+        Err(_) => {
+            // Retry once after brief delay in case clipboard is momentarily held by OS/another app
+            std::thread::sleep(std::time::Duration::from_millis(35));
+            arboard::Clipboard::new().map_err(|e| format!("Clipboard error: {e}"))?
+        }
+    };
+
+    if trimmed.starts_with("data:image/") {
+        if let Some(comma_pos) = trimmed.find(',') {
+            let b64_str = trimmed[comma_pos + 1..].trim();
             use base64::Engine;
             if let Ok(png_bytes) = base64::engine::general_purpose::STANDARD.decode(b64_str) {
                 if let Ok(dyn_img) = image::load_from_memory(&png_bytes) {
@@ -1405,12 +1418,16 @@ pub fn write_clipboard_content(content: &str) -> Result<(), String> {
                         height: rgba.height() as usize,
                         bytes: std::borrow::Cow::Owned(rgba.into_raw()),
                     };
-                    return cb.set_image(img_data).map_err(|e| format!("Clipboard set image error: {e}"));
+                    if let Err(e) = cb.set_image(img_data) {
+                        tracing::warn!("Failed to set raw image to clipboard, falling back to text: {e}");
+                    } else {
+                        return Ok(());
+                    }
                 }
             }
         }
     }
-    cb.set_text(content.to_string()).map_err(|e| format!("Clipboard write error: {e}"))
+    cb.set_text(trimmed.to_string()).map_err(|e| format!("Clipboard write error: {e}"))
 }
 
 #[tauri::command]
@@ -1436,6 +1453,76 @@ pub fn write_system_clipboard(content: String) -> Result<(), String> {
         let _ = content;
         Ok(())
     }
+}
+
+#[tauri::command]
+pub fn save_base64_image(
+    state: State<'_, Arc<AppState>>,
+    data_url: String,
+    custom_filename: Option<String>,
+) -> Result<String, String> {
+    let trimmed = data_url.trim();
+    if trimmed.is_empty() {
+        return Err("Empty image data".to_string());
+    }
+
+    let (ext, b64_str) = if let Some(comma_pos) = trimmed.find(',') {
+        let header = &trimmed[..comma_pos].to_lowercase();
+        let ext = if header.contains("image/jpeg") || header.contains("image/jpg") {
+            "jpg"
+        } else if header.contains("image/webp") {
+            "webp"
+        } else if header.contains("image/gif") {
+            "gif"
+        } else {
+            "png"
+        };
+        (ext, trimmed[comma_pos + 1..].trim())
+    } else {
+        ("png", trimmed)
+    };
+
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64_str)
+        .map_err(|e| format!("Base64 decode failed: {e}"))?;
+
+    let dl_dir_str = {
+        let s = state.settings.lock().map_err(|e| e.to_string())?;
+        s.download_dir.clone()
+    };
+
+    let download_dir = if !dl_dir_str.trim().is_empty() {
+        std::path::PathBuf::from(dl_dir_str)
+    } else {
+        std::env::current_dir().unwrap_or_default()
+    };
+
+    if !download_dir.exists() {
+        let _ = std::fs::create_dir_all(&download_dir);
+    }
+
+    let filename = if let Some(cf) = custom_filename {
+        let t = cf.trim();
+        if !t.is_empty() {
+            if t.contains('.') {
+                t.to_string()
+            } else {
+                format!("{t}.{ext}")
+            }
+        } else {
+            format!("raydrop-image-{}.{ext}", now_unix_secs())
+        }
+    } else {
+        format!("raydrop-image-{}.{ext}", now_unix_secs())
+    };
+
+    let target_path = download_dir.join(&filename);
+    std::fs::write(&target_path, bytes)
+        .map_err(|e| format!("Failed to write image file: {e}"))?;
+
+    tracing::info!("Saved image to {}", target_path.display());
+    Ok(target_path.to_string_lossy().to_string())
 }
 
 #[tauri::command]

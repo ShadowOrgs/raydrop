@@ -76,7 +76,12 @@ Unlike traditional file-sharing services that upload your files to third-party c
 - **Direct File Launch:** Open shared files directly from chat bubbles with system default apps or reveal them in Windows Explorer with 1 click.
 - **Zero Server Storage & Zero Server DB:** Chat history is stored 100% locally on each peer's private SQLite database. The server never stores chat messages or conversation logs.
 
-### 🌐 Universal Web Share Over Internet & In-Chat Media (New in v1.2.7)
+### 🚀 Interactive Clipboard Actions & File Save Enhancements (New in v1.2.8)
+- **Responsive Copy & Download Feedback:** Clicking "Copy Image" in chat now triggers an animated checkmark confirmation (`Copied!`) and automatically copies the raw bitmap into the OS system clipboard. The "Download" action now displays a real-time progress spinner (`Loader2`) during write operations followed by a success confirmation checkmark.
+- **Native OS File Persistence for Clipboard Media:** Base64 images are decoded and saved directly into the user's Downloads directory via Tauri IPC commands (`save_base64_image`), bypassing WebView2 browser sandbox constraints.
+- **Robust Clipboard Error Recovery:** Multi-tiered clipboard fallback (native backend -> HTML5 Clipboard API -> standard text) ensures smooth operations even during temporary Windows OS clipboard lockups.
+
+### 🌐 Universal Web Share Over Internet & In-Chat Media (v1.2.7)
 - **Over-Internet Public Web Share via QR Code:** Share files with anyone in the world without requiring the recipient to install Raydrop. Simply share the QR code or link (`https://stun.raydrop.web.id/share/...`), and recipients can download directly from Safari or Chrome over 4G/5G or any Wi-Fi network via an on-demand encrypted relay tunnel.
 - **1-Click Copy QR Code Image:** Copy the actual QR Code PNG bitmap directly into your system clipboard with a single button, ready for instant paste (`Ctrl+V`) into WhatsApp, Discord, Telegram, or team chats.
 - **Instant Social Media Sharing:** Quick-share buttons to immediately dispatch download links to WhatsApp, Telegram, Twitter/X, and Email.
@@ -130,11 +135,11 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.7/Raydrop_1.2.7_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.7/Raydrop_1.2.7_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.7/Raydrop_1.2.7_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.7/Raydrop_1.2.7_amd64.AppImage) |
-| **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.7/Raydrop-arm64-v8a.apk) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.8/Raydrop_1.2.8_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.8/Raydrop_1.2.8_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.8/Raydrop_1.2.8_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.8/Raydrop_1.2.8_amd64.AppImage) |
+| **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.8/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**
 

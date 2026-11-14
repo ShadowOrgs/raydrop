@@ -315,6 +315,7 @@ pub fn run() {
             commands::stop_web_share,
             commands::read_system_clipboard,
             commands::write_system_clipboard,
+            commands::save_base64_image,
             commands::broadcast_clipboard,
             commands::set_speed_limit,
             commands::list_folder_sync_tasks,
