@@ -33,26 +33,46 @@ def update_release(tag="v1.2.7", title=None, body=None):
     }
 
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req) as resp:
-        release_data = json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req) as resp:
+            release_data = json.loads(resp.read().decode("utf-8"))
+        release_id = release_data["id"]
+        patch_url = f"https://api.github.com/repos/{repo}/releases/{release_id}"
 
-    release_id = release_data["id"]
-    patch_url = f"https://api.github.com/repos/{repo}/releases/{release_id}"
+        payload = {}
+        if title:
+            payload["name"] = title
+        if body:
+            payload["body"] = body
 
-    payload = {}
-    if title:
-        payload["name"] = title
-    if body:
-        payload["body"] = body
+        data = json.dumps(payload).encode("utf-8")
+        patch_req = urllib.request.Request(patch_url, data=data, headers=headers, method="PATCH")
+        patch_req.add_header("Content-Type", "application/json; charset=utf-8")
 
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(patch_url, data=data, headers=headers, method="PATCH")
-    req.add_header("Content-Type", "application/json; charset=utf-8")
-
-    with urllib.request.urlopen(req) as resp:
-        result = json.loads(resp.read().decode("utf-8"))
-        print(f"Successfully updated release {tag}!")
-        print(f"URL: {result.get('html_url')}")
+        with urllib.request.urlopen(patch_req) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            print(f"Successfully updated release {tag}!")
+            print(f"URL: {result.get('html_url')}")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            # Create new release
+            create_url = f"https://api.github.com/repos/{repo}/releases"
+            payload = {
+                "tag_name": tag,
+                "name": title or f"Raydrop {tag}",
+                "body": body or "",
+                "draft": False,
+                "prerelease": False,
+            }
+            data = json.dumps(payload).encode("utf-8")
+            post_req = urllib.request.Request(create_url, data=data, headers=headers, method="POST")
+            post_req.add_header("Content-Type", "application/json; charset=utf-8")
+            with urllib.request.urlopen(post_req) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                print(f"Successfully created release {tag}!")
+                print(f"URL: {result.get('html_url')}")
+        else:
+            raise
 
 if __name__ == "__main__":
     tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.7"
