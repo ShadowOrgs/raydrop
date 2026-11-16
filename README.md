@@ -76,7 +76,8 @@ Unlike traditional file-sharing services that upload your files to third-party c
 - **Direct File Launch:** Open shared files directly from chat bubbles with system default apps or reveal them in Windows Explorer with 1 click.
 - **Zero Server Storage & Zero Server DB:** Chat history is stored 100% locally on each peer's private SQLite database. The server never stores chat messages or conversation logs.
 
-### ⚡ IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Magnet Engine (New in v1.2.9)
+### ⚡ IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Magnet Engine (New in v1.2.10)
+- **Startup Crash Hotfix:** Resolved startup panic caused by calling `tokio::spawn` outside of Tokio runtime context during application initialization, replacing with Tauri managed async runtime `tauri::async_runtime::spawn`.
 - **Multi-Segment Parallel Acceleration (IDM-Style):** Accelerate direct web downloads by splitting files into 4–8 concurrent chunks using HTTP `Range: bytes=X-Y` requests, maximizing throughput on high-speed internet connections.
 - **Zero-Stitch Direct File Write:** Chunks are written directly into target file byte offsets via native OS file handles (`seek_write` on Windows, `write_all_at` on Unix) without needing slow temporary file joins or disk re-copying.
 - **BitTorrent Swarm Engine Integration:** Embedded BitTorrent peer-to-peer downloading powered by `librqbit v9.1.0`. Real-time peer counter, swarm download speed tracking, and full lifecycle controls (pause, resume, cancel).
@@ -143,11 +144,11 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.9/Raydrop_1.2.9_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.9/Raydrop_1.2.9_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.9/Raydrop_1.2.9_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.9/Raydrop_1.2.9_amd64.AppImage) |
-| **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.9/Raydrop-arm64-v8a.apk) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.10/Raydrop_1.2.10_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.10/Raydrop_1.2.10_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.10/Raydrop_1.2.10_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.10/Raydrop_1.2.10_amd64.AppImage) |
+| **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.10/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**
 

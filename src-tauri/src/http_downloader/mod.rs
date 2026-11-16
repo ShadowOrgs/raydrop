@@ -71,7 +71,7 @@ impl HttpDownloadManager {
 
     pub fn set_save_dir(&self, dir: PathBuf) {
         let save_dir = self.default_save_dir.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             *save_dir.write().await = dir;
         });
     }
@@ -281,13 +281,13 @@ impl HttpDownloadManager {
         // Spawn background downloader execution
         let active_clone = active.clone();
         let client_clone = self.client.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             Self::execute_download(active_clone, client_clone, segments_count).await;
         });
 
         // Spawn speed calculation background ticker for this task
         let active_speed = active.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             Self::track_speed(active_speed).await;
         });
 
@@ -333,7 +333,7 @@ impl HttpDownloadManager {
                 let is_paused = task.is_paused.clone();
                 let is_cancelled = task.is_cancelled.clone();
 
-                let handle = tokio::spawn(async move {
+                let handle = tauri::async_runtime::spawn(async move {
                     Self::download_chunk(
                         client,
                         url,
@@ -635,12 +635,12 @@ impl HttpDownloadManager {
         let client_clone = self.client.clone();
         let seg_len = t.segments.len() as u32;
 
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             Self::execute_download(t_clone, client_clone, seg_len).await;
         });
 
         let t_speed = t.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             Self::track_speed(t_speed).await;
         });
 

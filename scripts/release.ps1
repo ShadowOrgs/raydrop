@@ -160,7 +160,8 @@ $bodyText = @"
 try {
     $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/tags/$tag" -Headers $headers -Method Get
     Write-Host "Found existing release: $($release.html_url)" -ForegroundColor Green
-} catch {
+}
+catch {
     $bodyObj = @{
         tag_name   = $tag
         name       = "Raydrop $tag"
@@ -176,7 +177,8 @@ try {
 # Update rich release notes via UTF-8 safe python script
 try {
     python "$repoRoot/scripts/update_release_notes.py" $tag
-} catch {
+}
+catch {
     Write-Host "Warning: Could not run update_release_notes.py: $_" -ForegroundColor Yellow
 }
 

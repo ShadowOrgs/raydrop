@@ -18,7 +18,7 @@ def get_git_token():
             return line[len("password="):].strip()
     return None
 
-def update_release(tag="v1.2.9", title=None, body=None):
+def update_release(tag="v1.2.10", title=None, body=None):
     token = get_git_token()
     if not token:
         print("ERROR: GitHub token not found in git credentials.", file=sys.stderr)
@@ -75,15 +75,15 @@ def update_release(tag="v1.2.9", title=None, body=None):
             raise
 
 if __name__ == "__main__":
-    tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.9"
+    tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.10"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Magnet Engine"
+    title = f"Raydrop {tag}: Startup Crash Fix, IDM-Style HTTP Accelerator & Magnet Engine"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Magnet Engine</h2>
+<h2 align="center">Raydrop {tag}: Startup Crash Fix, IDM-Style HTTP Accelerator & Magnet Engine</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage & High-Speed Multi-Threaded Download Manager.</strong><br/>
@@ -105,6 +105,9 @@ if __name__ == "__main__":
 ---
 
 ### 🚀 What's New & Highlights in {tag}
+
+#### 🛠️ Critical Startup Crash Hotfix
+- **Resolved "no reactor running" Panic:** Fixed an immediate crash on application startup where background stats broadcast tickers called `tokio::spawn` outside of a Tokio runtime context during GUI initialization. Replaced with Tauri's native managed async runtime `tauri::async_runtime::spawn`, guaranteeing stable and reliable application launch.
 
 #### ⚡ IDM-Style HTTP Multi-Segment Parallel Download Accelerator
 - **Multi-Connection Segmented Acceleration:** Accelerate direct web downloads by splitting files into 4–8 concurrent chunks using HTTP `Range: bytes=X-Y` requests, maximizing throughput on high-bandwidth fiber connections.

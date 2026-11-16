@@ -315,7 +315,7 @@ pub fn run() {
             // Background Periodic Torrent Stats Broadcast
             let handle_for_torrents = handle.clone();
             let state_for_torrents = state_for_setup.clone();
-            tokio::spawn(async move {
+            tauri::async_runtime::spawn(async move {
                 let mut interval = tokio::time::interval(std::time::Duration::from_millis(1200));
                 loop {
                     interval.tick().await;
@@ -329,7 +329,7 @@ pub fn run() {
             // Background Periodic HTTP Download Stats Broadcast
             let handle_for_http = handle.clone();
             let state_for_http = state_for_setup.clone();
-            tokio::spawn(async move {
+            tauri::async_runtime::spawn(async move {
                 let mut interval = tokio::time::interval(std::time::Duration::from_millis(1000));
                 loop {
                     interval.tick().await;
