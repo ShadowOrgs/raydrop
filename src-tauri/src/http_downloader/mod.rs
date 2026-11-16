@@ -18,7 +18,7 @@ pub struct HttpDownloadTaskInfo {
     pub downloaded_bytes: u64,
     pub download_speed_bps: u64,
     pub progress: f32,
-    pub status: String, // "starting", "downloading", "paused", "completed", "error"
+    pub status: String, // "starting", "downloading", "paused", "completed", "error", "cancelled"
     pub segments_count: u32,
     pub save_path: String,
     pub error: Option<String>,
@@ -54,10 +54,42 @@ pub struct HttpDownloadManager {
     client: reqwest::Client,
 }
 
+#[cfg(target_os = "windows")]
+fn enable_sparse_file(file: &std::fs::File) {
+    use std::os::windows::io::AsRawHandle;
+    extern "system" {
+        fn DeviceIoControl(
+            hDevice: *mut std::ffi::c_void,
+            dwIoControlCode: u32,
+            lpInBuffer: *mut std::ffi::c_void,
+            nInBufferSize: u32,
+            lpOutBuffer: *mut std::ffi::c_void,
+            nOutBufferSize: u32,
+            lpBytesReturned: *mut u32,
+            lpOverlapped: *mut std::ffi::c_void,
+        ) -> i32;
+    }
+    const FSCTL_SET_SPARSE: u32 = 0x000900C4;
+    let mut bytes_returned = 0u32;
+    unsafe {
+        DeviceIoControl(
+            file.as_raw_handle() as *mut std::ffi::c_void,
+            FSCTL_SET_SPARSE,
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            0,
+            &mut bytes_returned,
+            std::ptr::null_mut(),
+        );
+    }
+}
+
 impl HttpDownloadManager {
     pub fn new(default_dir: PathBuf) -> Self {
+        // High-performance streaming client: do NOT set an overall timeout on streaming downloads!
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(15))
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Raydrop/1.2")
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
@@ -81,7 +113,6 @@ impl HttpDownloadManager {
         // 1. Try Content-Disposition header
         if let Some(cd) = headers.get(reqwest::header::CONTENT_DISPOSITION) {
             if let Ok(cd_str) = cd.to_str() {
-                // filename="name.ext" or filename*=UTF-8''name.ext
                 if let Some(pos) = cd_str.find("filename=") {
                     let mut name = cd_str[pos + 9..].trim();
                     if name.starts_with('"') && name.len() >= 2 {
@@ -132,60 +163,38 @@ impl HttpDownloadManager {
 
         let id = format!("{:x}", md5_or_uuid(trimmed_url));
 
-        // Check if already active
+        // Check if already active or previous error
         {
-            let tasks = self.tasks.read().await;
+            let mut tasks = self.tasks.write().await;
             if let Some(existing) = tasks.get(&id) {
                 let status = existing.status.read().await.clone();
                 if status == "downloading" || status == "starting" {
                     return Err("This URL is already being downloaded".to_string());
                 }
+                // If it was in error, paused, or cancelled, remove old task entry to start fresh restart
+                tasks.remove(&id);
             }
         }
 
-        // Probe remote server via HEAD or Range GET
-        let head_res = self
+        // 1. Probe remote server: IDM-style Range probe (Range: bytes=0-0)
+        let probe_res = self
             .client
-            .head(trimmed_url)
+            .get(trimmed_url)
+            .header(reqwest::header::RANGE, "bytes=0-0")
+            .timeout(std::time::Duration::from_secs(12))
             .send()
             .await;
 
-        let (total_bytes, supports_range, filename) = match head_res {
-            Ok(resp) if resp.status().is_success() => {
+        let (total_bytes, supports_range, filename) = match probe_res {
+            Ok(resp) if resp.status() == reqwest::StatusCode::PARTIAL_CONTENT => {
                 let headers = resp.headers().clone();
-                let cl = headers
-                    .get(reqwest::header::CONTENT_LENGTH)
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .unwrap_or(0);
-
-                let range = headers
-                    .get(reqwest::header::ACCEPT_RANGES)
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.eq_ignore_ascii_case("bytes"))
-                    .unwrap_or(false);
-
-                let fname = custom_filename.unwrap_or_else(|| Self::resolve_filename(trimmed_url, &headers));
-                (cl, range, fname)
-            }
-            _ => {
-                // Try GET with Range 0-0 fallback
-                let probe = self
-                    .client
-                    .get(trimmed_url)
-                    .header(reqwest::header::RANGE, "bytes=0-0")
-                    .send()
-                    .await
-                    .map_err(|e| format!("Failed to reach server: {e}"))?;
-
-                let headers = probe.headers().clone();
-                let supports_range = probe.status() == reqwest::StatusCode::PARTIAL_CONTENT;
+                let final_url = resp.url().clone();
 
                 let cl = if let Some(cr) = headers.get(reqwest::header::CONTENT_RANGE) {
-                    // Content-Range: bytes 0-0/123456
+                    // Content-Range: bytes 0-0/6250332160
                     if let Ok(cr_str) = cr.to_str() {
                         if let Some(slash_pos) = cr_str.rfind('/') {
-                            cr_str[slash_pos + 1..].parse::<u64>().unwrap_or(0)
+                            cr_str[slash_pos + 1..].trim().parse::<u64>().unwrap_or(0)
                         } else {
                             0
                         }
@@ -200,12 +209,69 @@ impl HttpDownloadManager {
                         .unwrap_or(0)
                 };
 
-                let fname = custom_filename.unwrap_or_else(|| Self::resolve_filename(trimmed_url, &headers));
-                (cl, supports_range, fname)
+                let fname = custom_filename.unwrap_or_else(|| {
+                    Self::resolve_filename(final_url.as_str(), &headers)
+                });
+
+                (cl, true, fname)
+            }
+            Ok(resp) if resp.status().is_success() => {
+                // Server returned 200 OK (ignored Range header)
+                let headers = resp.headers().clone();
+                let final_url = resp.url().clone();
+
+                let cl = headers
+                    .get(reqwest::header::CONTENT_LENGTH)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+
+                let range = headers
+                    .get(reqwest::header::ACCEPT_RANGES)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.eq_ignore_ascii_case("bytes"))
+                    .unwrap_or(false);
+
+                let fname = custom_filename.unwrap_or_else(|| {
+                    Self::resolve_filename(final_url.as_str(), &headers)
+                });
+
+                (cl, range, fname)
+            }
+            _ => {
+                // Fallback: try standard HEAD request
+                let head_resp = self
+                    .client
+                    .head(trimmed_url)
+                    .timeout(std::time::Duration::from_secs(10))
+                    .send()
+                    .await
+                    .map_err(|e| format!("Failed to reach download server: {e}"))?;
+
+                let headers = head_resp.headers().clone();
+                let final_url = head_resp.url().clone();
+
+                let cl = headers
+                    .get(reqwest::header::CONTENT_LENGTH)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+
+                let range = headers
+                    .get(reqwest::header::ACCEPT_RANGES)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.eq_ignore_ascii_case("bytes"))
+                    .unwrap_or(false);
+
+                let fname = custom_filename.unwrap_or_else(|| {
+                    Self::resolve_filename(final_url.as_str(), &headers)
+                });
+
+                (cl, range, fname)
             }
         };
 
-        // Determine destination path
+        // Determine destination directory
         let save_dir = if let Some(csd) = custom_save_dir {
             PathBuf::from(csd)
         } else {
@@ -218,11 +284,11 @@ impl HttpDownloadManager {
 
         let target_file_path = save_dir.join(&filename);
 
-        // Calculate segment plan (up to 8 parallel streams for large files with range support)
+        // Calculate parallel segment count (up to 8 parallel streams for large files with range support)
         let segments_count: u32 = if supports_range && total_bytes >= 2 * 1024 * 1024 {
-            if total_bytes >= 64 * 1024 * 1024 {
+            if total_bytes >= 32 * 1024 * 1024 {
                 8
-            } else if total_bytes >= 16 * 1024 * 1024 {
+            } else if total_bytes >= 8 * 1024 * 1024 {
                 6
             } else {
                 4
@@ -313,9 +379,16 @@ impl HttpDownloadManager {
         client: reqwest::Client,
         segments_count: u32,
     ) {
-        // Pre-allocate or prepare target file
-        if task.total_bytes > 0 {
-            if let Ok(f) = std::fs::File::create(&task.save_path) {
+        // Prepare target file: If new download, create sparse file instantly without zero-filling delay
+        if task.total_bytes > 0 && !task.save_path.exists() {
+            if let Ok(f) = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(&task.save_path)
+            {
+                #[cfg(target_os = "windows")]
+                enable_sparse_file(&f);
+
                 let _ = f.set_len(task.total_bytes);
             }
         }
@@ -350,18 +423,17 @@ impl HttpDownloadManager {
                 join_handles.push(handle);
             }
 
-            let mut all_success = true;
+            let mut any_error = None;
             for h in join_handles {
                 match h.await {
                     Ok(Ok(())) => {}
                     Ok(Err(e)) => {
                         error!("Chunk download error: {e}");
-                        all_success = false;
-                        *task.error_msg.write().await = Some(e);
+                        any_error = Some(e);
                     }
                     Err(e) => {
                         error!("Task join error: {e}");
-                        all_success = false;
+                        any_error = Some(format!("Task worker error: {e}"));
                     }
                 }
             }
@@ -371,15 +443,17 @@ impl HttpDownloadManager {
                 let _ = std::fs::remove_file(&task.save_path);
             } else if task.is_paused.load(Ordering::Relaxed) {
                 *task.status.write().await = "paused".to_string();
-            } else if all_success {
-                *task.status.write().await = "completed".to_string();
+                task.speed_bps.store(0, Ordering::Relaxed);
+            } else if let Some(err) = any_error {
+                *task.status.write().await = "error".to_string();
+                *task.error_msg.write().await = Some(err);
                 task.speed_bps.store(0, Ordering::Relaxed);
             } else {
-                *task.status.write().await = "error".to_string();
+                *task.status.write().await = "completed".to_string();
                 task.speed_bps.store(0, Ordering::Relaxed);
             }
         } else {
-            // Single-stream download
+            // Single-stream download with resume support
             Self::download_single_stream(task, client).await;
         }
     }
@@ -409,11 +483,9 @@ impl HttpDownloadManager {
             .await
             .map_err(|e| format!("Chunk {chunk_idx} request failed: {e}"))?;
 
-        if !resp.status().is_success() {
-            return Err(format!(
-                "Chunk {chunk_idx} failed with status: {}",
-                resp.status()
-            ));
+        let status = resp.status();
+        if status != reqwest::StatusCode::PARTIAL_CONTENT && status != reqwest::StatusCode::OK {
+            return Err(format!("Chunk {chunk_idx} failed with status: {status}"));
         }
 
         use std::fs::OpenOptions;
@@ -430,10 +502,7 @@ impl HttpDownloadManager {
         let mut write_pos = cur;
 
         while let Some(chunk_res) = stream.next().await {
-            if is_cancelled.load(Ordering::Relaxed) {
-                return Ok(());
-            }
-            if is_paused.load(Ordering::Relaxed) {
+            if is_cancelled.load(Ordering::Relaxed) || is_paused.load(Ordering::Relaxed) {
                 return Ok(());
             }
 
@@ -459,36 +528,71 @@ impl HttpDownloadManager {
         Ok(())
     }
 
-    /// Single stream download fallback when Range header is unsupported
+    /// Single stream download fallback with resume capability
     async fn download_single_stream(task: Arc<ActiveDownload>, client: reqwest::Client) {
-        let resp_res = client.get(&task.url).send().await;
+        let current_downloaded = task
+            .segments
+            .first()
+            .map(|s| s.current.load(Ordering::Relaxed))
+            .unwrap_or(0);
+
+        let mut req = client.get(&task.url);
+        if current_downloaded > 0 {
+            req = req.header(reqwest::header::RANGE, format!("bytes={current_downloaded}-"));
+        }
+
+        let resp_res = req.send().await;
         let resp = match resp_res {
             Ok(r) if r.status().is_success() => r,
             Ok(r) => {
-                *task.status.write().await = "error".to_string();
-                *task.error_msg.write().await =
-                    Some(format!("Download failed with status: {}", r.status()));
+                if !task.is_paused.load(Ordering::Relaxed) {
+                    *task.status.write().await = "error".to_string();
+                    *task.error_msg.write().await =
+                        Some(format!("Download failed with status: {}", r.status()));
+                }
                 return;
             }
             Err(e) => {
-                *task.status.write().await = "error".to_string();
-                *task.error_msg.write().await = Some(format!("Request error: {e}"));
+                if !task.is_paused.load(Ordering::Relaxed) {
+                    *task.status.write().await = "error".to_string();
+                    *task.error_msg.write().await = Some(format!("Request error: {e}"));
+                }
                 return;
             }
         };
 
-        let file = std::fs::File::create(&task.save_path);
-        let mut file = match file {
+        let is_resuming_range = resp.status() == reqwest::StatusCode::PARTIAL_CONTENT;
+
+        use std::fs::OpenOptions;
+        use std::io::Write;
+
+        let file_res = if is_resuming_range {
+            OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(&task.save_path)
+        } else {
+            // New download or server doesn't support resuming: reset counter and truncate
+            if let Some(first_seg) = task.segments.first() {
+                first_seg.current.store(0, Ordering::Relaxed);
+            }
+            OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&task.save_path)
+        };
+
+        let mut file = match file_res {
             Ok(f) => f,
             Err(e) => {
                 *task.status.write().await = "error".to_string();
-                *task.error_msg.write().await = Some(format!("Failed to create file: {e}"));
+                *task.error_msg.write().await = Some(format!("Failed to open file: {e}"));
                 return;
             }
         };
 
         let mut stream = resp.bytes_stream();
-        use std::io::Write;
 
         while let Some(chunk_res) = stream.next().await {
             if task.is_cancelled.load(Ordering::Relaxed) {
@@ -514,15 +618,19 @@ impl HttpDownloadManager {
                     }
                 }
                 Err(e) => {
-                    *task.status.write().await = "error".to_string();
-                    *task.error_msg.write().await = Some(format!("Stream error: {e}"));
+                    if !task.is_paused.load(Ordering::Relaxed) {
+                        *task.status.write().await = "error".to_string();
+                        *task.error_msg.write().await = Some(format!("Stream error: {e}"));
+                    }
                     return;
                 }
             }
         }
 
-        *task.status.write().await = "completed".to_string();
-        task.speed_bps.store(0, Ordering::Relaxed);
+        if !task.is_paused.load(Ordering::Relaxed) && !task.is_cancelled.load(Ordering::Relaxed) {
+            *task.status.write().await = "completed".to_string();
+            task.speed_bps.store(0, Ordering::Relaxed);
+        }
     }
 
     /// Background ticker calculating speed (bytes per second)
@@ -616,7 +724,7 @@ impl HttpDownloadManager {
         Ok(())
     }
 
-    /// Resume a paused download task
+    /// Resume a paused or errored download task
     pub async fn resume_task(&self, id: &str) -> Result<(), String> {
         let tasks = self.tasks.read().await;
         let t = tasks
@@ -628,6 +736,8 @@ impl HttpDownloadManager {
             return Ok(());
         }
 
+        // Reset error message and paused flag
+        *t.error_msg.write().await = None;
         t.is_paused.store(false, Ordering::Relaxed);
         *t.status.write().await = "downloading".to_string();
 

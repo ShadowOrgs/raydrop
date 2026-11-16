@@ -186,8 +186,12 @@ Connection: close\r\n\r\n{}",
             return Ok(());
         }
 
-        // HTTP/HTTPS URL
-        match state.http_downloader.add_download(&trimmed_url, req.filename, None).await {
+        // HTTP/HTTPS URL - extract clean filename if provided and pass as custom_filename (not save_dir!)
+        let clean_filename = req.filename.as_ref().and_then(|f| {
+            let p = std::path::Path::new(f);
+            p.file_name().and_then(|n| n.to_str()).map(|s| s.to_string())
+        });
+        match state.http_downloader.add_download(&trimmed_url, None, clean_filename).await {
             Ok(task_info) => {
                 info!("Browser extension download started: {} (id: {})", task_info.url, task_info.id);
                 let _ = app.emit("http_download_added", &task_info);

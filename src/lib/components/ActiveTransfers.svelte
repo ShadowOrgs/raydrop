@@ -590,7 +590,7 @@
                       </span>
                       <span>•</span>
                       <span class="text-[10px] font-mono text-cyan-300 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800/40">
-                        {task.connections > 1 ? `${task.connections}x Segments` : 'Single Stream'}
+                        {(task.segments_count || 1) > 1 ? `${task.segments_count}x Segments` : 'Single Stream'}
                       </span>
                       {#if task.download_speed_bps > 0 && task.status === 'downloading'}
                         <span>•</span>
@@ -624,6 +624,16 @@
                     >
                       <Play class="w-3.5 h-3.5" />
                       <span>Resume</span>
+                    </button>
+                  {:else if task.status === 'error'}
+                    <button
+                      type="button"
+                      on:click={() => handleResumeHttp(task.id)}
+                      class="text-xs text-rose-300 hover:text-rose-200 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 px-3 py-1 rounded-xl flex items-center gap-1 transition cursor-pointer"
+                      title="Retry download"
+                    >
+                      <RotateCcw class="w-3.5 h-3.5" />
+                      <span>Retry</span>
                     </button>
                   {/if}
 
@@ -669,10 +679,10 @@
                 </div>
               </div>
 
-              {#if task.error_message}
+              {#if task.error || task.error_message}
                 <div class="p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 flex items-center gap-2">
                   <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
-                  <span class="truncate">{task.error_message}</span>
+                  <span class="truncate">{task.error || task.error_message}</span>
                 </div>
               {/if}
             </div>
