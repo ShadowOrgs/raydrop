@@ -20,7 +20,7 @@ def get_git_token():
 
 import time
 
-def update_release(tag="v1.2.12", title=None, body=None, wait_for_assets=False):
+def update_release(tag="v1.2.13", title=None, body=None, wait_for_assets=False):
     token = get_git_token()
     if not token:
         print("ERROR: GitHub token not found in git credentials.", file=sys.stderr)
@@ -95,15 +95,15 @@ def update_release(tag="v1.2.12", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.12"
+    tag = clean_args[0] if clean_args else "v1.2.13"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: IDM-Style Refresh Download Address, Instant Resume & Large File Engine"
+    title = f"Raydrop {tag}: Pre-Flight Disk Space Checker, Smart Multi-Unit ETA & IDM Address Refresh"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: IDM-Style Refresh Download Address, Instant Resume & Large File Engine</h2>
+<h2 align="center">Raydrop {tag}: Pre-Flight Disk Space Checker, Smart Multi-Unit ETA & IDM Address Refresh</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,18 +126,16 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
+#### 💾 Pre-Flight Disk Space Checker & Native OS Notifications
+- **Protects Disk from 100% Full Exhaustion:** Inspects available free disk space via native OS system calls (`GetDiskFreeSpaceExW` on Windows, POSIX `statvfs` on macOS, Linux, and Android) before pre-allocating files or writing chunks.
+- **Immediate OS Alert Notification:** If destination drive space is insufficient, Raydrop blocks the download upfront, displays a transparent error (*"Needed: X GB, Available: Y GB"*), and immediately dispatches a native desktop/mobile OS notification.
+- **Comprehensive Coverage:** Enforced across HTTP Accelerator downloads, Chrome/Edge Extension captures, and P2P Incoming File Transfers.
+
+#### ⏱️ Smart Multi-Unit ETA Formatting
+- **Human-Readable Remaining Time:** Replaced raw seconds counters (`7200s`) with intuitive multi-unit time remaining (`45s`, `2m 15s`, `1h 30m`, `2d 4h`).
+- **Unified Across All Engines:** Displayed seamlessly across P2P file transfers, HTTP multi-segment downloads, and BitTorrent swarm transfers.
+
 #### 🔄 IDM-Style Refresh Download Address (Expired Session Resume)
-- **Resume Expired Session Links:** Solved temporary token and expiring link issues (403 Forbidden / 410 Gone). When a download session expires or errors, paste the new download URL to seamlessly resume from the exact byte offset without re-downloading or truncating existing files.
-- **Auto-Refresh via Browser Extension:** Re-triggering a download for the same file in Google Chrome or Microsoft Edge automatically updates the active/paused task in Raydrop with the new session URL and resumes downloading instantly.
-- **Dedicated UI Refresh Address Modal:** Easily update links with a single click from the download card or error banner.
-
-#### ⚡ Instant NTFS Sparse File Preallocation (0ms Delay on Multi-Gigabyte Files)
-- **Eliminated Synchronous Disk Freezes:** Added native Windows `FSCTL_SET_SPARSE` support, eliminating the 10+ second zero-filling disk allocation lag when starting 6GB+ files (such as Ubuntu ISOs).
-- **IDM-Standard Range Probe (`bytes=0-0`):** Converted server capability probe to standard Range request, accurately detecting 206 Partial Content support and allocating up to 8 parallel streams.
-- **Streaming Timeout Elimination:** Removed reqwest 30-second client timeout on large file streams, allowing uninterrupted multi-gigabyte downloads.
-
-#### 🧩 Chrome & Edge Browser Extension (Manifest V3)
-- **Automatic Download Interception:** Captures web downloads (ISO, EXE, ZIP, APK, MP4, etc.) directly into Raydrop's multi-segment engine.
-- **In-App 1-Click Installer:** Built-in modal with automatic folder reveal and loopback bridge monitor (`http://127.0.0.1:45321`).
+- **Resume Expired Session Links:** When downloading from temporary token links or file hosts that expire (403 Forbidden / session timeout), refresh the URL directly in Raydrop or re-download in browser to continue from the exact byte offset without losing data.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

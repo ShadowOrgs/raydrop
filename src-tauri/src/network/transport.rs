@@ -983,6 +983,55 @@ where
         file_map.insert(f.file_id, (part_path, final_path, offset_bytes));
     }
 
+    // DISK SPACE PRE-FLIGHT CHECK FOR P2P FILE TRANSFER
+    let bytes_needed = manifest.total_size_bytes.saturating_sub(already_received_bytes);
+    if bytes_needed > 0 {
+        if let Some(avail) = crate::os::get_available_disk_space(&target_root) {
+            if avail < bytes_needed {
+                let err_msg = format!(
+                    "Insufficient disk space on destination drive. Needed: {}, Available: {}",
+                    crate::os::format_bytes(bytes_needed),
+                    crate::os::format_bytes(avail)
+                );
+                warn!("Rejecting incoming transfer {}: {err_msg}", hello.session_id);
+
+                let reject_resp = HandshakeResponseFrame {
+                    frame_type: "HANDSHAKE_RESPONSE".to_string(),
+                    session_id: hello.session_id.clone(),
+                    status: "DISK_FULL".to_string(),
+                    resume_offsets: vec![],
+                };
+                let _ = write_json_packet(&mut writer, &reject_resp).await;
+
+                use tauri_plugin_notification::NotificationExt;
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("Raydrop: Insufficient Disk Space")
+                    .body(format!("Cannot accept files: {err_msg}"))
+                    .show();
+
+                let record = TransferRecord {
+                    id: hello.session_id,
+                    peer_device_id: hello.sender_device_id,
+                    peer_alias: hello.sender_alias,
+                    direction: "incoming".to_string(),
+                    network_route,
+                    total_files: manifest.total_files,
+                    total_bytes: manifest.total_size_bytes,
+                    transferred_bytes: 0,
+                    status: "failed".to_string(),
+                    target_path: None,
+                    source_paths: None,
+                    created_at: now_unix_secs(),
+                };
+                let _ = state.db.upsert_transfer(&record);
+                let _ = app.emit("transfer_state_changed", &record);
+                return Err(err_msg);
+            }
+        }
+    }
+
     let accept_resp = HandshakeResponseFrame {
         frame_type: "HANDSHAKE_RESPONSE".to_string(),
         session_id: hello.session_id.clone(),

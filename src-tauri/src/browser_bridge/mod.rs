@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 pub const BROWSER_BRIDGE_PORT: u16 = 45321;
 
@@ -105,7 +105,7 @@ Connection: close\r\n\r\n";
         let json_body = serde_json::json!({
             "status": "ok",
             "app": "raydrop",
-            "version": "1.2.12",
+            "version": "1.2.13",
             "capabilities": ["http_segmented_accelerator", "torrent_magnet"]
         })
         .to_string();
@@ -228,7 +228,7 @@ Connection: close\r\n\r\n{}",
             return Ok(());
         }
 
-        match state.http_downloader.add_download(&trimmed_url, None, clean_filename).await {
+        match state.http_downloader.add_download(&trimmed_url, None, clean_filename.clone()).await {
             Ok(task_info) => {
                 info!("Browser extension download started: {} (id: {})", task_info.url, task_info.id);
                 let _ = app.emit("http_download_added", &task_info);
@@ -254,6 +254,23 @@ Connection: close\r\n\r\n{}",
                 let _ = writer_half.write_all(resp.as_bytes()).await;
             }
             Err(e) => {
+                error!("Download initiation error: {e}");
+
+                // Dispatch native OS notification to alert the user immediately
+                use tauri_plugin_notification::NotificationExt;
+                let notif_title = if e.contains("Insufficient disk space") {
+                    "Raydrop: Insufficient Disk Space"
+                } else {
+                    "Raydrop: Download Error"
+                };
+                let display_fname = clean_filename.unwrap_or_else(|| "Requested file".to_string());
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title(notif_title)
+                    .body(format!("{display_fname}: {e}"))
+                    .show();
+
                 let err_json = serde_json::json!({ "error": format!("Failed to initiate download: {e}") }).to_string();
                 let resp = format!(
                     "HTTP/1.1 500 Internal Server Error\r\n\

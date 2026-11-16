@@ -3,7 +3,7 @@
   import { activeTransfers, historicalTransfers } from '../stores/transfers';
   import { appSettings, cliQueuedFiles, activeMainTab } from '../stores/state';
   import { torrentTasks, httpTasks, magnetModalOpen, browserExtensionModalOpen } from '../stores/torrents';
-  import { raydropApi, formatBytes, type TransferRecord, type WebShareInfo, type TorrentTaskInfo, type HttpDownloadTaskInfo } from '../utils/tauri-ipc';
+  import { raydropApi, formatBytes, formatEta, type TransferRecord, type WebShareInfo, type TorrentTaskInfo, type HttpDownloadTaskInfo } from '../utils/tauri-ipc';
   import WebShareModal from './WebShareModal.svelte';
   import ClipboardShareModal from './ClipboardShareModal.svelte';
   import FolderSyncModal from './FolderSyncModal.svelte';
@@ -623,9 +623,14 @@
                       </span>
                       {#if task.download_speed_bps > 0 && task.status === 'downloading'}
                         <span>•</span>
-                        <span class="text-xs font-mono text-emerald-400 flex items-center gap-0.5">
+                        <span class="text-xs font-mono text-emerald-400 flex items-center gap-1">
                           <Zap class="w-3 h-3" />
-                          {formatBytes(task.download_speed_bps)}/s
+                          <span>{formatBytes(task.download_speed_bps)}/s</span>
+                          {#if task.total_bytes > task.downloaded_bytes}
+                            {@const httpEta = (task.total_bytes - task.downloaded_bytes) / task.download_speed_bps}
+                            <span class="text-slate-400">•</span>
+                            <span class="text-cyan-300">ETA {formatEta(httpEta)}</span>
+                          {/if}
                         </span>
                       {/if}
                     </div>
@@ -779,9 +784,14 @@
                       </span>
                       {#if task.download_speed_bps > 0}
                         <span>•</span>
-                        <span class="text-xs font-mono text-emerald-400 flex items-center gap-0.5">
+                        <span class="text-xs font-mono text-emerald-400 flex items-center gap-1">
                           <Zap class="w-3 h-3" />
-                          {formatBytes(task.download_speed_bps)}/s
+                          <span>{formatBytes(task.download_speed_bps)}/s</span>
+                          {#if task.total_bytes > task.downloaded_bytes}
+                            {@const torrentEta = (task.total_bytes - task.downloaded_bytes) / task.download_speed_bps}
+                            <span class="text-slate-400">•</span>
+                            <span class="text-cyan-300">ETA {formatEta(torrentEta)}</span>
+                          {/if}
                         </span>
                       {/if}
                     </div>
@@ -982,7 +992,7 @@
                     <span class="text-amber-300">Checkpoint saved (.raypart) • Ready to resume</span>
                   {:else}
                     <span class="text-emerald-400 font-bold">
-                      {(t.speed_mbps ?? 0).toFixed(1)} MB/s • ETA {t.eta_seconds ?? 0}s
+                      {(t.speed_mbps ?? 0).toFixed(1)} MB/s • ETA {formatEta(t.eta_seconds)}
                     </span>
                   {/if}
                 </div>

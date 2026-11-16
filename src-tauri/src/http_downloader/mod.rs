@@ -284,6 +284,21 @@ impl HttpDownloadManager {
 
         let target_file_path = save_dir.join(&filename);
 
+        // PRE-FLIGHT DISK SPACE CHECK: Verify target filesystem has sufficient free capacity
+        if total_bytes > 0 {
+            if let Some(available_bytes) = crate::os::get_available_disk_space(&save_dir) {
+                if available_bytes < total_bytes {
+                    let err = format!(
+                        "Insufficient disk space on destination drive. Needed: {}, Available: {}",
+                        crate::os::format_bytes(total_bytes),
+                        crate::os::format_bytes(available_bytes)
+                    );
+                    error!("Download cancelled: {err}");
+                    return Err(err);
+                }
+            }
+        }
+
         // Calculate parallel segment count (up to 8 parallel streams for large files with range support)
         let segments_count: u32 = if supports_range && total_bytes >= 2 * 1024 * 1024 {
             if total_bytes >= 32 * 1024 * 1024 {
