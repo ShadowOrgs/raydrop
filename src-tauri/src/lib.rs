@@ -1,3 +1,4 @@
+pub mod browser_bridge;
 pub mod commands;
 pub mod crypto;
 pub mod db;
@@ -343,7 +344,10 @@ pub fn run() {
             // Start Background Networking Daemons (TCP + QUIC + mDNS + WAN Signaling/STUN)
             start_transport_listeners(handle.clone(), state_for_setup.clone());
             start_mdns_daemon(handle.clone(), state_for_setup.clone());
-            start_signaling_daemon(handle, state_for_setup);
+            start_signaling_daemon(handle.clone(), state_for_setup.clone());
+
+            // Start Local Loopback Server for Chrome/Edge Browser Extension (IDM mode)
+            browser_bridge::start_browser_bridge_daemon(handle, state_for_setup);
 
             Ok(())
         })
@@ -403,6 +407,8 @@ pub fn run() {
             commands::pause_http_download,
             commands::resume_http_download,
             commands::delete_http_download,
+            commands::open_browser_extension_dir,
+            commands::open_browser_extension_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Raydrop Tauri application");

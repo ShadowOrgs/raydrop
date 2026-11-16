@@ -109,6 +109,11 @@ if __name__ == "__main__":
 #### 🛠️ Critical Startup Crash Hotfix
 - **Resolved "no reactor running" Panic:** Fixed an immediate crash on application startup where background stats broadcast tickers called `tokio::spawn` outside of a Tokio runtime context during GUI initialization. Replaced with Tauri's native managed async runtime `tauri::async_runtime::spawn`, guaranteeing stable and reliable application launch.
 
+#### 🌐 Official Chrome & Edge Browser Extension (Manifest V3)
+- **Automatic Download Interception (IDM Mode):** Browser extension seamlessly detects and intercepts file downloads (ZIP, RAR, 7Z, ISO, EXE, APK, MP4, MKV, PDF, etc.) in Google Chrome, Microsoft Edge, Brave, and Opera, transferring them directly to Raydrop's 8-connection parallel accelerator.
+- **In-App 1-Click Extension Installer:** Added a dedicated "Extension" button in Raydrop's dashboard and Settings modal with a guided 30-second setup, 1-click extension folder reveal, and live desktop bridge health indicator (`http://127.0.0.1:45321`).
+- **Context Menu Integration:** Right-click any link or media file in your browser to immediately choose "Download with Raydrop Accelerator".
+
 #### ⚡ IDM-Style HTTP Multi-Segment Parallel Download Accelerator
 - **Multi-Connection Segmented Acceleration:** Accelerate direct web downloads by splitting files into 4–8 concurrent chunks using HTTP `Range: bytes=X-Y` requests, maximizing throughput on high-bandwidth fiber connections.
 - **Zero-Stitch Direct File Write:** Chunks are written directly into target file byte offsets via native OS file handles (`seek_write` on Windows, `write_all_at` on Unix) without needing slow temporary file joins or disk re-copying.

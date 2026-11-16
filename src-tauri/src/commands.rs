@@ -1755,3 +1755,73 @@ pub async fn delete_http_download(
     state.http_downloader.delete_task(&id, delete_file).await
 }
 
+#[tauri::command]
+pub async fn open_browser_extension_dir(app: AppHandle) -> Result<String, String> {
+    let mut candidate_paths = Vec::new();
+
+    // 1. Persistent unpacked directory in user app data
+    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "raydrop", "Raydrop") {
+        let ext_dir = proj_dirs.data_dir().join("browser-extension");
+        let icons_dir = ext_dir.join("icons");
+        let _ = std::fs::create_dir_all(&icons_dir);
+
+        let manifest_bytes = include_bytes!("../../browser-extension/manifest.json");
+        let bg_bytes = include_bytes!("../../browser-extension/background.js");
+        let popup_html_bytes = include_bytes!("../../browser-extension/popup.html");
+        let popup_js_bytes = include_bytes!("../../browser-extension/popup.js");
+        let icon16_bytes = include_bytes!("../../browser-extension/icons/icon16.png");
+        let icon32_bytes = include_bytes!("../../browser-extension/icons/icon32.png");
+        let icon48_bytes = include_bytes!("../../browser-extension/icons/icon48.png");
+        let icon128_bytes = include_bytes!("../../browser-extension/icons/icon128.png");
+
+        let _ = std::fs::write(ext_dir.join("manifest.json"), manifest_bytes);
+        let _ = std::fs::write(ext_dir.join("background.js"), bg_bytes);
+        let _ = std::fs::write(ext_dir.join("popup.html"), popup_html_bytes);
+        let _ = std::fs::write(ext_dir.join("popup.js"), popup_js_bytes);
+        let _ = std::fs::write(icons_dir.join("icon16.png"), icon16_bytes);
+        let _ = std::fs::write(icons_dir.join("icon32.png"), icon32_bytes);
+        let _ = std::fs::write(icons_dir.join("icon48.png"), icon48_bytes);
+        let _ = std::fs::write(icons_dir.join("icon128.png"), icon128_bytes);
+
+        candidate_paths.push(ext_dir);
+    }
+
+    // 2. Dev or source repository directory
+    if let Ok(cwd) = std::env::current_dir() {
+        candidate_paths.push(cwd.join("browser-extension"));
+        candidate_paths.push(cwd.join("..").join("browser-extension"));
+    }
+
+    for p in candidate_paths {
+        if p.exists() {
+            let path_str = p.to_string_lossy().to_string();
+            let _ = open_folder_path(app.clone(), path_str.clone());
+            return Ok(path_str);
+        }
+    }
+
+    Err("Browser extension folder could not be located.".to_string())
+}
+
+#[tauri::command]
+pub async fn open_browser_extension_url(browser: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let browser_clean = browser.to_lowercase();
+        if browser_clean == "chrome" {
+            let _ = std::process::Command::new("cmd")
+                .args(["/c", "start", "chrome", "chrome://extensions"])
+                .spawn();
+        } else if browser_clean == "edge" {
+            let _ = std::process::Command::new("cmd")
+                .args(["/c", "start", "msedge", "edge://extensions"])
+                .spawn();
+        } else if browser_clean == "brave" {
+            let _ = std::process::Command::new("cmd")
+                .args(["/c", "start", "brave", "brave://extensions"])
+                .spawn();
+        }
+    }
+    Ok(())
+}
+

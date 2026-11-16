@@ -395,6 +395,10 @@ export const raydropApi = {
     invoke<void>('resume_http_download', { id }),
   deleteHttpDownload: (id: string, deleteFile: boolean) =>
     invoke<void>('delete_http_download', { id, deleteFile }),
+  openBrowserExtensionDir: () =>
+    invoke<string>('open_browser_extension_dir'),
+  openBrowserExtensionUrl: (browser: string) =>
+    invoke<void>('open_browser_extension_url', { browser }),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>
     listen<T>(event, (e) => handler(e.payload)),
 };

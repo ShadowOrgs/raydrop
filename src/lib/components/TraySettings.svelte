@@ -9,6 +9,7 @@
   } from "../stores/update";
   import { checkForUpdates } from "../utils/updater";
   import { raydropApi } from "../utils/tauri-ipc";
+  import { browserExtensionModalOpen } from "../stores/torrents";
   import {
     FolderOpen,
     Terminal,
@@ -19,6 +20,7 @@
     RefreshCw,
     Sparkles,
     Gauge,
+    Puzzle,
   } from "lucide-svelte";
 
   let aliasName = "";
@@ -342,6 +344,39 @@
                 ? "Enabled (Direct)"
                 : "Disabled (Default Win 11)"}</span
             >
+          </button>
+        </div>
+
+        <!-- Browser Extension Integration (IDM Mode) -->
+        <div
+          class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex items-center justify-between gap-3"
+        >
+          <div>
+            <div class="flex items-center gap-2">
+              <p class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <Puzzle class="w-3.5 h-3.5 text-cyan-400" />
+                <span>Browser Extension (IDM Mode)</span>
+              </p>
+              <span
+                class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20"
+              >
+                Chrome / Edge
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">
+              Automatically intercept and accelerate large file downloads directly from Chrome, Edge, and Brave into Raydrop.
+            </p>
+          </div>
+          <button
+            type="button"
+            on:click={() => {
+              settingsModalOpen.set(false);
+              browserExtensionModalOpen.set(true);
+            }}
+            class="px-3 py-2 rounded-xl bg-gradient-to-r from-cyan-600/80 to-indigo-600/80 hover:from-cyan-500 hover:to-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-all cursor-pointer shadow-md shadow-cyan-500/20"
+          >
+            <Puzzle class="w-3.5 h-3.5" />
+            <span>Install Extension</span>
           </button>
         </div>
 

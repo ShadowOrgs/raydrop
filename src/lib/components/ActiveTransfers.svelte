@@ -2,7 +2,7 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import { activeTransfers, historicalTransfers } from '../stores/transfers';
   import { appSettings, cliQueuedFiles, activeMainTab } from '../stores/state';
-  import { torrentTasks, httpTasks, magnetModalOpen } from '../stores/torrents';
+  import { torrentTasks, httpTasks, magnetModalOpen, browserExtensionModalOpen } from '../stores/torrents';
   import { raydropApi, formatBytes, type TransferRecord, type WebShareInfo, type TorrentTaskInfo, type HttpDownloadTaskInfo } from '../utils/tauri-ipc';
   import WebShareModal from './WebShareModal.svelte';
   import ClipboardShareModal from './ClipboardShareModal.svelte';
@@ -39,6 +39,7 @@
     FolderSync,
     Magnet,
     Download,
+    Puzzle,
   } from 'lucide-svelte';
 
   let resumingId = '';
@@ -377,6 +378,16 @@
       >
         <Download class="w-4 h-4 text-cyan-200" />
         <span>+ Add URL / Magnet</span>
+      </button>
+
+      <button
+        type="button"
+        on:click={() => ($browserExtensionModalOpen = true)}
+        class="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white font-semibold text-xs sm:text-sm border border-slate-700/80 transition-all hover:-translate-y-0.5 cursor-pointer shadow-sm"
+        title="Install Chrome / Edge Extension for automatic download catching"
+      >
+        <Puzzle class="w-4 h-4 text-cyan-400" />
+        <span>Extension</span>
       </button>
     </div>
 

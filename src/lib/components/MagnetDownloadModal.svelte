@@ -5,6 +5,7 @@
     prefilledDownloadUrl,
     torrentTasks,
     httpTasks,
+    browserExtensionModalOpen,
   } from '../stores/torrents';
   import { appSettings } from '../stores/state';
   import { raydropApi } from '../utils/tauri-ipc';
@@ -20,6 +21,7 @@
     Zap,
     Globe,
     FileText,
+    Puzzle,
   } from 'lucide-svelte';
 
   let urlInput = '';
@@ -361,6 +363,25 @@
           <span>{successMessage}</span>
         </div>
       {/if}
+
+      <!-- Browser Extension Tip Banner -->
+      <div class="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between text-xs text-slate-400">
+        <span class="flex items-center gap-2">
+          <Puzzle class="w-4 h-4 text-cyan-400 shrink-0" />
+          <span>Want automatic download catching from Chrome or Edge?</span>
+        </span>
+        <button
+          type="button"
+          on:click={() => {
+            handleClose();
+            $browserExtensionModalOpen = true;
+          }}
+          class="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 transition cursor-pointer shrink-0 ml-2"
+        >
+          <span>Install Extension</span>
+          <span>&rarr;</span>
+        </button>
+      </div>
 
       <!-- Action Buttons -->
       <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800/80">

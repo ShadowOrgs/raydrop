@@ -9,6 +9,7 @@ export const torrentTasks = writable<TorrentTaskInfo[]>([]);
 export const httpTasks = writable<HttpDownloadTaskInfo[]>([]);
 export const downloadModalOpen = writable<boolean>(false);
 export const prefilledDownloadUrl = writable<string>('');
+export const browserExtensionModalOpen = writable<boolean>(false);
 
 // Backward compatibility alias
 export const magnetModalOpen = downloadModalOpen;

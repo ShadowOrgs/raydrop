@@ -12,6 +12,7 @@
   import AuthModal from "./lib/components/AuthModal.svelte";
   import UpdateModal from "./lib/components/UpdateModal.svelte";
   import MagnetDownloadModal from "./lib/components/MagnetDownloadModal.svelte";
+  import BrowserExtensionModal from "./lib/components/BrowserExtensionModal.svelte";
   import { initTorrentStore } from "./lib/stores/torrents";
   import { Upload, X, Zap, MessageSquare, Wifi, Users } from "lucide-svelte";
   import {
@@ -522,6 +523,7 @@
   <AuthModal />
   <UpdateModal />
   <MagnetDownloadModal />
+  <BrowserExtensionModal />
 
   <!-- Mobile Bottom Navigation Bar (md:hidden) -->
   <nav
