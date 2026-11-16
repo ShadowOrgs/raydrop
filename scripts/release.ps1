@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # Raydrop Automated GitHub Release & Landing Page Sync Script
 # ==============================================================================
 # Usage:
@@ -148,33 +148,12 @@ $bodyText = @"
 ### Download (Windows 64-bit / x64)
 - **Windows Setup Installer (`.msi`):** \`Raydrop_${ver}_x64_en-US.msi\`
 
-### Features & Highlights
-- **Persistent Keepalive Heartbeat & Dead-Peer Detection (Idle Zombie Socket Fix):** Implemented proactive 15-second WebSocket ping heartbeats and a 45-second dead-peer detection watchdog on both client and signal server. Prevents home Wi-Fi routers, NATs, and Tailscale connections from silently pruning idle TCP socket translation tables, ensuring incoming file transfer modals and notifications pop up instantaneously even after hours of Raydrop running idle in the system tray.
-- **Outgoing Signaling Readiness Retry:** Added a smart retry loop when sending file transfer intents, eliminating intermittent connection errors when initiating transfers right as signaling reconnects.
-- **Realtime WAN Signaling & STUN Connection Status Sync:** Eliminated startup race conditions where `signaling_status_changed` was emitted before frontend listeners were mounted, leaving the header stuck in "Standby". Added immediate listener pre-registration, delayed re-emit on daemon connect, and periodic 4s heartbeat state synchronization.
-- **System Tray Live Unread Chat Badge:** The Windows system tray icon now dynamically renders a live badge showing the exact number of unread chat messages with high-contrast indicator, matching bitmap font digits (`1`..`9`, `9+`), and informative tooltips.
-- **Dual-Path Instant Chat (LAN + Tailscale + WAN Relay):** Chat messages are now transmitted via direct local TCP if the peer is reachable on the local network or Tailscale mesh, with seamless fallback to encrypted WAN relay tunnel.
-- **Fixed Realtime In-Chat Auto-Scroll & Visibility:** Resolved an issue where incoming chat messages did not trigger viewport auto-scroll and remained hidden below the fold. Switching to the chat tab now immediately focuses latest messages and marks them as read.
-- **Signal Server Session State Resilience:** Patched connection registry race conditions where stale reconnecting sockets removed active peer sessions.
-- **Auto-Incremental Duplicate File Downloads:** Sending a file with a name that was previously downloaded now automatically appends a clean increment number (`filename (1).ext`, `filename (2).ext`), preventing overwrite/false completion and ensuring newly sent files always download seamlessly.
-- **Ultra-Fast Realtime File Receive Popup:** Eliminated synchronous blocking STUN discovery from handshake path and added parallel concurrent Happy Eyeballs candidate race, making incoming transfer request modals appear instantaneously in real-time.
-- **Markdown Formatted Release Notes:** In-app update notifications and release dialogs now render rich markdown styling (headings, lists, code blocks, links) with automatic external browser launching.
-- **Scrollable Settings Modal:** Redesigned Configuration/Settings dialog with bounded max-height, smooth scrollview, and pinned action bar to prevent overflow on smaller screens and laptop displays.
-- **Integrated P2P Encrypted Chat:** Real-time end-to-end encrypted messaging with contacts and peers across local LAN & remote WAN with zero server storage.
-- **Rich Markdown Formatter:** Code blocks with syntax highlighting, lists, bold/italic, tables, blockquotes, and plan checklists.
-- **In-Chat Multiple Media & File Transfer:** Send multiple images, videos, documents, PDFs, archives, and folders directly within the conversation.
-- **Synchronized Streams & Live Progress:** In-chat transfers leverage Raydrop's 6-stream engine and appear synchronously in both the chat bubble and the main Transfers dashboard.
-- **Direct File Launch:** Instant "Open" with default applications and "Locate" in Windows Explorer directly from chat bubbles.
-- **Redesigned Full-Width Workspace:** Dedicated full-screen Transfers & Streams dashboard matching the modern aesthetic.
-- **Native OS Multiple Drag & Drop:** Drop multiple files and folders directly from Windows Explorer with a fullscreen glowing drop indicator.
-- **Dedicated Send Files Hub:** Quick-action buttons to select multiple files/folders and 1-click send to online peers.
-- **Zero-Server High-Speed File Transfer:** True peer-to-peer over local LAN and global WAN.
-- **Dynamic 6-Stream Parallel Workers:** IDM-style chunk acceleration for massive files (up to 125 MB/s).
-- **Auto-Resumable Chunk Engine:** Reconnect seamlessly after Wi-Fi drops without restarting from scratch.
-- **End-to-End Cryptographic Security:** BLAKE3 checksums, X25519 ECDH key exchange, and ChaCha20-Poly1305.
-- **Windows 11 Native Context Menu:** Direct 1-click right-click integration on Windows Explorer.
-- **In-App Auto-Updater:** One-click seamless upgrade notification for all peers.
-- **Live Bilingual Landing Page:** Automatically synced in real-time at [raydrop.web.id](https://raydrop.web.id).
+### Features & Highlights in $tag
+- **IDM-Style HTTP Multi-Segment Parallel Download Accelerator:** Accelerate direct web downloads by splitting files into 4–8 concurrent chunks using HTTP Range requests. Direct file sparse writing via native OS file handles without temporary file stitching.
+- **BitTorrent Swarm Engine & Magnet Deep Linking:** Full BitTorrent peer-to-peer swarm downloading powered by librqbit v9.1.0. Automatic OS protocol association (magnet:), live peer counter, swarm speed metrics, and pause/resume lifecycle controls.
+- **Unified URL & Magnet Downloader:** Single modal (+ Add URL / Magnet) automatically detects whether a pasted link is an HTTP/HTTPS URL or a BitTorrent Magnet link.
+- **Universal Clipboard Image Fix:** Robust extraction and rendering of base64 clipboard images and screenshots directly in chat cards with interactive copy and download animations.
+- **Universal Web Share Over Internet:** Share files with anyone in the world via on-demand encrypted relay tunnel and QR code without requiring the recipient to install Raydrop.
 "@
 
 # 7. Create or Get GitHub Release

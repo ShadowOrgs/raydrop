@@ -562,12 +562,30 @@
     }
   }
 
-  async function copyMessageText(content: string, id: string) {
-    const trimmed = (content || '').trim();
+  function extractDataImage(content: string): string | null {
+    if (!content) return null;
+    const trimmed = content.trim().replace(/^["']|["']$/g, '');
     if (trimmed.startsWith('data:image/')) {
-      await handleCopyImage(trimmed, id);
+      return trimmed;
+    }
+    const mdMatch = trimmed.match(/!\[.*?\]\((data:image\/[^)]+)\)/);
+    if (mdMatch) {
+      return mdMatch[1];
+    }
+    const tokenMatch = trimmed.match(/(data:image\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+)/);
+    if (tokenMatch) {
+      return tokenMatch[1];
+    }
+    return null;
+  }
+
+  async function copyMessageText(content: string, id: string) {
+    const dataImg = extractDataImage(content);
+    if (dataImg) {
+      await handleCopyImage(dataImg, id);
       return;
     }
+    const trimmed = (content || '').trim();
     try {
       await raydropApi.writeSystemClipboard(trimmed);
     } catch (_) {
@@ -885,7 +903,8 @@
             {@const linkedTransfer = msg.transfer_session_id ? $transfers.find((t) => t.id === msg.transfer_session_id) : undefined}
             {@const pendingRequest = msg.transfer_session_id ? $incomingRequestQueue.find((q) => q.session_id === msg.transfer_session_id) : undefined}
             {@const hasContent = !!(msg.content && msg.content.trim().length > 0)}
-            {@const isDataImage = !!(msg.content && msg.content.trim().startsWith('data:image/'))}
+            {@const dataImageUrl = extractDataImage(msg.content)}
+            {@const isDataImage = !!dataImageUrl}
 
             <div class="flex flex-col {isOutgoing ? 'items-end' : 'items-start'} group">
               <div
@@ -920,23 +939,23 @@
                 {/if}
 
                 <!-- Direct Image Content (Clipboard Image Screenshot) -->
-                {#if isDataImage}
+                {#if isDataImage && dataImageUrl}
                   <div class="mt-1 space-y-2">
                     <div class="relative group/img rounded-xl overflow-hidden border border-slate-700/80 bg-slate-950/80 shadow-md inline-block max-w-full">
                       <!-- svelte-ignore a11y-click-events-have-key-events -->
                       <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
                       <img
-                        src={msg.content.trim()}
+                        src={dataImageUrl}
                         alt="Clipboard Screenshot"
                         class="max-h-64 sm:max-h-80 w-auto rounded-lg object-contain cursor-pointer transition-transform duration-200 group-hover/img:scale-[1.01]"
                         loading="lazy"
-                        on:click={() => (previewModalImage = msg.content.trim())}
+                        on:click={() => (previewModalImage = dataImageUrl)}
                       />
                       <!-- Overlay Hover Action Bar -->
                       <div class="absolute bottom-2 right-2 flex items-center gap-1.5 opacity-90 group-hover/img:opacity-100 transition-opacity">
                         <button
                           type="button"
-                          on:click|stopPropagation={() => handleCopyImage(msg.content.trim(), msg.id)}
+                          on:click|stopPropagation={() => handleCopyImage(dataImageUrl, msg.id)}
                           class="px-2.5 py-1 rounded-lg bg-slate-900/95 hover:bg-slate-800 text-slate-200 hover:text-white text-[11px] font-semibold border border-slate-700/80 flex items-center gap-1.5 shadow-lg backdrop-blur-sm transition-all active:scale-95 cursor-pointer"
                           title="Copy image directly to system clipboard (ready to Ctrl+V)"
                         >
@@ -950,7 +969,7 @@
                         </button>
                         <button
                           type="button"
-                          on:click|stopPropagation={() => handleDownloadImage(msg.content.trim(), msg.id)}
+                          on:click|stopPropagation={() => handleDownloadImage(dataImageUrl, msg.id)}
                           class="p-1.5 rounded-lg bg-slate-900/95 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 shadow-lg backdrop-blur-sm transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[30px] min-h-[30px]"
                           disabled={downloadingMessageId === msg.id}
                           title="Download image to Downloads folder"

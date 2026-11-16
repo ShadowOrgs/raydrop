@@ -11,6 +11,8 @@
   import TraySettings from "./lib/components/TraySettings.svelte";
   import AuthModal from "./lib/components/AuthModal.svelte";
   import UpdateModal from "./lib/components/UpdateModal.svelte";
+  import MagnetDownloadModal from "./lib/components/MagnetDownloadModal.svelte";
+  import { initTorrentStore } from "./lib/stores/torrents";
   import { Upload, X, Zap, MessageSquare, Wifi, Users } from "lucide-svelte";
   import {
     appSettings,
@@ -352,6 +354,9 @@
       console.warn("Native Drag-Drop event setup error:", err);
     }
 
+    // Initialize Torrent Engine & listeners
+    initTorrentStore().catch(() => {});
+
     // Auto-check for software updates silently on startup after brief initialization
     setTimeout(() => {
       checkForUpdates(false).catch(() => {});
@@ -516,6 +521,7 @@
   <TraySettings />
   <AuthModal />
   <UpdateModal />
+  <MagnetDownloadModal />
 
   <!-- Mobile Bottom Navigation Bar (md:hidden) -->
   <nav

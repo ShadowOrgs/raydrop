@@ -1,9 +1,11 @@
 pub mod commands;
 pub mod crypto;
 pub mod db;
+pub mod http_downloader;
 pub mod network;
 pub mod os;
 pub mod state;
+pub mod torrent;
 pub mod tray_badge;
 
 use crate::db::storage::Database;
@@ -39,6 +41,16 @@ fn extract_send_paths(args: &[String]) -> Vec<String> {
     paths
 }
 
+fn extract_magnet_url(args: &[String]) -> Option<String> {
+    for arg in args {
+        let trimmed = arg.trim();
+        if trimmed.starts_with("magnet:?") {
+            return Some(trimmed.to_string());
+        }
+    }
+    None
+}
+
 fn allocate_dynamic_port() -> u16 {
     StdTcpListener::bind("0.0.0.0:0")
         .and_then(|s| s.local_addr())
@@ -60,8 +72,17 @@ pub fn run() {
 
     let initial_args: Vec<String> = std::env::args().collect();
     let initial_send_paths = extract_send_paths(&initial_args);
+    let initial_magnet = extract_magnet_url(&initial_args);
     let start_minimized =
         initial_args.iter().any(|a| a == "--minimized") && initial_send_paths.is_empty();
+
+    let torrent_mgr = Arc::new(crate::torrent::TorrentManager::new(
+        std::path::PathBuf::from(&settings.download_dir),
+    ));
+
+    let http_mgr = Arc::new(crate::http_downloader::HttpDownloadManager::new(
+        std::path::PathBuf::from(&settings.download_dir),
+    ));
 
     let app_state = Arc::new(AppState {
         db: Arc::new(db),
@@ -79,6 +100,9 @@ pub fn run() {
         pending_wan_candidates: Mutex::new(HashMap::new()),
         queued_cli_files: Mutex::new(initial_send_paths.clone()),
         active_web_share: Mutex::new(None),
+        torrent_manager: torrent_mgr,
+        pending_magnet_link: Mutex::new(initial_magnet.clone()),
+        http_downloader: http_mgr,
     });
 
     #[cfg(desktop)]
@@ -90,7 +114,18 @@ pub fn run() {
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(move |app, argv, _cwd| {
         let paths = extract_send_paths(&argv);
+        let magnet = extract_magnet_url(&argv);
+
         crate::network::transport::popup_and_focus_main_window(app);
+
+        if let Some(m) = magnet {
+            info!("Received magnet URL from secondary instance: {}", m);
+            if let Ok(mut pending) = state_for_single_instance.pending_magnet_link.lock() {
+                *pending = Some(m.clone());
+            }
+            let _ = app.emit("open_magnet_link", m);
+        }
+
         if !paths.is_empty() {
             info!("Received CLI --send paths from secondary instance: {:?}", paths);
             if let Ok(mut q) = state_for_single_instance.queued_cli_files.lock() {
@@ -235,6 +270,12 @@ pub fn run() {
                     Err(e) => info!("OS Context Menu registration skipped: {e}"),
                 }
 
+                // Auto-register Magnet Link Protocol Handler ("magnet:?") on startup
+                match crate::os::register_magnet_protocol() {
+                    Ok(msg) => info!("{msg}"),
+                    Err(e) => info!("Magnet protocol registration skipped: {e}"),
+                }
+
                 // Ensure OS Autorun at Startup matches user preference (points to current_exe)
                 if is_autostart {
                     match crate::os::set_autostart(true) {
@@ -258,7 +299,7 @@ pub fn run() {
                     let _ = main_win.show();
                     let _ = main_win.unminimize();
                     let _ = main_win.set_focus();
-                    if !initial_send_paths.is_empty() {
+                    if !initial_send_paths.is_empty() || initial_magnet.is_some() {
                         crate::network::transport::popup_and_focus_main_window(&handle);
                     }
                 }
@@ -270,6 +311,34 @@ pub fn run() {
                     }
                 });
             }
+
+            // Background Periodic Torrent Stats Broadcast
+            let handle_for_torrents = handle.clone();
+            let state_for_torrents = state_for_setup.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_millis(1200));
+                loop {
+                    interval.tick().await;
+                    let tasks = state_for_torrents.torrent_manager.list_torrents().await;
+                    if !tasks.is_empty() {
+                        let _ = handle_for_torrents.emit("torrent_stats_update", &tasks);
+                    }
+                }
+            });
+
+            // Background Periodic HTTP Download Stats Broadcast
+            let handle_for_http = handle.clone();
+            let state_for_http = state_for_setup.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_millis(1000));
+                loop {
+                    interval.tick().await;
+                    let tasks = state_for_http.http_downloader.list_tasks().await;
+                    if !tasks.is_empty() {
+                        let _ = handle_for_http.emit("http_download_stats_update", &tasks);
+                    }
+                }
+            });
 
             // Start Background Networking Daemons (TCP + QUIC + mDNS + WAN Signaling/STUN)
             start_transport_listeners(handle.clone(), state_for_setup.clone());
@@ -323,6 +392,17 @@ pub fn run() {
             commands::toggle_folder_sync_auto,
             commands::delete_folder_sync_task,
             commands::trigger_folder_sync,
+            commands::add_torrent_magnet,
+            commands::list_torrent_tasks,
+            commands::pause_torrent_task,
+            commands::resume_torrent_task,
+            commands::delete_torrent_task,
+            commands::get_pending_magnet_link,
+            commands::add_http_download,
+            commands::list_http_downloads,
+            commands::pause_http_download,
+            commands::resume_http_download,
+            commands::delete_http_download,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Raydrop Tauri application");

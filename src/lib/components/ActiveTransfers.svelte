@@ -2,7 +2,8 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import { activeTransfers, historicalTransfers } from '../stores/transfers';
   import { appSettings, cliQueuedFiles, activeMainTab } from '../stores/state';
-  import { raydropApi, formatBytes, type TransferRecord, type WebShareInfo } from '../utils/tauri-ipc';
+  import { torrentTasks, httpTasks, magnetModalOpen } from '../stores/torrents';
+  import { raydropApi, formatBytes, type TransferRecord, type WebShareInfo, type TorrentTaskInfo, type HttpDownloadTaskInfo } from '../utils/tauri-ipc';
   import WebShareModal from './WebShareModal.svelte';
   import ClipboardShareModal from './ClipboardShareModal.svelte';
   import FolderSyncModal from './FolderSyncModal.svelte';
@@ -36,6 +37,8 @@
     Clipboard,
     Gauge,
     FolderSync,
+    Magnet,
+    Download,
   } from 'lucide-svelte';
 
   let resumingId = '';
@@ -47,6 +50,72 @@
   let showClipboardModal = false;
   let showFolderSyncModal = false;
   let showSpeedLimitMenu = false;
+
+  async function handlePauseHttp(id: string) {
+    try {
+      await raydropApi.pauseHttpDownload(id);
+      httpTasks.update((tasks) =>
+        tasks.map((t) => (t.id === id ? { ...t, status: 'paused' } : t))
+      );
+    } catch (err: any) {
+      actionError = err?.toString() || 'Failed to pause download';
+    }
+  }
+
+  async function handleResumeHttp(id: string) {
+    try {
+      await raydropApi.resumeHttpDownload(id);
+      httpTasks.update((tasks) =>
+        tasks.map((t) => (t.id === id ? { ...t, status: 'downloading' } : t))
+      );
+    } catch (err: any) {
+      actionError = err?.toString() || 'Failed to resume download';
+    }
+  }
+
+  async function handleDeleteHttp(id: string) {
+    if (confirm('Cancel and remove this download task?')) {
+      try {
+        await raydropApi.deleteHttpDownload(id, false);
+        httpTasks.update((tasks) => tasks.filter((t) => t.id !== id));
+      } catch (err: any) {
+        actionError = err?.toString() || 'Failed to remove download';
+      }
+    }
+  }
+
+  async function handlePauseTorrent(id: string) {
+    try {
+      await raydropApi.pauseTorrentTask(id);
+      torrentTasks.update((tasks) =>
+        tasks.map((t) => (t.id === id ? { ...t, status: 'paused' } : t))
+      );
+    } catch (err: any) {
+      actionError = err?.toString() || 'Failed to pause torrent';
+    }
+  }
+
+  async function handleResumeTorrent(id: string) {
+    try {
+      await raydropApi.resumeTorrentTask(id);
+      torrentTasks.update((tasks) =>
+        tasks.map((t) => (t.id === id ? { ...t, status: 'downloading' } : t))
+      );
+    } catch (err: any) {
+      actionError = err?.toString() || 'Failed to resume torrent';
+    }
+  }
+
+  async function handleDeleteTorrent(id: string) {
+    if (confirm('Remove this torrent download task?')) {
+      try {
+        await raydropApi.deleteTorrentTask(id, false);
+        torrentTasks.update((tasks) => tasks.filter((t) => t.id !== id));
+      } catch (err: any) {
+        actionError = err?.toString() || 'Failed to remove torrent';
+      }
+    }
+  }
 
   function toggleExpanded(id: string) {
     expandedTransferIds = {
@@ -299,6 +368,16 @@
         <FolderSync class="w-4 h-4 text-emerald-200" />
         <span>Folder Sync</span>
       </button>
+
+      <button
+        type="button"
+        on:click={() => ($magnetModalOpen = true)}
+        class="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-amber-500/80 to-cyan-600/80 hover:from-amber-500 hover:to-cyan-500 text-white font-semibold text-xs sm:text-sm border border-amber-500/30 transition-all hover:-translate-y-0.5 shadow-lg shadow-amber-500/20 cursor-pointer"
+        title="Download file via URL Accelerator (IDM-style) or BitTorrent Magnet"
+      >
+        <Download class="w-4 h-4 text-cyan-200" />
+        <span>+ Add URL / Magnet</span>
+      </button>
     </div>
 
     <!-- Drop Zone Hub -->
@@ -450,6 +529,248 @@
       <div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300 flex items-center justify-between">
         <span>{actionError}</span>
         <button on:click={() => (actionError = '')} class="text-rose-400 hover:text-white ml-2">✕</button>
+      </div>
+    {/if}
+
+    <!-- HTTP Multi-Segment Parallel Accelerator Downloads (IDM Engine) -->
+    {#if $httpTasks.length > 0}
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <Zap class="w-4 h-4 text-cyan-400" />
+            <h3 class="text-xs font-bold uppercase tracking-wider text-cyan-400">
+              HTTP Accelerator Downloads ({$httpTasks.length})
+            </h3>
+          </div>
+          <span class="text-xs text-slate-400 font-mono">Parallel Segment Accelerator</span>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-3.5">
+          {#each $httpTasks as task (task.id)}
+            {@const pct = task.total_bytes > 0 ? Math.min(100, Math.round((task.downloaded_bytes / task.total_bytes) * 100)) : 0}
+            <div class="p-4 rounded-2xl bg-slate-900/90 border border-cyan-500/30 shadow-xl shadow-cyan-500/5 space-y-3 transition-all">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                  <div class="w-11 h-11 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 flex items-center justify-center font-mono font-extrabold text-xs shrink-0 shadow-sm">
+                    <Download class="w-5 h-5 text-cyan-400" />
+                  </div>
+
+                  <div class="min-w-0">
+                    <h4 class="text-sm font-bold text-white truncate" title={task.filename || task.url}>
+                      {task.filename || 'Direct Download'}
+                    </h4>
+
+                    <div class="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
+                      <span class="text-[10px] font-mono uppercase px-1.5 py-0.2 rounded {task.status === 'completed' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' : task.status === 'paused' ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30' : task.status === 'error' ? 'bg-rose-500/10 text-rose-300 border border-rose-500/30' : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/30'}">
+                        {task.status.toUpperCase()}
+                      </span>
+                      <span>•</span>
+                      <span class="text-[10px] font-mono text-cyan-300 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800/40">
+                        {task.connections > 1 ? `${task.connections}x Segments` : 'Single Stream'}
+                      </span>
+                      {#if task.download_speed_bps > 0 && task.status === 'downloading'}
+                        <span>•</span>
+                        <span class="text-xs font-mono text-emerald-400 flex items-center gap-0.5">
+                          <Zap class="w-3 h-3" />
+                          {formatBytes(task.download_speed_bps)}/s
+                        </span>
+                      {/if}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Action Controls -->
+                <div class="flex items-center gap-2 shrink-0">
+                  {#if task.status === 'downloading'}
+                    <button
+                      type="button"
+                      on:click={() => handlePauseHttp(task.id)}
+                      class="text-xs text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded-xl flex items-center gap-1 transition cursor-pointer"
+                      title="Pause download"
+                    >
+                      <Pause class="w-3.5 h-3.5" />
+                      <span>Pause</span>
+                    </button>
+                  {:else if task.status === 'paused'}
+                    <button
+                      type="button"
+                      on:click={() => handleResumeHttp(task.id)}
+                      class="text-xs text-emerald-300 hover:text-emerald-200 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 px-3 py-1 rounded-xl flex items-center gap-1 transition cursor-pointer"
+                      title="Resume download"
+                    >
+                      <Play class="w-3.5 h-3.5" />
+                      <span>Resume</span>
+                    </button>
+                  {/if}
+
+                  {#if task.save_path}
+                    <button
+                      type="button"
+                      on:click={() => raydropApi.openFolderPath(task.save_path)}
+                      class="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                      title="Open destination folder"
+                    >
+                      <FolderOpen class="w-4 h-4" />
+                    </button>
+                  {/if}
+
+                  <button
+                    type="button"
+                    on:click={() => handleDeleteHttp(task.id)}
+                    class="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl transition cursor-pointer"
+                    title="Remove download task"
+                  >
+                    <XCircle class="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Progress Bar -->
+              <div class="space-y-1.5">
+                <div class="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
+                  <div
+                    class="bg-gradient-to-r from-cyan-500 to-indigo-500 h-full transition-all duration-300"
+                    style="width: {pct}%"
+                  ></div>
+                </div>
+
+                <div class="flex items-center justify-between text-xs text-slate-400 font-mono">
+                  <span>{pct}%</span>
+                  <span>
+                    {formatBytes(task.downloaded_bytes)}
+                    {#if task.total_bytes > 0}
+                      / {formatBytes(task.total_bytes)}
+                    {/if}
+                  </span>
+                </div>
+              </div>
+
+              {#if task.error_message}
+                <div class="p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 flex items-center gap-2">
+                  <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
+                  <span class="truncate">{task.error_message}</span>
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
+    <!-- 0. BitTorrent Downloads (Magnet Swarm Engine) -->
+    {#if $torrentTasks.length > 0}
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <Magnet class="w-4 h-4 text-amber-400" />
+            <h3 class="text-xs font-bold uppercase tracking-wider text-amber-400">
+              BitTorrent Downloads ({$torrentTasks.length})
+            </h3>
+          </div>
+          <span class="text-xs text-slate-400 font-mono">P2P Swarm Engine</span>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-3.5">
+          {#each $torrentTasks as task (task.id)}
+            {@const pct = Math.round(task.progress * 100)}
+            <div class="p-4 rounded-2xl bg-slate-900/90 border border-amber-500/30 shadow-xl shadow-amber-500/5 space-y-3 transition-all">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                  <div class="w-11 h-11 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 flex items-center justify-center font-mono font-extrabold text-xs shrink-0 shadow-sm">
+                    <Magnet class="w-5 h-5 text-amber-400" />
+                  </div>
+
+                  <div class="min-w-0">
+                    <h4 class="text-sm font-bold text-white truncate" title={task.name}>
+                      {task.name}
+                    </h4>
+
+                    <div class="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
+                      <span class="text-[10px] font-mono uppercase px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                        {task.status.toUpperCase()}
+                      </span>
+                      <span>•</span>
+                      <span class="text-xs font-mono text-cyan-300">
+                        {task.peers_connected} peer(s)
+                      </span>
+                      {#if task.download_speed_bps > 0}
+                        <span>•</span>
+                        <span class="text-xs font-mono text-emerald-400 flex items-center gap-0.5">
+                          <Zap class="w-3 h-3" />
+                          {formatBytes(task.download_speed_bps)}/s
+                        </span>
+                      {/if}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Action Controls -->
+                <div class="flex items-center gap-2 shrink-0">
+                  {#if task.status === 'downloading' || task.status === 'fetching_metadata'}
+                    <button
+                      type="button"
+                      on:click={() => handlePauseTorrent(task.id)}
+                      class="text-xs text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded-xl flex items-center gap-1 transition cursor-pointer"
+                      title="Pause download"
+                    >
+                      <Pause class="w-3.5 h-3.5" />
+                      <span>Pause</span>
+                    </button>
+                  {:else if task.status === 'paused'}
+                    <button
+                      type="button"
+                      on:click={() => handleResumeTorrent(task.id)}
+                      class="text-xs text-emerald-300 hover:text-emerald-200 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 px-3 py-1 rounded-xl flex items-center gap-1 transition cursor-pointer"
+                      title="Resume download"
+                    >
+                      <Play class="w-3.5 h-3.5" />
+                      <span>Resume</span>
+                    </button>
+                  {/if}
+
+                  {#if task.save_path}
+                    <button
+                      type="button"
+                      on:click={() => raydropApi.openFolderPath(task.save_path)}
+                      class="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                      title="Open destination folder"
+                    >
+                      <FolderOpen class="w-4 h-4" />
+                    </button>
+                  {/if}
+
+                  <button
+                    type="button"
+                    on:click={() => handleDeleteTorrent(task.id)}
+                    class="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl transition cursor-pointer"
+                    title="Remove torrent task"
+                  >
+                    <XCircle class="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Progress Bar -->
+              <div class="space-y-1.5">
+                <div class="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
+                  <div
+                    class="bg-gradient-to-r from-amber-500 to-orange-500 h-full transition-all duration-300"
+                    style="width: {pct}%"
+                  ></div>
+                </div>
+
+                <div class="flex items-center justify-between text-[11px] font-mono text-slate-400">
+                  <span>
+                    {task.total_bytes > 0
+                      ? `${formatBytes(task.downloaded_bytes)} / ${formatBytes(task.total_bytes)}`
+                      : 'Connecting to swarm...'}
+                  </span>
+                  <span class="text-white font-bold">{pct}%</span>
+                </div>
+              </div>
+            </div>
+          {/each}
+        </div>
       </div>
     {/if}
 

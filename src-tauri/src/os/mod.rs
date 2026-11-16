@@ -59,4 +59,8 @@ pub fn set_win11_direct_menu(enabled: bool) -> Result<bool, String> {
     }
 }
 
+pub fn register_magnet_protocol() -> Result<String, String> {
+    win_registry::register_magnet_protocol_handler()
+}
+
 

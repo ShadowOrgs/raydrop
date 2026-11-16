@@ -1,0 +1,91 @@
+import { writable, derived } from 'svelte/store';
+import {
+  raydropApi,
+  type TorrentTaskInfo,
+  type HttpDownloadTaskInfo,
+} from '../utils/tauri-ipc';
+
+export const torrentTasks = writable<TorrentTaskInfo[]>([]);
+export const httpTasks = writable<HttpDownloadTaskInfo[]>([]);
+export const downloadModalOpen = writable<boolean>(false);
+export const prefilledDownloadUrl = writable<string>('');
+
+// Backward compatibility alias
+export const magnetModalOpen = downloadModalOpen;
+export const prefilledMagnetUrl = prefilledDownloadUrl;
+
+export async function initDownloadStore() {
+  // 1. Initial Load Torrents
+  try {
+    const list = await raydropApi.listTorrentTasks();
+    if (list && Array.isArray(list)) {
+      torrentTasks.set(list);
+    }
+  } catch (err) {
+    console.warn('Failed to load initial torrent tasks:', err);
+  }
+
+  // 2. Initial Load HTTP Downloads
+  try {
+    const list = await raydropApi.listHttpDownloads();
+    if (list && Array.isArray(list)) {
+      httpTasks.set(list);
+    }
+  } catch (err) {
+    console.warn('Failed to load initial HTTP downloads:', err);
+  }
+
+  // 3. Check for any magnet link passed from CLI / browser protocol on startup
+  try {
+    const pending = await raydropApi.getPendingMagnetLink();
+    if (pending) {
+      prefilledDownloadUrl.set(pending);
+      downloadModalOpen.set(true);
+    }
+  } catch (_) {}
+
+  // 4. Listen for real-time background BitTorrent stats broadcast
+  try {
+    await raydropApi.listenEvent<TorrentTaskInfo[]>('torrent_stats_update', (tasks) => {
+      if (tasks && Array.isArray(tasks)) {
+        torrentTasks.set(tasks);
+      }
+    });
+  } catch (err) {
+    console.warn('Failed to register torrent_stats_update listener:', err);
+  }
+
+  // 5. Listen for real-time background HTTP download stats broadcast
+  try {
+    await raydropApi.listenEvent<HttpDownloadTaskInfo[]>('http_download_stats_update', (tasks) => {
+      if (tasks && Array.isArray(tasks)) {
+        httpTasks.set(tasks);
+      }
+    });
+  } catch (err) {
+    console.warn('Failed to register http_download_stats_update listener:', err);
+  }
+
+  // 6. Listen for external browser magnet clicks received by secondary instance
+  try {
+    await raydropApi.listenEvent<string>('open_magnet_link', (magnetUrl) => {
+      if (magnetUrl) {
+        prefilledDownloadUrl.set(magnetUrl);
+        downloadModalOpen.set(true);
+      }
+    });
+  } catch (err) {
+    console.warn('Failed to register open_magnet_link listener:', err);
+  }
+}
+
+// Backward compatibility alias
+export const initTorrentStore = initDownloadStore;
+
+export const activeTorrents = derived(torrentTasks, ($tasks) =>
+  $tasks.filter((t) => t.status === 'downloading' || t.status === 'fetching_metadata')
+);
+
+export const activeHttpDownloads = derived(httpTasks, ($tasks) =>
+  $tasks.filter((t) => t.status === 'downloading' || t.status === 'starting')
+);

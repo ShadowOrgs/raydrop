@@ -65,7 +65,7 @@
           "priceCurrency": "USD"
         },
         "description": "High-speed, zero-cloud peer-to-peer (P2P) file transfer and real-time synchronization tool for Windows, macOS, Linux, and Android.",
-        "softwareVersion": "1.2.8",
+        "softwareVersion": "1.2.9",
         "url": "https://raydrop.web.id",
         "downloadUrl": "https://github.com/asepindrak/raydrop/releases/latest",
         "license": "https://opensource.org/licenses/MIT",
@@ -1196,7 +1196,7 @@
       <div class="hero-copy">
         <a class="badge" href="https://github.com/asepindrak/raydrop/releases/latest" target="_blank" rel="noopener">
           <span class="badge-dot"></span>
-          <span id="badgeText">New in v1.2.8: Interactive Clipboard Image Actions, Native Save & Copy Feedback</span>
+          <span id="badgeText">New in v1.2.9: IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Magnet Engine</span>
         </a>
 
         <h1 class="hero-title">
@@ -1237,7 +1237,7 @@
           <span>&bull;</span>
           <span data-i18n="hero_meta_mit">Free & Open Source (MIT)</span>
           <span>&bull;</span>
-          <span id="heroReleaseVer">v1.2.8</span>
+          <span id="heroReleaseVer">v1.2.9</span>
         </p>
       </div>
 
@@ -1481,7 +1481,7 @@
 
             <div class="dl-meta">
               <span id="msiSize">Size: ~9.1 MB</span>
-              <span id="msiVersion">v1.2.8</span>
+              <span id="msiVersion">v1.2.9</span>
             </div>
           </div>
 
@@ -1515,7 +1515,7 @@
 
             <div class="dl-meta">
               <span id="dmgSize">Size: ~12 MB</span>
-              <span id="dmgVersion">v1.2.8</span>
+              <span id="dmgVersion">v1.2.9</span>
             </div>
           </div>
 
@@ -1555,7 +1555,7 @@
 
             <div class="dl-meta">
               <span id="linuxSize">Size: ~8.5 MB</span>
-              <span id="linuxVersion">v1.2.8</span>
+              <span id="linuxVersion">v1.2.9</span>
             </div>
           </div>
 
@@ -1589,7 +1589,7 @@
 
             <div class="dl-meta">
               <span id="apkSize">Size: ~15 MB</span>
-              <span id="apkVersion">v1.2.8</span>
+              <span id="apkVersion">v1.2.9</span>
             </div>
           </div>
         </div>
@@ -1793,7 +1793,7 @@
     };
 
     let currentLang = 'en';
-    let currentTag = 'v1.2.8';
+    let currentTag = 'v1.2.9';
 
     function changeLanguage(lang) {
       if (!translations[lang]) return;
@@ -1913,7 +1913,7 @@
         const res = await fetch('https://api.github.com/repos/asepindrak/raydrop/releases/latest');
         if (!res.ok) return;
         const data = await res.json();
-        currentTag = data.tag_name || 'v1.2.8';
+        currentTag = data.tag_name || 'v1.2.9';
 
         // Update texts
         document.getElementById('badgeText').innerText = translations[currentLang].badge_prefix + currentTag + translations[currentLang].badge_suffix;

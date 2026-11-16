@@ -18,7 +18,7 @@ def get_git_token():
             return line[len("password="):].strip()
     return None
 
-def update_release(tag="v1.2.8", title=None, body=None):
+def update_release(tag="v1.2.9", title=None, body=None):
     token = get_git_token()
     if not token:
         print("ERROR: GitHub token not found in git credentials.", file=sys.stderr)
@@ -75,18 +75,18 @@ def update_release(tag="v1.2.8", title=None, body=None):
             raise
 
 if __name__ == "__main__":
-    tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.8"
+    tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.9"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Interactive Clipboard Image Actions, Native File Save & Feedback Animation"
+    title = f"Raydrop {tag}: IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Magnet Engine"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Interactive Clipboard Image Actions & Native File Save</h2>
+<h2 align="center">Raydrop {tag}: IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Magnet Engine</h2>
 
 <p align="center">
-  <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage.</strong><br/>
+  <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage & High-Speed Multi-Threaded Download Manager.</strong><br/>
   Available natively on <b>Windows</b>, <b>macOS</b>, <b>Linux</b>, and <b>Android</b>.
 </p>
 
@@ -106,20 +106,24 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🖼️ Interactive Clipboard Image Actions & Visual Feedback
-- **Animated Confirmation for Copy:** Clicking "Copy Image" on chat bubbles or within the full-screen lightbox modal now triggers an instant green checkmark confirmation (`Copied!`) and writes the true bitmap image into the OS clipboard.
-- **Loader Spinner & Checkmark for Downloads:** The "Download" button now features an interactive real-time loading spinner (`Loader2`) while writing the image, followed by an animated success checkmark.
-- **Direct OS Downloads Directory Persistence:** Image files are decoded natively in Rust via the `save_base64_image` Tauri IPC command and saved directly into the user's Downloads directory, bypassing WebView2 data URL limitations.
-- **Resilient Multi-Layer Clipboard Fallback:** Built-in retries handle temporary OS clipboard locks on Windows, with automatic fallbacks to HTML5 Clipboard items and text representations to guarantee responsive UI feedback.
+#### ⚡ IDM-Style HTTP Multi-Segment Parallel Download Accelerator
+- **Multi-Connection Segmented Acceleration:** Accelerate direct web downloads by splitting files into 4–8 concurrent chunks using HTTP `Range: bytes=X-Y` requests, maximizing throughput on high-bandwidth fiber connections.
+- **Zero-Stitch Direct File Write:** Chunks are written directly into target file byte offsets via native OS file handles (`seek_write` on Windows, `write_all_at` on Unix) without needing slow temporary file joins or disk re-copying.
+- **Smart Fallback Single-Stream:** Automatically detects whether servers support partial content (`Accept-Ranges: bytes`) and falls back to robust single-stream streaming without download interruption.
+- **Full Lifecycle Controls:** Pause, resume, cancel, and open downloaded folders with live real-time speed monitoring and progress bars.
 
-#### 🌐 Universal Web Share Over Internet (Public Relay Tunnel)
-- **Zero-App Browser Downloads Anywhere in the World:** Anyone can download your shared files directly in Safari, Chrome, or Firefox without installing Raydrop or joining the same Wi-Fi. Simply share the QR code or link (`https://stun.raydrop.web.id/share/...`), and files stream on-demand directly from your device over an encrypted relay tunnel.
-- **1-Click Copy QR Code Image:** Copy the dynamic QR code PNG bitmap directly to your operating system clipboard with a single button, ready for instant paste (`Ctrl+V`) into WhatsApp, Discord, Telegram, or email.
-- **Instant Social Media Share Buttons:** Share links directly to **WhatsApp**, **Telegram**, **Twitter / X**, and **Email** with one click.
-- **Dual-Mode Toggle:** Effortlessly switch between **Over Internet (Public Relay)** and **Local Wi-Fi Only** modes.
+#### 🧲 BitTorrent Swarm Engine & Native Magnet Link Deep Linking
+- **Native librqbit Integration:** Full BitTorrent peer-to-peer swarm downloading embedded directly in Raydrop with low memory footprint and high I/O throughput.
+- **OS Protocol Association (`magnet:`):** Windows Registry protocol handler registers Raydrop as the default magnet link handler, automatically opening links clicked in Chrome, Firefox, Edge, or Brave.
+- **Single-Instance Deep Link Relay:** Clicking magnet links while Raydrop is already running seamlessly opens the download prompt without opening duplicate application windows.
+- **Live Swarm Metrics:** Live peer counter, download speed indicator, seed status, and pause/resume capabilities.
 
-#### ⚡ Responsive UI Layout & Overflow Fix
-- **Streamlined Top Transfer Hub:** Eliminated the redundant Quick Send bar from the main dashboard, removing horizontal layout overflow and guaranteeing a clean, responsive interface on laptops, tablets, and phones.
-- **Elastic Drop Zone:** File drag-and-drop zone dynamically adapts to window resizing without clipping text or border boundaries.
+#### 🎯 Unified URL / Magnet Downloader Modal
+- **Smart Input Detection:** Simply paste any link into the `+ Add URL / Magnet` modal—Raydrop automatically detects whether it's an HTTP/HTTPS URL or a `magnet:?xt=` link, configures connections, and initiates the optimal download pipeline.
+
+#### 🖼️ Universal Clipboard Image Preview & Fix
+- **Robust Base64 Image Detection:** Resolved issue where raw base64 data strings were shown in Universal Clipboard bubbles. Images and screenshots are now consistently detected and rendered as interactive image cards.
+- **Instant Copy & Download:** One-click bitmap copying into system clipboard (`Ctrl+V` ready) and native file download to Downloads folder with visual animated checkmarks.
+"""
 """
     update_release(tag=tag, title=title, body=body)

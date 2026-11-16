@@ -1661,3 +1661,97 @@ pub async fn trigger_folder_sync(
     Ok(session_id)
 }
 
+#[tauri::command]
+pub async fn add_torrent_magnet(
+    state: State<'_, Arc<AppState>>,
+    magnet_url: String,
+    custom_path: Option<String>,
+) -> Result<crate::torrent::TorrentTaskInfo, String> {
+    state.torrent_manager.add_magnet(&magnet_url, custom_path).await
+}
+
+#[tauri::command]
+pub async fn list_torrent_tasks(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::torrent::TorrentTaskInfo>, String> {
+    Ok(state.torrent_manager.list_torrents().await)
+}
+
+#[tauri::command]
+pub async fn pause_torrent_task(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> Result<(), String> {
+    state.torrent_manager.pause_torrent(&id).await
+}
+
+#[tauri::command]
+pub async fn resume_torrent_task(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> Result<(), String> {
+    state.torrent_manager.resume_torrent(&id).await
+}
+
+#[tauri::command]
+pub async fn delete_torrent_task(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    delete_files: bool,
+) -> Result<(), String> {
+    state.torrent_manager.delete_torrent(&id, delete_files).await
+}
+
+#[tauri::command]
+pub fn get_pending_magnet_link(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<String>, String> {
+    let mut lock = state.pending_magnet_link.lock().map_err(|e| e.to_string())?;
+    Ok(lock.take())
+}
+
+#[tauri::command]
+pub async fn add_http_download(
+    state: State<'_, Arc<AppState>>,
+    url: String,
+    custom_save_dir: Option<String>,
+    custom_filename: Option<String>,
+) -> Result<crate::http_downloader::HttpDownloadTaskInfo, String> {
+    state
+        .http_downloader
+        .add_download(&url, custom_save_dir, custom_filename)
+        .await
+}
+
+#[tauri::command]
+pub async fn list_http_downloads(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::http_downloader::HttpDownloadTaskInfo>, String> {
+    Ok(state.http_downloader.list_tasks().await)
+}
+
+#[tauri::command]
+pub async fn pause_http_download(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> Result<(), String> {
+    state.http_downloader.pause_task(&id).await
+}
+
+#[tauri::command]
+pub async fn resume_http_download(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> Result<(), String> {
+    state.http_downloader.resume_task(&id).await
+}
+
+#[tauri::command]
+pub async fn delete_http_download(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    delete_file: bool,
+) -> Result<(), String> {
+    state.http_downloader.delete_task(&id, delete_file).await
+}
+

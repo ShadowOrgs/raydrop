@@ -149,6 +149,50 @@ pub fn set_win11_classic_menu(enabled: bool) -> Result<bool, String> {
     Ok(enabled)
 }
 
+#[cfg(target_os = "windows")]
+pub fn register_magnet_protocol_handler() -> Result<String, String> {
+    use std::env;
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let exe_path = env::current_exe().map_err(|e| e.to_string())?;
+    let exe_str = exe_path.to_string_lossy().to_string();
+    let command_str = format!("\"{}\" \"%1\"", exe_str);
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let (magnet_key, _) = hkcu
+        .create_subkey(r"Software\Classes\magnet")
+        .map_err(|e| e.to_string())?;
+
+    magnet_key
+        .set_value("", &"URL:BitTorrent Magnet URL")
+        .map_err(|e| e.to_string())?;
+    magnet_key
+        .set_value("URL Protocol", &"")
+        .map_err(|e| e.to_string())?;
+
+    let (icon_key, _) = magnet_key
+        .create_subkey("DefaultIcon")
+        .map_err(|e| e.to_string())?;
+    icon_key
+        .set_value("", &format!("\"{}\",0", exe_str))
+        .map_err(|e| e.to_string())?;
+
+    let (cmd_key, _) = magnet_key
+        .create_subkey(r"shell\open\command")
+        .map_err(|e| e.to_string())?;
+    cmd_key
+        .set_value("", &command_str)
+        .map_err(|e| e.to_string())?;
+
+    Ok("Successfully registered Raydrop as magnet link handler in Windows Registry".to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn register_magnet_protocol_handler() -> Result<String, String> {
+    Ok("Magnet protocol registration is native to Windows Registry".to_string())
+}
+
 #[cfg(not(target_os = "windows"))]
 pub fn is_win11_classic_menu_enabled() -> bool {
     false

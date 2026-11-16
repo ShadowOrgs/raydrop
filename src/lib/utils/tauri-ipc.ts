@@ -167,6 +167,38 @@ export interface FolderSyncTask {
   created_at: number;
 }
 
+export interface TorrentTaskInfo {
+  id: string;
+  name: string;
+  magnet_url: string;
+  total_bytes: number;
+  downloaded_bytes: number;
+  uploaded_bytes: number;
+  download_speed_bps: number;
+  upload_speed_bps: number;
+  progress: number;
+  status: 'fetching_metadata' | 'downloading' | 'paused' | 'completed' | 'error' | string;
+  peers_connected: number;
+  save_path: string;
+  error?: string | null;
+  created_at: number;
+}
+
+export interface HttpDownloadTaskInfo {
+  id: string;
+  url: string;
+  filename: string;
+  total_bytes: number;
+  downloaded_bytes: number;
+  download_speed_bps: number;
+  progress: number;
+  status: 'starting' | 'downloading' | 'paused' | 'completed' | 'error' | string;
+  segments_count: number;
+  save_path: string;
+  error?: string | null;
+  created_at: number;
+}
+
 export interface TransferProgressEvent {
   session_id: string;
   peer_device_id: string;
@@ -334,6 +366,35 @@ export const raydropApi = {
     invoke<void>('delete_folder_sync_task', { taskId }),
   triggerFolderSync: (taskId: string) =>
     invoke<string>('trigger_folder_sync', { taskId }),
+  addTorrentMagnet: (magnetUrl: string, customPath?: string) =>
+    invoke<TorrentTaskInfo>('add_torrent_magnet', {
+      magnetUrl,
+      customPath: customPath ?? null,
+    }),
+  listTorrentTasks: () =>
+    invoke<TorrentTaskInfo[]>('list_torrent_tasks'),
+  pauseTorrentTask: (id: string) =>
+    invoke<void>('pause_torrent_task', { id }),
+  resumeTorrentTask: (id: string) =>
+    invoke<void>('resume_torrent_task', { id }),
+  deleteTorrentTask: (id: string, deleteFiles: boolean) =>
+    invoke<void>('delete_torrent_task', { id, deleteFiles }),
+  getPendingMagnetLink: () =>
+    invoke<string | null>('get_pending_magnet_link'),
+  addHttpDownload: (url: string, customSaveDir?: string, customFilename?: string) =>
+    invoke<HttpDownloadTaskInfo>('add_http_download', {
+      url,
+      customSaveDir: customSaveDir ?? null,
+      customFilename: customFilename ?? null,
+    }),
+  listHttpDownloads: () =>
+    invoke<HttpDownloadTaskInfo[]>('list_http_downloads'),
+  pauseHttpDownload: (id: string) =>
+    invoke<void>('pause_http_download', { id }),
+  resumeHttpDownload: (id: string) =>
+    invoke<void>('resume_http_download', { id }),
+  deleteHttpDownload: (id: string, deleteFile: boolean) =>
+    invoke<void>('delete_http_download', { id, deleteFile }),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>
     listen<T>(event, (e) => handler(e.payload)),
 };

@@ -45,6 +45,9 @@ pub struct AppState {
     pub pending_wan_candidates: Mutex<HashMap<String, oneshot::Sender<WanCandidateResponse>>>,
     pub queued_cli_files: Mutex<Vec<String>>,
     pub active_web_share: Mutex<Option<Arc<AtomicBool>>>,
+    pub torrent_manager: Arc<crate::torrent::TorrentManager>,
+    pub pending_magnet_link: Mutex<Option<String>>,
+    pub http_downloader: Arc<crate::http_downloader::HttpDownloadManager>,
 }
 
 impl AppState {
