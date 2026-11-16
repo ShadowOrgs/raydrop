@@ -800,6 +800,7 @@ pub struct UpdateCheckResult {
     pub download_url: Option<String>,
     pub asset_name: Option<String>,
     pub asset_size: Option<u64>,
+    pub is_building: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -881,7 +882,7 @@ pub async fn check_app_update(app: AppHandle) -> Result<UpdateCheckResult, Strin
         .to_string();
 
     let clean_latest = tag_name.trim_start_matches('v').trim_start_matches('V').to_string();
-    let has_update = is_newer_version(&clean_latest, &current_version);
+    let is_newer = is_newer_version(&clean_latest, &current_version);
 
     let mut download_url = None;
     let mut asset_name = None;
@@ -935,6 +936,12 @@ pub async fn check_app_update(app: AppHandle) -> Result<UpdateCheckResult, Strin
         }
     }
 
+    // A real, actionable update ONLY exists if:
+    // 1. The remote version is strictly newer than current_version
+    // 2. AND the installer binary for the user's OS has completed compilation and is uploaded to GitHub release assets!
+    let has_update = is_newer && download_url.is_some();
+    let is_building = is_newer && download_url.is_none();
+
     Ok(UpdateCheckResult {
         has_update,
         current_version,
@@ -946,6 +953,7 @@ pub async fn check_app_update(app: AppHandle) -> Result<UpdateCheckResult, Strin
         download_url,
         asset_name,
         asset_size,
+        is_building,
     })
 }
 

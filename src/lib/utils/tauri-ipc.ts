@@ -231,6 +231,7 @@ export interface UpdateCheckResult {
   download_url: string | null;
   asset_name: string | null;
   asset_size: number | null;
+  is_building?: boolean;
 }
 
 export interface UpdateProgressPayload {

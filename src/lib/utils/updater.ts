@@ -42,8 +42,15 @@ export async function checkForUpdates(manual: boolean = false): Promise<boolean>
       return true;
     } else {
       if (manual) {
-        updateStatusMessage.set(`Raydrop v${res.current_version} is up to date!`);
-        setTimeout(() => updateStatusMessage.set(''), 4000);
+        if (res.is_building) {
+          updateStatusMessage.set(
+            `Raydrop ${res.latest_version} has been published and installers are currently compiling on GitHub Actions. Please check back shortly!`
+          );
+          setTimeout(() => updateStatusMessage.set(''), 6000);
+        } else {
+          updateStatusMessage.set(`Raydrop v${res.current_version} is up to date!`);
+          setTimeout(() => updateStatusMessage.set(''), 4000);
+        }
       }
       return false;
     }
