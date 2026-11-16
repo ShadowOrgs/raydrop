@@ -18,7 +18,7 @@ def get_git_token():
             return line[len("password="):].strip()
     return None
 
-def update_release(tag="v1.2.10", title=None, body=None):
+def update_release(tag="v1.2.11", title=None, body=None):
     token = get_git_token()
     if not token:
         print("ERROR: GitHub token not found in git credentials.", file=sys.stderr)
@@ -75,18 +75,18 @@ def update_release(tag="v1.2.10", title=None, body=None):
             raise
 
 if __name__ == "__main__":
-    tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.10"
+    tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.11"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Startup Crash Fix, IDM-Style HTTP Accelerator & Magnet Engine"
+    title = f"Raydrop {tag}: Android Build Fix, Transfer UI Overhaul & Browser Extension Integration"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Startup Crash Fix, IDM-Style HTTP Accelerator & Magnet Engine</h2>
+<h2 align="center">Raydrop {tag}: Android Build Fix, Transfer UI Overhaul & Browser Extension Integration</h2>
 
 <p align="center">
-  <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage & High-Speed Multi-Threaded Download Manager.</strong><br/>
+  <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
   Available natively on <b>Windows</b>, <b>macOS</b>, <b>Linux</b>, and <b>Android</b>.
 </p>
 
@@ -106,31 +106,24 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🛠️ Critical Startup Crash Hotfix
-- **Resolved "no reactor running" Panic:** Fixed an immediate crash on application startup where background stats broadcast tickers called `tokio::spawn` outside of a Tokio runtime context during GUI initialization. Replaced with Tauri's native managed async runtime `tauri::async_runtime::spawn`, guaranteeing stable and reliable application launch.
+#### 🤖 Android CI Cross-Compilation Fix (`openssl-sys` Isolation)
+- **Resolved Android NDK Compilation Failure:** Isolated `librqbit` BitTorrent engine into desktop-only platform configurations (`cfg(not(any(target_os = "android", target_os = "ios")))`).
+- **Eliminated OpenSSL Native C Requirement:** Replaced native C OpenSSL dependency chain with safe pure Rust TLS and mobile stubs on Android/iOS, ensuring 100% clean CI/CD APK generation across all Android targets (`aarch64-linux-android`, `armv7-linux-androideabi`, `x86_64-linux-android`).
 
-#### 🌐 Official Chrome & Edge Browser Extension (Manifest V3)
-- **Automatic Download Interception (IDM Mode):** Browser extension seamlessly detects and intercepts file downloads (ZIP, RAR, 7Z, ISO, EXE, APK, MP4, MKV, PDF, etc.) in Google Chrome, Microsoft Edge, Brave, and Opera, transferring them directly to Raydrop's 8-connection parallel accelerator.
-- **In-App 1-Click Extension Installer:** Added a dedicated "Extension" button in Raydrop's dashboard and Settings modal with a guided 30-second setup, 1-click extension folder reveal, and live desktop bridge health indicator (`http://127.0.0.1:45321`).
-- **Context Menu Integration:** Right-click any link or media file in your browser to immediately choose "Download with Raydrop Accelerator".
+#### 🎨 Transfer Dashboard UI Overhaul & Full-Width Drop Zone
+- **Dedicated Full-Width Drop Zone:** Relocated the file and folder drag-and-drop zone to a dedicated 100% width horizontal strip beneath the action bar. Solved container horizontal overflow and eliminated button cramping.
+- **Compact & Organized Action Toolbar:** Downscaled and streamlined action buttons into sleek, logically grouped pill controls (`Send Files`, `Folder`, `Web Share`, `Clipboard`, `Folder Sync` + `+ Add URL / Torrent`, `Extension`).
 
-#### ⚡ IDM-Style HTTP Multi-Segment Parallel Download Accelerator
-- **Multi-Connection Segmented Acceleration:** Accelerate direct web downloads by splitting files into 4–8 concurrent chunks using HTTP `Range: bytes=X-Y` requests, maximizing throughput on high-bandwidth fiber connections.
-- **Zero-Stitch Direct File Write:** Chunks are written directly into target file byte offsets via native OS file handles (`seek_write` on Windows, `write_all_at` on Unix) without needing slow temporary file joins or disk re-copying.
-- **Smart Fallback Single-Stream:** Automatically detects whether servers support partial content (`Accept-Ranges: bytes`) and falls back to robust single-stream streaming without download interruption.
-- **Full Lifecycle Controls:** Pause, resume, cancel, and open downloaded folders with live real-time speed monitoring and progress bars.
+#### 🌐 100% English Language Standardisation (i18n)
+- **Universal English Localization:** Fully translated all remaining in-app tutorial guides, the 30-second browser extension installation wizard, contact blocking banners, chat timestamps, and file storage notifications to English.
 
-#### 🧲 BitTorrent Swarm Engine & Native Magnet Link Deep Linking
-- **Native librqbit Integration:** Full BitTorrent peer-to-peer swarm downloading embedded directly in Raydrop with low memory footprint and high I/O throughput.
-- **OS Protocol Association (`magnet:`):** Windows Registry protocol handler registers Raydrop as the default magnet link handler, automatically opening links clicked in Chrome, Firefox, Edge, or Brave.
-- **Single-Instance Deep Link Relay:** Clicking magnet links while Raydrop is already running seamlessly opens the download prompt without opening duplicate application windows.
-- **Live Swarm Metrics:** Live peer counter, download speed indicator, seed status, and pause/resume capabilities.
+#### 🧩 Official Chrome & Edge Browser Extension (Manifest V3)
+- **Automatic Download Interception (IDM Mode):** Browser extension detects and captures downloads from Chrome, Edge, Brave, and Opera into Raydrop's 8-connection parallel accelerator.
+- **In-App 1-Click Installer:** Built-in modal with 1-click extension folder reveal and local desktop loopback bridge health monitor (`http://127.0.0.1:45321`).
+- **Browser Context Menus:** Right-click any link or media file to download directly via Raydrop Accelerator.
 
-#### 🎯 Unified URL / Magnet Downloader Modal
-- **Smart Input Detection:** Simply paste any link into the `+ Add URL / Magnet` modal—Raydrop automatically detects whether it's an HTTP/HTTPS URL or a `magnet:?xt=` link, configures connections, and initiates the optimal download pipeline.
-
-#### 🖼️ Universal Clipboard Image Preview & Fix
-- **Robust Base64 Image Detection:** Resolved issue where raw base64 data strings were shown in Universal Clipboard bubbles. Images and screenshots are now consistently detected and rendered as interactive image cards.
-- **Instant Copy & Download:** One-click bitmap copying into system clipboard (`Ctrl+V` ready) and native file download to Downloads folder with visual animated checkmarks.
+#### ⚡ IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Magnet Engine
+- **Multi-Connection Segmented Acceleration:** Splitting downloads into 4–8 concurrent chunks using HTTP `Range: bytes=X-Y` requests with native OS zero-stitching file writes.
+- **Embedded BitTorrent Swarm Engine:** Full BitTorrent peer-to-peer downloading powered by `librqbit v9.1.0` with OS `magnet:` protocol association and live swarm metrics.
 """
     update_release(tag=tag, title=title, body=body)

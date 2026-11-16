@@ -149,11 +149,11 @@ $bodyText = @"
 - **Windows Setup Installer (`.msi`):** \`Raydrop_${ver}_x64_en-US.msi\`
 
 ### Features & Highlights in $tag
-- **IDM-Style HTTP Multi-Segment Parallel Download Accelerator:** Accelerate direct web downloads by splitting files into 4–8 concurrent chunks using HTTP Range requests. Direct file sparse writing via native OS file handles without temporary file stitching.
-- **BitTorrent Swarm Engine & Magnet Deep Linking:** Full BitTorrent peer-to-peer swarm downloading powered by librqbit v9.1.0. Automatic OS protocol association (magnet:), live peer counter, swarm speed metrics, and pause/resume lifecycle controls.
-- **Unified URL & Magnet Downloader:** Single modal (+ Add URL / Magnet) automatically detects whether a pasted link is an HTTP/HTTPS URL or a BitTorrent Magnet link.
-- **Universal Clipboard Image Fix:** Robust extraction and rendering of base64 clipboard images and screenshots directly in chat cards with interactive copy and download animations.
-- **Universal Web Share Over Internet:** Share files with anyone in the world via on-demand encrypted relay tunnel and QR code without requiring the recipient to install Raydrop.
+- **Android CI/CD Build Hotfix:** Isolated BitTorrent engine to desktop targets, eliminating OpenSSL cross-compilation errors on Android.
+- **Transfer Dashboard UI Overhaul:** Compact action toolbar and dedicated full-width drag-and-drop zone strip.
+- **Complete English Localization (i18n):** 100% English tutorial and application UI strings.
+- **Official Browser Extension (Manifest V3):** Automatic download interception in Chrome, Edge, Brave, and Opera with in-app 1-click installer.
+- **IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Swarm Engine:** Parallel chunk downloading with zero temporary stitching and embedded BitTorrent swarm downloading.
 "@
 
 # 7. Create or Get GitHub Release

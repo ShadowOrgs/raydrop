@@ -105,7 +105,7 @@ Connection: close\r\n\r\n";
         let json_body = serde_json::json!({
             "status": "ok",
             "app": "raydrop",
-            "version": "1.2.10",
+            "version": "1.2.11",
             "capabilities": ["http_segmented_accelerator", "torrent_magnet"]
         })
         .to_string();
