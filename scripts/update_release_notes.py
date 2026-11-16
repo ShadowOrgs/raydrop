@@ -125,5 +125,4 @@ if __name__ == "__main__":
 - **Robust Base64 Image Detection:** Resolved issue where raw base64 data strings were shown in Universal Clipboard bubbles. Images and screenshots are now consistently detected and rendered as interactive image cards.
 - **Instant Copy & Download:** One-click bitmap copying into system clipboard (`Ctrl+V` ready) and native file download to Downloads folder with visual animated checkmarks.
 """
-"""
     update_release(tag=tag, title=title, body=body)
