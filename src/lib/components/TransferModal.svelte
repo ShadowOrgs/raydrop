@@ -133,7 +133,7 @@
       activeMainTab.set("transfers");
     } catch (err: any) {
       console.error("Failed to initiate transfer:", err);
-      alert("Gagal mengirim file: " + (err?.toString() || "Unknown error"));
+      alert("Failed to send files: " + (err?.toString() || "Unknown error"));
     }
   }
 </script>

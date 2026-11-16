@@ -157,7 +157,7 @@
           <div class="flex items-start justify-between gap-2">
             <div class="flex items-center gap-2 font-semibold text-slate-200">
               <span class="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center font-bold text-xs shrink-0">1</span>
-              <span>Buka Folder Ekstensi Raydrop</span>
+              <span>Open Raydrop Extension Folder</span>
             </div>
             <button
               type="button"
@@ -166,11 +166,11 @@
               class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-semibold flex items-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all text-xs cursor-pointer shrink-0"
             >
               <FolderOpen class="w-3.5 h-3.5" />
-              <span>{isOpeningFolder ? 'Membuka...' : 'Open Extension Folder'}</span>
+              <span>{isOpeningFolder ? 'Opening...' : 'Open Extension Folder'}</span>
             </button>
           </div>
           <p class="text-slate-400 text-[11px] leading-relaxed">
-            Klik tombol di atas untuk membuka folder ekstensi Raydrop di Windows Explorer. Biarkan folder tersebut tetap terbuka.
+            Click the button above to reveal the unpacked extension folder on your system. Keep this window or folder open.
           </p>
           {#if extensionPath}
             <div class="flex items-center justify-between p-2 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono text-cyan-300">
@@ -195,10 +195,10 @@
         <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 space-y-2">
           <div class="flex items-center gap-2 font-semibold text-slate-200">
             <span class="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center font-bold text-xs shrink-0">2</span>
-            <span>Buka Halaman Ekstensi di Browser</span>
+            <span>Open Extensions Page in Browser</span>
           </div>
           <p class="text-slate-400 text-[11px] leading-relaxed">
-            Buka halaman manajemen ekstensi di Google Chrome atau Microsoft Edge:
+            Navigate to the extensions management tab in Google Chrome, Microsoft Edge, or Brave:
           </p>
           <div class="flex flex-wrap items-center gap-2">
             <button
@@ -210,7 +210,7 @@
               class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 flex items-center gap-1.5 transition text-xs font-semibold cursor-pointer"
             >
               <Globe class="w-3.5 h-3.5 text-cyan-400" />
-              <span>{copiedChromeUrl ? 'Copied chrome://extensions' : 'Buka di Chrome'}</span>
+              <span>{copiedChromeUrl ? 'Copied chrome://extensions' : 'Open in Chrome'}</span>
             </button>
 
             <button
@@ -222,7 +222,7 @@
               class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 flex items-center gap-1.5 transition text-xs font-semibold cursor-pointer"
             >
               <Globe class="w-3.5 h-3.5 text-indigo-400" />
-              <span>{copiedEdgeUrl ? 'Copied edge://extensions' : 'Buka di Edge'}</span>
+              <span>{copiedEdgeUrl ? 'Copied edge://extensions' : 'Open in Edge'}</span>
             </button>
           </div>
         </div>
@@ -231,16 +231,16 @@
         <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 space-y-2.5">
           <div class="flex items-center gap-2 font-semibold text-slate-200">
             <span class="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center font-bold text-xs shrink-0">3</span>
-            <span>Aktifkan Developer Mode & Load Unpacked</span>
+            <span>Enable Developer Mode & Load Unpacked</span>
           </div>
           <ol class="list-decimal list-inside text-slate-400 text-[11px] space-y-1.5 leading-relaxed pl-1">
-            <li>Nyalakan sakelar <b>Developer mode</b> di pojok kanan atas browser Anda.</li>
-            <li>Klik tombol <b>Load unpacked</b> (atau <i>Muat yang belum dibongkar</i>) di pojok kiri atas.</li>
-            <li>Pilih folder <code>browser-extension</code> yang tadi terbuka di Langkah 1.</li>
+            <li>Turn on the <b>Developer mode</b> toggle switch in the top-right corner of your browser.</li>
+            <li>Click the <b>Load unpacked</b> button in the top-left toolbar.</li>
+            <li>Select the <code>browser-extension</code> folder from Step 1.</li>
           </ol>
           <div class="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2 text-emerald-300 text-[11px]">
             <CheckCircle2 class="w-4 h-4 shrink-0 text-emerald-400" />
-            <span>Selesai! Icon Raydrop akan muncul di toolbar browser dan otomatis mencegat setiap unduhan file besar (ZIP, ISO, MP4, EXE, dll) untuk di-akselerasi IDM.</span>
+            <span>Setup Complete! The Raydrop icon will appear in your browser toolbar, automatically intercepting file downloads (ZIP, ISO, MP4, EXE, etc.) into Raydrop's Multi-Segment Accelerator.</span>
           </div>
         </div>
       </div>
@@ -255,7 +255,7 @@
           on:click={() => ($browserExtensionModalOpen = false)}
           class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-semibold text-xs transition cursor-pointer"
         >
-          Tutup
+          Close
         </button>
       </div>
     </div>

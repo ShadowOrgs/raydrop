@@ -1168,14 +1168,14 @@
         <div class="p-3 bg-rose-950/60 border-t border-rose-800/80 flex items-center justify-between gap-3 text-xs text-rose-200">
           <div class="flex items-center gap-2">
             <ShieldAlert class="w-4 h-4 text-rose-400 shrink-0" />
-            <span>Kontak ini sedang diblokir. Pesan dan transfer file dari kontak ini tidak akan diterima.</span>
+            <span>This contact is blocked. Messages and file transfers from this contact will not be received.</span>
           </div>
           <button
             type="button"
             on:click={toggleBlockPeer}
             class="px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition shrink-0"
           >
-            Buka Blokir
+            Unblock
           </button>
         </div>
       {/if}
@@ -1268,7 +1268,7 @@
               on:keydown={handleKeyDown}
               disabled={isPeerBlocked}
               rows="1"
-              placeholder={isPeerBlocked ? "Kontak ini diblokir" : "Ketik pesan..."}
+              placeholder={isPeerBlocked ? "This contact is blocked" : "Type a message..."}
               class="w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 resize-none max-h-36 transition font-sans disabled:opacity-40"
             ></textarea>
           </div>

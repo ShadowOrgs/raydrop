@@ -254,7 +254,7 @@
     } catch (e: any) {
       const msg = e?.toString() || '';
       if (msg.includes('FolderPickerNotImplemented') || /Android|iPhone|iPad/i.test(navigator.userAgent)) {
-        actionError = 'Android tidak mendukung pemilihan folder langsung karena sandbox keamanan OS. Silakan gunakan tombol "Send Files" untuk memilih banyak file sekaligus.';
+        actionError = 'Direct folder selection is not supported on mobile platforms due to OS security sandboxing. Please use "Send Files" to select multiple files at once.';
       } else {
         actionError = msg || 'Failed to select folder';
       }

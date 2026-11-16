@@ -35,7 +35,7 @@
 
     updateErrorMessage.set('');
     updateDownloading.set(true);
-    updateStatusMessage.set(isAndroid ? 'Mengunduh file APK pembaruan...' : 'Connecting to GitHub Release server...');
+    updateStatusMessage.set(isAndroid ? 'Downloading update APK file...' : 'Connecting to GitHub Release server...');
 
     try {
       const result = await raydropApi.downloadAndInstallUpdate(

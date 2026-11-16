@@ -213,9 +213,9 @@
       console.error('Failed to send files:', err);
       const msg = err?.toString() || '';
       if (msg.includes('FolderPickerNotImplemented')) {
-        alert('Android tidak mendukung pemilihan folder langsung. Silakan gunakan tombol Kirim File.');
+        alert('Direct folder selection is not supported on Android. Please use Send Files.');
       } else {
-        alert('Gagal mengirim file: ' + (msg || 'Unknown error'));
+        alert('Failed to send files: ' + (msg || 'Unknown error'));
       }
     }
   }

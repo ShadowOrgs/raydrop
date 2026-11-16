@@ -308,7 +308,7 @@
           id: "open-file-" + Date.now(),
           peer_device_id: "local",
           direction: "incoming",
-          content: `📁 File berada di: ${filePath}. Buka aplikasi Files / Galeri untuk membukanya.`,
+          content: `📁 File saved at: ${filePath}. Open your Files or Gallery app to access it.`,
           msg_type: "text",
           is_read: true,
           created_at: Math.floor(Date.now() / 1000),
@@ -325,7 +325,7 @@
             id: "open-folder-" + Date.now(),
             peer_device_id: "local",
             direction: "incoming",
-            content: `📁 File tersimpan di folder Download (${folderPath}). Buka aplikasi Files / Pengelola File untuk mengaksesnya.`,
+            content: `📁 Files saved in Downloads folder (${folderPath}). Open your Files app to access them.`,
             msg_type: "text",
             is_read: true,
             created_at: Math.floor(Date.now() / 1000),
@@ -495,14 +495,14 @@
                   >{toast.peerName}</span
                 >
                 <span class="text-[10px] text-cyan-400 font-mono"
-                  >Pesan Baru</span
+                  >New Message</span
                 >
               </div>
               <p class="text-xs text-slate-300 truncate mt-0.5 max-w-[220px]">
                 {toast.content}
               </p>
               <span class="text-[10px] text-cyan-400/80 font-mono mt-1 block">
-                Klik untuk buka chat &rarr;
+                Click to open chat &rarr;
               </span>
             </div>
           </div>

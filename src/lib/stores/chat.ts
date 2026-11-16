@@ -140,8 +140,8 @@ export function addChatToast(msg: ChatMessage, peerName: string) {
     peerDeviceId: msg.peer_device_id,
     peerName,
     content: msg.content?.startsWith('data:image/')
-      ? '🖼️ [Gambar Clipboard]'
-      : msg.content || (msg.msg_type === 'file_transfer' ? '📎 Mengirim file' : 'Pesan baru'),
+      ? '🖼️ [Clipboard Image]'
+      : msg.content || (msg.msg_type === 'file_transfer' ? '📎 Sent a file' : 'New message'),
     timestamp: Date.now(),
   };
 
@@ -160,16 +160,16 @@ export function formatRelativeTime(unixSecs: number): string {
   const now = Math.floor(Date.now() / 1000);
   const diff = Math.max(0, now - unixSecs);
 
-  if (diff < 5) return 'Baru saja';
-  if (diff < 60) return `${diff} detik yang lalu`;
+  if (diff < 5) return 'Just now';
+  if (diff < 60) return `${diff}s ago`;
   const mins = Math.floor(diff / 60);
-  if (mins < 60) return `${mins} menit yang lalu`;
+  if (mins < 60) return `${mins}m ago`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} jam yang lalu`;
+  if (hours < 24) return `${hours}h ago`;
 
   const d = new Date(unixSecs * 1000);
   const day = d.getDate().toString().padStart(2, '0');
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const month = months[d.getMonth()];
   const year = d.getFullYear();
   const hoursStr = d.getHours().toString().padStart(2, '0');
