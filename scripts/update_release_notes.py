@@ -18,7 +18,7 @@ def get_git_token():
             return line[len("password="):].strip()
     return None
 
-def update_release(tag="v1.2.11", title=None, body=None):
+def update_release(tag="v1.2.12", title=None, body=None):
     token = get_git_token()
     if not token:
         print("ERROR: GitHub token not found in git credentials.", file=sys.stderr)
@@ -75,15 +75,15 @@ def update_release(tag="v1.2.11", title=None, body=None):
             raise
 
 if __name__ == "__main__":
-    tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.11"
+    tag = sys.argv[1] if len(sys.argv) > 1 else "v1.2.12"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Android Build Fix, Transfer UI Overhaul & Browser Extension Integration"
+    title = f"Raydrop {tag}: IDM-Style Refresh Download Address, Instant Resume & Large File Engine"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Android Build Fix, Transfer UI Overhaul & Browser Extension Integration</h2>
+<h2 align="center">Raydrop {tag}: IDM-Style Refresh Download Address, Instant Resume & Large File Engine</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -106,24 +106,18 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🤖 Android CI Cross-Compilation Fix (`openssl-sys` Isolation)
-- **Resolved Android NDK Compilation Failure:** Isolated `librqbit` BitTorrent engine into desktop-only platform configurations (`cfg(not(any(target_os = "android", target_os = "ios")))`).
-- **Eliminated OpenSSL Native C Requirement:** Replaced native C OpenSSL dependency chain with safe pure Rust TLS and mobile stubs on Android/iOS, ensuring 100% clean CI/CD APK generation across all Android targets (`aarch64-linux-android`, `armv7-linux-androideabi`, `x86_64-linux-android`).
+#### 🔄 IDM-Style Refresh Download Address (Expired Session Resume)
+- **Resume Expired Session Links:** Solved temporary token and expiring link issues (403 Forbidden / 410 Gone). When a download session expires or errors, paste the new download URL to seamlessly resume from the exact byte offset without re-downloading or truncating existing files.
+- **Auto-Refresh via Browser Extension:** Re-triggering a download for the same file in Google Chrome or Microsoft Edge automatically updates the active/paused task in Raydrop with the new session URL and resumes downloading instantly.
+- **Dedicated UI Refresh Address Modal:** Easily update links with a single click from the download card or error banner.
 
-#### 🎨 Transfer Dashboard UI Overhaul & Full-Width Drop Zone
-- **Dedicated Full-Width Drop Zone:** Relocated the file and folder drag-and-drop zone to a dedicated 100% width horizontal strip beneath the action bar. Solved container horizontal overflow and eliminated button cramping.
-- **Compact & Organized Action Toolbar:** Downscaled and streamlined action buttons into sleek, logically grouped pill controls (`Send Files`, `Folder`, `Web Share`, `Clipboard`, `Folder Sync` + `+ Add URL / Torrent`, `Extension`).
+#### ⚡ Instant NTFS Sparse File Preallocation (0ms Delay on Multi-Gigabyte Files)
+- **Eliminated Synchronous Disk Freezes:** Added native Windows `FSCTL_SET_SPARSE` support, eliminating the 10+ second zero-filling disk allocation lag when starting 6GB+ files (such as Ubuntu ISOs).
+- **IDM-Standard Range Probe (`bytes=0-0`):** Converted server capability probe to standard Range request, accurately detecting 206 Partial Content support and allocating up to 8 parallel streams.
+- **Streaming Timeout Elimination:** Removed reqwest 30-second client timeout on large file streams, allowing uninterrupted multi-gigabyte downloads.
 
-#### 🌐 100% English Language Standardisation (i18n)
-- **Universal English Localization:** Fully translated all remaining in-app tutorial guides, the 30-second browser extension installation wizard, contact blocking banners, chat timestamps, and file storage notifications to English.
-
-#### 🧩 Official Chrome & Edge Browser Extension (Manifest V3)
-- **Automatic Download Interception (IDM Mode):** Browser extension detects and captures downloads from Chrome, Edge, Brave, and Opera into Raydrop's 8-connection parallel accelerator.
-- **In-App 1-Click Installer:** Built-in modal with 1-click extension folder reveal and local desktop loopback bridge health monitor (`http://127.0.0.1:45321`).
-- **Browser Context Menus:** Right-click any link or media file to download directly via Raydrop Accelerator.
-
-#### ⚡ IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Magnet Engine
-- **Multi-Connection Segmented Acceleration:** Splitting downloads into 4–8 concurrent chunks using HTTP `Range: bytes=X-Y` requests with native OS zero-stitching file writes.
-- **Embedded BitTorrent Swarm Engine:** Full BitTorrent peer-to-peer downloading powered by `librqbit v9.1.0` with OS `magnet:` protocol association and live swarm metrics.
+#### 🧩 Chrome & Edge Browser Extension (Manifest V3)
+- **Automatic Download Interception:** Captures web downloads (ISO, EXE, ZIP, APK, MP4, etc.) directly into Raydrop's multi-segment engine.
+- **In-App 1-Click Installer:** Built-in modal with automatic folder reveal and loopback bridge monitor (`http://127.0.0.1:45321`).
 """
     update_release(tag=tag, title=title, body=body)

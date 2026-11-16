@@ -1747,6 +1747,15 @@ pub async fn resume_http_download(
 }
 
 #[tauri::command]
+pub async fn update_http_download_url(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    new_url: String,
+) -> Result<crate::http_downloader::HttpDownloadTaskInfo, String> {
+    state.http_downloader.update_download_url(&id, &new_url).await
+}
+
+#[tauri::command]
 pub async fn delete_http_download(
     state: State<'_, Arc<AppState>>,
     id: String,

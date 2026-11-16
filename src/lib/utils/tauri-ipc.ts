@@ -393,6 +393,8 @@ export const raydropApi = {
     invoke<void>('pause_http_download', { id }),
   resumeHttpDownload: (id: string) =>
     invoke<void>('resume_http_download', { id }),
+  updateHttpDownloadUrl: (id: string, newUrl: string) =>
+    invoke<HttpDownloadTaskInfo>('update_http_download_url', { id, newUrl }),
   deleteHttpDownload: (id: string, deleteFile: boolean) =>
     invoke<void>('delete_http_download', { id, deleteFile }),
   openBrowserExtensionDir: () =>

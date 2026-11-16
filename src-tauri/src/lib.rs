@@ -406,6 +406,7 @@ pub fn run() {
             commands::list_http_downloads,
             commands::pause_http_download,
             commands::resume_http_download,
+            commands::update_http_download_url,
             commands::delete_http_download,
             commands::open_browser_extension_dir,
             commands::open_browser_extension_url,

@@ -40,10 +40,15 @@
     Magnet,
     Download,
     Puzzle,
+    Link,
   } from 'lucide-svelte';
 
   let resumingId = '';
   let actionError = '';
+  let showRefreshModal = false;
+  let refreshTask: HttpDownloadTaskInfo | null = null;
+  let refreshNewUrl = '';
+  let isRefreshingUrl = false;
   let expandedTransferIds: Record<string, boolean> = {};
   let transferFilter: 'all' | 'incoming' | 'outgoing' = 'all';
   let isDraggingOver = false;
@@ -71,6 +76,30 @@
       );
     } catch (err: any) {
       actionError = err?.toString() || 'Failed to resume download';
+    }
+  }
+
+  function openRefreshModal(task: HttpDownloadTaskInfo) {
+    refreshTask = task;
+    refreshNewUrl = task.url || '';
+    showRefreshModal = true;
+  }
+
+  async function handleConfirmRefreshUrl() {
+    if (!refreshTask || !refreshNewUrl.trim()) return;
+    isRefreshingUrl = true;
+    try {
+      const updated = await raydropApi.updateHttpDownloadUrl(refreshTask.id, refreshNewUrl.trim());
+      httpTasks.update((tasks) =>
+        tasks.map((t) => (t.id === updated.id ? updated : t))
+      );
+      showRefreshModal = false;
+      refreshTask = null;
+      refreshNewUrl = '';
+    } catch (err: any) {
+      actionError = err?.toString() || 'Failed to update download address';
+    } finally {
+      isRefreshingUrl = false;
     }
   }
 
@@ -637,6 +666,18 @@
                     </button>
                   {/if}
 
+                  {#if task.status === 'error' || task.status === 'paused'}
+                    <button
+                      type="button"
+                      on:click={() => openRefreshModal(task)}
+                      class="text-xs text-sky-300 hover:text-sky-200 bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 px-2.5 py-1 rounded-xl flex items-center gap-1 transition cursor-pointer"
+                      title="Update expired session download address (IDM-style resume)"
+                    >
+                      <Link class="w-3.5 h-3.5" />
+                      <span>Refresh Link</span>
+                    </button>
+                  {/if}
+
                   {#if task.save_path}
                     <button
                       type="button"
@@ -680,9 +721,18 @@
               </div>
 
               {#if task.error || task.error_message}
-                <div class="p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 flex items-center gap-2">
-                  <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
-                  <span class="truncate">{task.error || task.error_message}</span>
+                <div class="p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
+                    <span class="truncate">{task.error || task.error_message}</span>
+                  </div>
+                  <button
+                    type="button"
+                    on:click={() => openRefreshModal(task)}
+                    class="shrink-0 text-[10px] font-bold text-sky-400 hover:text-sky-300 underline cursor-pointer"
+                  >
+                    Refresh Address
+                  </button>
                 </div>
               {/if}
             </div>
@@ -1223,5 +1273,89 @@
         showFolderSyncModal = false;
       }}
     />
+  {/if}
+
+  {#if showRefreshModal && refreshTask}
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div class="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5 text-left">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400">
+              <Link class="w-5 h-5" />
+            </div>
+            <div>
+              <h3 class="text-base font-bold text-white">Refresh Download Address</h3>
+              <p class="text-xs text-slate-400">Resume expired session without restarting</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            on:click={() => {
+              showRefreshModal = false;
+              refreshTask = null;
+            }}
+            class="text-slate-400 hover:text-white p-1 rounded-xl cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 text-xs space-y-1.5">
+          <div class="text-slate-300 font-medium truncate">
+            Target file: <span class="text-white font-bold">{refreshTask.filename}</span>
+          </div>
+          <div class="text-slate-400">
+            Progress: <span class="text-cyan-400 font-mono font-semibold">{formatBytes(refreshTask.downloaded_bytes)}</span>
+            {#if refreshTask.total_bytes > 0}
+              / {formatBytes(refreshTask.total_bytes)}
+            {/if}
+            will be preserved!
+          </div>
+          <div class="text-[11px] text-slate-400 leading-relaxed pt-1">
+            If the temporary token or link expired (403 Forbidden / session timeout), trigger the download in your browser to obtain a new URL and paste it below. Raydrop will seamlessly continue downloading from the last byte offset.
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <label for="new-download-url-input" class="text-xs font-semibold text-slate-300 block">
+            New Download URL:
+          </label>
+          <input
+            id="new-download-url-input"
+            type="url"
+            bind:value={refreshNewUrl}
+            placeholder="https://..."
+            class="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 outline-none font-mono"
+          />
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-2">
+          <button
+            type="button"
+            on:click={() => {
+              showRefreshModal = false;
+              refreshTask = null;
+            }}
+            class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            on:click={handleConfirmRefreshUrl}
+            disabled={isRefreshingUrl || !refreshNewUrl.trim().startsWith('http')}
+            class="px-5 py-2 rounded-xl text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 shadow-lg shadow-sky-600/20 cursor-pointer"
+          >
+            {#if isRefreshingUrl}
+              <Zap class="w-3.5 h-3.5 animate-spin" />
+              <span>Resuming...</span>
+            {:else}
+              <Play class="w-3.5 h-3.5" />
+              <span>Update & Resume</span>
+            {/if}
+          </button>
+        </div>
+      </div>
+    </div>
   {/if}
 </div>

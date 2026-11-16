@@ -392,7 +392,7 @@
               <span
                 class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700"
               >
-                Current: v1.2.11
+                Current: v1.2.12
               </span>
             </div>
             <p class="text-[11px] text-slate-400 mt-0.5">

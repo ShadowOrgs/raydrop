@@ -34,7 +34,7 @@ struct ActiveSegment {
 #[allow(dead_code)]
 struct ActiveDownload {
     id: String,
-    url: String,
+    url: Arc<RwLock<String>>,
     filename: String,
     total_bytes: u64,
     save_path: PathBuf,
@@ -328,7 +328,7 @@ impl HttpDownloadManager {
 
         let active = Arc::new(ActiveDownload {
             id: id.clone(),
-            url: trimmed_url.to_string(),
+            url: Arc::new(RwLock::new(trimmed_url.to_string())),
             filename: filename.clone(),
             total_bytes,
             save_path: target_file_path.clone(),
@@ -395,12 +395,13 @@ impl HttpDownloadManager {
 
         if segments_count > 1 && task.total_bytes > 0 {
             let mut join_handles = Vec::new();
+            let current_url = task.url.read().await.clone();
 
             for (idx, seg) in task.segments.iter().enumerate() {
                 let seg_current = seg.current.clone();
                 let seg_start = seg.start;
                 let seg_end = seg.end;
-                let url = task.url.clone();
+                let url = current_url.clone();
                 let save_path = task.save_path.clone();
                 let client = client.clone();
                 let is_paused = task.is_paused.clone();
@@ -536,7 +537,8 @@ impl HttpDownloadManager {
             .map(|s| s.current.load(Ordering::Relaxed))
             .unwrap_or(0);
 
-        let mut req = client.get(&task.url);
+        let url = task.url.read().await.clone();
+        let mut req = client.get(&url);
         if current_downloaded > 0 {
             req = req.header(reqwest::header::RANGE, format!("bytes={current_downloaded}-"));
         }
@@ -676,6 +678,7 @@ impl HttpDownloadManager {
         for (id, t) in tasks.iter() {
             let status = t.status.read().await.clone();
             let error = t.error_msg.read().await.clone();
+            let url = t.url.read().await.clone();
 
             let mut downloaded = 0u64;
             for s in &t.segments {
@@ -693,7 +696,7 @@ impl HttpDownloadManager {
 
             result.push(HttpDownloadTaskInfo {
                 id: id.clone(),
-                url: t.url.clone(),
+                url,
                 filename: t.filename.clone(),
                 total_bytes: t.total_bytes,
                 downloaded_bytes: downloaded,
@@ -755,6 +758,59 @@ impl HttpDownloadManager {
         });
 
         Ok(())
+    }
+
+    /// Update download address/URL for an existing task (e.g. IDM-style session expired / new temporary token)
+    /// Seamlessly resumes remaining byte chunks without redownloading what's already saved on disk
+    pub async fn update_download_url(&self, id: &str, new_url: &str) -> Result<HttpDownloadTaskInfo, String> {
+        let trimmed = new_url.trim();
+        if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+            return Err("URL must begin with http:// or https://".to_string());
+        }
+
+        {
+            let tasks = self.tasks.read().await;
+            let t = tasks
+                .get(id)
+                .ok_or_else(|| format!("Task {id} not found"))?;
+
+            // Update live URL pointer and clear previous error
+            *t.url.write().await = trimmed.to_string();
+            *t.error_msg.write().await = None;
+        }
+
+        // Resume remaining chunks
+        self.resume_task(id).await?;
+
+        // Return updated task info
+        let list = self.list_tasks().await;
+        list.into_iter()
+            .find(|item| item.id == id)
+            .ok_or_else(|| "Updated task info not found".to_string())
+    }
+
+    /// Match an existing paused or errored task with the same filename and > 0 downloaded bytes
+    /// This enables automatic seamless address refresh when the user re-triggers download in the browser
+    pub async fn find_matching_refresh_task(&self, filename: &str) -> Option<String> {
+        let tasks = self.tasks.read().await;
+        for (id, t) in tasks.iter() {
+            if t.filename.eq_ignore_ascii_case(filename) {
+                let st = t.status.read().await.clone();
+                if st == "error" || st == "paused" {
+                    let mut downloaded = 0u64;
+                    for s in &t.segments {
+                        let cur = s.current.load(Ordering::Relaxed);
+                        if cur >= s.start {
+                            downloaded += cur - s.start;
+                        }
+                    }
+                    if downloaded > 0 {
+                        return Some(id.clone());
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Delete a download task and optionally delete downloaded file from disk

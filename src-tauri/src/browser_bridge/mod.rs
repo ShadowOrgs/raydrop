@@ -105,7 +105,7 @@ Connection: close\r\n\r\n";
         let json_body = serde_json::json!({
             "status": "ok",
             "app": "raydrop",
-            "version": "1.2.11",
+            "version": "1.2.12",
             "capabilities": ["http_segmented_accelerator", "torrent_magnet"]
         })
         .to_string();
@@ -191,6 +191,43 @@ Connection: close\r\n\r\n{}",
             let p = std::path::Path::new(f);
             p.file_name().and_then(|n| n.to_str()).map(|s| s.to_string())
         });
+
+        // IDM-Style Feature: Check if an existing task for this exact file is paused or errored
+        // If so, seamlessly refresh its download address with the new session link instead of duplicating
+        let mut refreshed_task = None;
+        if let Some(ref fname) = clean_filename {
+            if let Some(matching_id) = state.http_downloader.find_matching_refresh_task(fname).await {
+                info!("Found existing matching task {} for {}; refreshing download address with new URL", matching_id, fname);
+                if let Ok(updated_task) = state.http_downloader.update_download_url(&matching_id, &trimmed_url).await {
+                    let _ = app.emit("http_download_added", &updated_task);
+                    refreshed_task = Some(updated_task);
+                }
+            }
+        }
+
+        if let Some(task_info) = refreshed_task {
+            let ok_json = serde_json::json!({
+                "status": "ok",
+                "type": "http",
+                "id": task_info.id,
+                "filename": task_info.filename,
+                "message": "Download address refreshed and resumed seamlessly"
+            })
+            .to_string();
+
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\n\
+Access-Control-Allow-Origin: *\r\n\
+Content-Type: application/json\r\n\
+Content-Length: {}\r\n\
+Connection: close\r\n\r\n{}",
+                ok_json.len(),
+                ok_json
+            );
+            let _ = writer_half.write_all(resp.as_bytes()).await;
+            return Ok(());
+        }
+
         match state.http_downloader.add_download(&trimmed_url, None, clean_filename).await {
             Ok(task_info) => {
                 info!("Browser extension download started: {} (id: {})", task_info.url, task_info.id);

@@ -76,10 +76,11 @@ Unlike traditional file-sharing services that upload your files to third-party c
 - **Direct File Launch:** Open shared files directly from chat bubbles with system default apps or reveal them in Windows Explorer with 1 click.
 - **Zero Server Storage & Zero Server DB:** Chat history is stored 100% locally on each peer's private SQLite database. The server never stores chat messages or conversation logs.
 
-### ⚡ IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Magnet Engine (New in v1.2.11)
+### ⚡ IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Engine (New in v1.2.12)
+- **IDM-Style Refresh Download Address (Expired Session Resume):** When downloading from file hosters or CDNs with temporary security tokens (e.g. 403 Forbidden or session timeout after pausing), users can refresh the download URL directly in Raydrop or simply click download again in Chrome/Edge. Raydrop automatically updates the address and seamlessly resumes from the exact byte offset without restarting or losing downloaded progress.
 - **Chrome & Edge Browser Extension (Manifest V3):** Official browser extension (`browser-extension/`) that automatically intercepts web downloads (ZIP, ISO, EXE, APK, MP4, MKV, etc.) from Google Chrome, Microsoft Edge, Brave, and Opera, routing them into Raydrop's 8-connection parallel accelerator. Includes a 1-click "Install Extension" modal with automatic folder revealing in Raydrop, right-click context menu integration, and local loopback API bridge (`http://127.0.0.1:45321`).
+- **Instant Sparse File Preallocation (NTFS):** Uses Windows `FSCTL_SET_SPARSE` to eliminate multi-gigabyte disk preallocation freezes (e.g., instant 0ms start for 6GB ISO files instead of 10s synchronous zero-filling).
 - **Multi-Segment Parallel Acceleration (IDM-Style):** Accelerate direct web downloads by splitting files into 4–8 concurrent chunks using HTTP `Range: bytes=X-Y` requests, maximizing throughput on high-speed internet connections.
-- **Startup Crash Hotfix:** Resolved startup panic caused by calling `tokio::spawn` outside of Tokio runtime context during application initialization, replacing with Tauri managed async runtime `tauri::async_runtime::spawn`.
 - **Zero-Stitch Direct File Write:** Chunks are written directly into target file byte offsets via native OS file handles (`seek_write` on Windows, `write_all_at` on Unix) without needing slow temporary file joins or disk re-copying.
 - **BitTorrent Swarm Engine Integration:** Embedded BitTorrent peer-to-peer downloading powered by `librqbit v9.1.0`. Real-time peer counter, swarm download speed tracking, and full lifecycle controls (pause, resume, cancel).
 - **OS Protocol Association (`magnet:`):** Windows Registry integration registers Raydrop as the default system handler for `magnet:` links. Clicking any magnet link in Chrome, Firefox, Edge, or Brave directly launches or brings Raydrop into focus with the download prompt.
@@ -145,11 +146,11 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.11/Raydrop_1.2.11_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.11/Raydrop_1.2.11_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.11/Raydrop_1.2.11_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.11/Raydrop_1.2.11_amd64.AppImage) |
-| **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.11/Raydrop-arm64-v8a.apk) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.12/Raydrop_1.2.12_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.12/Raydrop_1.2.12_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.12/Raydrop_1.2.12_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.12/Raydrop_1.2.12_amd64.AppImage) |
+| **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.12/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**
 
