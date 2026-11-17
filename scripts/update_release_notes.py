@@ -20,7 +20,7 @@ def get_git_token():
 
 import time
 
-def update_release(tag="v1.2.13", title=None, body=None, wait_for_assets=False):
+def update_release(tag="v1.2.14", title=None, body=None, wait_for_assets=False):
     token = get_git_token()
     if not token:
         print("ERROR: GitHub token not found in git credentials.", file=sys.stderr)
@@ -95,15 +95,15 @@ def update_release(tag="v1.2.13", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.13"
+    tag = clean_args[0] if clean_args else "v1.2.14"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Pre-Flight Disk Space Checker, Smart Multi-Unit ETA & IDM Address Refresh"
+    title = f"Raydrop {tag}: Clean Download Cancellation, Free Space Reclamation & Browser Retry Fixes"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Pre-Flight Disk Space Checker, Smart Multi-Unit ETA & IDM Address Refresh</h2>
+<h2 align="center">Raydrop {tag}: Clean Download Cancellation, Free Space Reclamation & Browser Retry Fixes</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,16 +126,13 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 💾 Pre-Flight Disk Space Checker & Native OS Notifications
-- **Protects Disk from 100% Full Exhaustion:** Inspects available free disk space via native OS system calls (`GetDiskFreeSpaceExW` on Windows, POSIX `statvfs` on macOS, Linux, and Android) before pre-allocating files or writing chunks.
-- **Immediate OS Alert Notification:** If destination drive space is insufficient, Raydrop blocks the download upfront, displays a transparent error (*"Needed: X GB, Available: Y GB"*), and immediately dispatches a native desktop/mobile OS notification.
-- **Comprehensive Coverage:** Enforced across HTTP Accelerator downloads, Chrome/Edge Extension captures, and P2P Incoming File Transfers.
+#### 🔄 Clean Download Cancellation & Seamless Re-Download
+- **Eliminated Cancellation Race Condition:** Removed unconditional file deletion in background worker routines. Terminating workers now exit cleanly without touching or wiping newly initiated downloads targeting the same filename or path.
+- **Immediate Disk Space Reclamation:** Incomplete and cancelled downloads now clean up temporary disk files properly when deleted from the task list, releasing disk storage right away.
+- **Accurate Re-Download Disk Verification:** Pre-flight disk space checker calculates existing partial file bytes when re-downloading, preventing false "Insufficient disk space" rejections on drives with limited spare capacity.
 
-#### ⏱️ Smart Multi-Unit ETA Formatting
-- **Human-Readable Remaining Time:** Replaced raw seconds counters (`7200s`) with intuitive multi-unit time remaining (`45s`, `2m 15s`, `1h 30m`, `2d 4h`).
-- **Unified Across All Engines:** Displayed seamlessly across P2P file transfers, HTTP multi-segment downloads, and BitTorrent swarm transfers.
-
-#### 🔄 IDM-Style Refresh Download Address (Expired Session Resume)
-- **Resume Expired Session Links:** When downloading from temporary token links or file hosts that expire (403 Forbidden / session timeout), refresh the URL directly in Raydrop or re-download in browser to continue from the exact byte offset without losing data.
+#### 🌐 Browser Extension Retry & Interruption Resilience
+- **Instant Browser Re-Download Support:** Fixed browser extension download tracking by auto-expiring handled download IDs and listening to browser download state changes (`interrupted`, `complete`). Clicking "Retry" or re-downloading in Chrome/Edge immediately triggers Raydrop without being ignored.
+- **Robust Multi-Stream Reconnection:** Ensured downloads that were previously stopped or cancelled can be restarted immediately without requiring an application restart.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

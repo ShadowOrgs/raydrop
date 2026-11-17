@@ -163,16 +163,42 @@ impl HttpDownloadManager {
 
         let id = format!("{:x}", md5_or_uuid(trimmed_url));
 
-        // Check if already active or previous error
+        // Determine destination directory
+        let save_dir = if let Some(csd) = custom_save_dir {
+            PathBuf::from(csd)
+        } else {
+            self.default_save_dir.read().await.clone()
+        };
+
+        if !save_dir.exists() {
+            let _ = std::fs::create_dir_all(&save_dir);
+        }
+
+        let target_file_path = save_dir.join(custom_filename.as_deref().unwrap_or(""));
+
+        // Clean up any existing tasks for this URL or target file that were cancelled or errored
         {
             let mut tasks = self.tasks.write().await;
-            if let Some(existing) = tasks.get(&id) {
-                let status = existing.status.read().await.clone();
-                if status == "downloading" || status == "starting" {
-                    return Err("This URL is already being downloaded".to_string());
+            let mut to_remove = Vec::new();
+            for (tid, t) in tasks.iter() {
+                let st = t.status.read().await.clone();
+                if tid == &id {
+                    if st == "downloading" || st == "starting" {
+                        return Err("This URL is already being downloaded".to_string());
+                    }
+                    to_remove.push(tid.clone());
+                } else if !target_file_path.as_os_str().is_empty()
+                    && t.save_path == target_file_path
+                    && (st == "cancelled" || st == "error")
+                {
+                    to_remove.push(tid.clone());
                 }
-                // If it was in error, paused, or cancelled, remove old task entry to start fresh restart
-                tasks.remove(&id);
+            }
+            for old_id in to_remove {
+                if let Some(t) = tasks.remove(&old_id) {
+                    t.is_cancelled.store(true, Ordering::Relaxed);
+                    t.is_paused.store(true, Ordering::Relaxed);
+                }
             }
         }
 
@@ -271,27 +297,25 @@ impl HttpDownloadManager {
             }
         };
 
-        // Determine destination directory
-        let save_dir = if let Some(csd) = custom_save_dir {
-            PathBuf::from(csd)
-        } else {
-            self.default_save_dir.read().await.clone()
-        };
-
-        if !save_dir.exists() {
-            let _ = std::fs::create_dir_all(&save_dir);
-        }
-
         let target_file_path = save_dir.join(&filename);
+
+        // Calculate size of existing file if already on disk (e.g. from an aborted/cancelled previous attempt)
+        let existing_file_bytes = if target_file_path.exists() {
+            target_file_path.metadata().map(|m| m.len()).unwrap_or(0)
+        } else {
+            0
+        };
 
         // PRE-FLIGHT DISK SPACE CHECK: Verify target filesystem has sufficient free capacity
         if total_bytes > 0 {
             if let Some(available_bytes) = crate::os::get_available_disk_space(&save_dir) {
-                if available_bytes < total_bytes {
+                // Effective available space includes bytes that will be reused/reclaimed from existing partial file
+                let effective_available = available_bytes.saturating_add(existing_file_bytes);
+                if effective_available < total_bytes {
                     let err = format!(
                         "Insufficient disk space on destination drive. Needed: {}, Available: {}",
                         crate::os::format_bytes(total_bytes),
-                        crate::os::format_bytes(available_bytes)
+                        crate::os::format_bytes(effective_available)
                     );
                     error!("Download cancelled: {err}");
                     return Err(err);
@@ -394,11 +418,13 @@ impl HttpDownloadManager {
         client: reqwest::Client,
         segments_count: u32,
     ) {
-        // Prepare target file: If new download, create sparse file instantly without zero-filling delay
-        if task.total_bytes > 0 && !task.save_path.exists() {
+        // Prepare target file: If fresh download, recreate/truncate sparse file cleanly without zero-filling lag
+        let is_resuming = task.segments.iter().any(|s| s.current.load(Ordering::Relaxed) > s.start);
+        if task.total_bytes > 0 && (!task.save_path.exists() || !is_resuming) {
             if let Ok(f) = std::fs::OpenOptions::new()
                 .write(true)
                 .create(true)
+                .truncate(!is_resuming)
                 .open(&task.save_path)
             {
                 #[cfg(target_os = "windows")]
@@ -456,7 +482,7 @@ impl HttpDownloadManager {
 
             if task.is_cancelled.load(Ordering::Relaxed) {
                 *task.status.write().await = "cancelled".to_string();
-                let _ = std::fs::remove_file(&task.save_path);
+                task.speed_bps.store(0, Ordering::Relaxed);
             } else if task.is_paused.load(Ordering::Relaxed) {
                 *task.status.write().await = "paused".to_string();
                 task.speed_bps.store(0, Ordering::Relaxed);
@@ -614,7 +640,7 @@ impl HttpDownloadManager {
         while let Some(chunk_res) = stream.next().await {
             if task.is_cancelled.load(Ordering::Relaxed) {
                 *task.status.write().await = "cancelled".to_string();
-                let _ = std::fs::remove_file(&task.save_path);
+                task.speed_bps.store(0, Ordering::Relaxed);
                 return;
             }
             if task.is_paused.load(Ordering::Relaxed) {
@@ -834,8 +860,20 @@ impl HttpDownloadManager {
         if let Some(t) = tasks.remove(id) {
             t.is_cancelled.store(true, Ordering::Relaxed);
             t.is_paused.store(true, Ordering::Relaxed);
+            t.speed_bps.store(0, Ordering::Relaxed);
             if delete_file && t.save_path.exists() {
-                let _ = std::fs::remove_file(&t.save_path);
+                let save_path = t.save_path.clone();
+                if std::fs::remove_file(&save_path).is_err() {
+                    // If still briefly held by chunk workers closing handles on Windows, retry asynchronously
+                    tauri::async_runtime::spawn(async move {
+                        for _ in 0..10 {
+                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                            if !save_path.exists() || std::fs::remove_file(&save_path).is_ok() {
+                                break;
+                            }
+                        }
+                    });
+                }
             }
             Ok(())
         } else {

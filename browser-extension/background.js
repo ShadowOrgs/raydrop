@@ -72,6 +72,10 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
 
   if (isMatchedExt || isMagnet) {
     handledDownloadIds.add(downloadItem.id);
+    // Auto-expire from handled set after 5 seconds so retrying/redownloading is not blocked
+    setTimeout(() => {
+      handledDownloadIds.delete(downloadItem.id);
+    }, 5000);
 
     try {
       // Cancel Chrome's native single-threaded download
@@ -92,6 +96,13 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
         message: "Raydrop desktop app is not running. Please open Raydrop to start accelerated download."
       });
     }
+  }
+});
+
+// Clear handled download IDs when state transitions to interrupted, cancelled, or complete
+chrome.downloads.onChanged.addListener((delta) => {
+  if (delta.state && (delta.state.current === "interrupted" || delta.state.current === "complete")) {
+    handledDownloadIds.delete(delta.id);
   }
 });
 

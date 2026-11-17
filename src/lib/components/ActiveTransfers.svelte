@@ -104,9 +104,15 @@
   }
 
   async function handleDeleteHttp(id: string) {
-    if (confirm('Cancel and remove this download task?')) {
+    const task = $httpTasks.find((t) => t.id === id);
+    const isCompleted = task?.status === 'completed';
+    const confirmMsg = isCompleted
+      ? 'Remove this completed task from the list?'
+      : 'Cancel and delete this incomplete download?';
+
+    if (confirm(confirmMsg)) {
       try {
-        await raydropApi.deleteHttpDownload(id, false);
+        await raydropApi.deleteHttpDownload(id, !isCompleted);
         httpTasks.update((tasks) => tasks.filter((t) => t.id !== id));
       } catch (err: any) {
         actionError = err?.toString() || 'Failed to remove download';
