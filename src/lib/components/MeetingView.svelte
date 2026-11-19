@@ -3,7 +3,7 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import { contacts } from '../stores/contacts';
   import { appSettings } from '../stores/state';
-  import { myAvatar } from '../stores/avatars';
+  import { peerAvatars, myAvatar } from '../stores/avatars';
   import { raydropApi } from '../utils/tauri-ipc';
   import {
     isInMeeting,
@@ -82,10 +82,16 @@
   // Svelte action to reliably attach MediaStream to video/audio DOM elements
   function attachStream(node: HTMLMediaElement, stream: MediaStream | null) {
     node.srcObject = stream;
+    if (stream) {
+      node.play().catch(() => {});
+    }
     return {
       update(newStream: MediaStream | null) {
         if (node.srcObject !== newStream) {
           node.srcObject = newStream;
+        }
+        if (newStream) {
+          node.play().catch(() => {});
         }
       },
       destroy() {
@@ -96,6 +102,60 @@
 
   $: activeParticipantList = Object.values($participants);
   $: screenSharingPeer = activeParticipantList.find((p) => p.isScreenSharing) || ($isScreenSharing ? { deviceId: 'local', alias: 'You', stream: $localVideoStream } : null);
+
+  interface InvitableUser {
+    key: string;
+    displayName: string;
+    avatar: string | null;
+    deviceIds: string[];
+    deviceCount: number;
+    isOnline: boolean;
+  }
+
+  $: invitableUsers = (() => {
+    const userMap = new Map<string, InvitableUser>();
+
+    for (const c of $contacts) {
+      if (c.device_id === $appSettings.device_id || c.is_own_device) continue;
+
+      const key =
+        (c.user_email && c.user_email.trim().toLowerCase()) ||
+        (c.user_name && c.user_name.trim().toLowerCase()) ||
+        (c.custom_name && c.custom_name.trim().toLowerCase()) ||
+        c.device_id;
+
+      let displayName = c.user_name?.trim() || c.custom_name?.trim();
+      if (!displayName && c.user_email) {
+        displayName = c.user_email.split('@')[0];
+      }
+      if (!displayName) {
+        displayName = c.alias_name || 'Contact';
+      }
+
+      const avatar = $peerAvatars[c.device_id] || null;
+
+      if (!userMap.has(key)) {
+        userMap.set(key, {
+          key,
+          displayName,
+          avatar,
+          deviceIds: [c.device_id],
+          deviceCount: 1,
+          isOnline: c.is_online,
+        });
+      } else {
+        const existing = userMap.get(key)!;
+        if (!existing.deviceIds.includes(c.device_id)) {
+          existing.deviceIds.push(c.device_id);
+          existing.deviceCount++;
+        }
+        if (c.is_online) existing.isOnline = true;
+        if (!existing.avatar && avatar) existing.avatar = avatar;
+      }
+    }
+
+    return Array.from(userMap.values());
+  })();
 
   onMount(async () => {
     // Keydown shortcuts for meeting controls (PTT, Mute, Camera)
@@ -159,8 +219,8 @@
     setTimeout(() => (copiedRoomCode = false), 2000);
   }
 
-  async function handleInviteContact(contactDeviceId: string) {
-    await inviteContactToMeeting(contactDeviceId);
+  async function handleInviteUser(deviceIds: string[]) {
+    await inviteContactToMeeting(deviceIds);
     showInviteDropdown = false;
   }
 
@@ -425,20 +485,40 @@
           </button>
 
           {#if showInviteDropdown}
-            <div class="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-2 z-50 space-y-1">
+            <div class="absolute right-0 top-full mt-2 w-64 max-h-72 overflow-y-auto rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-2 z-50 space-y-1">
               <span class="block px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                Invite Online Contacts
+                Invite Users
               </span>
-              {#each $contacts as contact}
-                <button
-                  type="button"
-                  on:click={() => handleInviteContact(contact.device_id)}
-                  class="w-full px-2.5 py-1.5 rounded-xl text-left text-xs text-slate-200 hover:bg-slate-800 hover:text-white flex items-center justify-between transition"
-                >
-                  <span class="truncate">{contact.custom_name || contact.alias_name}</span>
-                  <span class="text-[9px] font-mono px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-300">Invite</span>
-                </button>
-              {/each}
+              {#if invitableUsers.length === 0}
+                <div class="p-3 text-center text-xs text-slate-500 italic">No contacts available to invite</div>
+              {:else}
+                {#each invitableUsers as u (u.key)}
+                  <button
+                    type="button"
+                    on:click={() => handleInviteUser(u.deviceIds)}
+                    class="w-full px-2.5 py-1.5 rounded-xl text-left text-xs text-slate-200 hover:bg-slate-800 hover:text-white flex items-center justify-between transition gap-2"
+                  >
+                    <div class="flex items-center gap-2 min-w-0">
+                      <div class="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center font-bold text-[10px] shrink-0 overflow-hidden">
+                        {#if u.avatar}
+                          <img src={u.avatar} alt="" class="w-full h-full object-cover" />
+                        {:else}
+                          {u.displayName.slice(0, 2).toUpperCase()}
+                        {/if}
+                      </div>
+                      <div class="min-w-0">
+                        <span class="block truncate font-medium text-white">{u.displayName}</span>
+                        <span class="block text-[9px] text-slate-400">
+                          {u.deviceCount} device{u.deviceCount > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    </div>
+                    <span class="text-[9px] font-mono px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 font-semibold shrink-0">
+                      Invite
+                    </span>
+                  </button>
+                {/each}
+              {/if}
             </div>
           {/if}
         </div>

@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.20"
+    tag = clean_args[0] if clean_args else "v1.2.21"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Real-Time P2P Avatar Automatic Sync & Online Meeting Mesh"
+    title = f"Raydrop {tag}: Seamless 1080p Screen Sharing Fix & Person-Based Meeting Invites"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Real-Time P2P Avatar Automatic Sync & Online Meeting Mesh</h2>
+<h2 align="center">Raydrop {tag}: Seamless 1080p Screen Sharing Fix & Person-Based Meeting Invites</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,13 +126,13 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 👤 Real-Time P2P Avatar Synchronization Across Devices
-- **Automatic Multi-Peer Avatar Broadcast:** Whenever a user uploads or updates their profile avatar, an `AVATAR_UPDATE` payload is instantly broadcasted to all online contacts and peers across both LAN (direct TCP) and WAN (relay).
-- **Zero-Config Persistent Caching:** Receiving devices automatically store peer avatars in their local cache directory and update contact database records without manual intervention.
-- **On-Demand Avatar Pull (`AVATAR_REQUEST`):** When discovering a peer or when a peer's avatar hash updates, devices automatically request the latest avatar image on-demand.
-- **Reactive UI Live Updates:** Contact lists, chat headers, active transfer dialogs, and meeting tiles instantly re-render with the updated avatar without requiring an app restart.
+#### 🖥️ Persistent 1080p Screen Sharing Without Container Drop
+- **Zero-Drop Track Replacement:** Pre-negotiated WebRTC transceivers ensure switching between camera and desktop screen share uses direct `replaceTrack` without triggering disruptive SDP renegotiation or transient disconnections.
+- **Resilient Connection Handling:** Eliminated false-positive peer drops caused by transient `disconnected` states during ICE candidate transitions.
+- **Live Stream Reactivity:** MediaStream changes automatically emit fresh stream instances with forced `node.play()` execution, preventing frozen video frames.
 
-#### 🎙️ P2P Meeting Handshake & Mesh Polish
-- Verified WebRTC early ICE candidate queueing and dynamic track replacement for 1080p screen sharing and camera toggles.
+#### 👥 Person-Based Meeting Invites (Multi-Device Broadcast)
+- **Invite by Display Name / Full Name:** Contacts in the invite menu and contact list are now grouped by user instead of confusing individual device names.
+- **Simultaneous Device Ring:** Inviting a user broadcasts the incoming call to all of that user's linked devices simultaneously (PC, laptop, phone), allowing the user to pick whichever device they prefer to join the meeting from.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

@@ -239,25 +239,29 @@ export function leaveMeetingRoom() {
   isHandRaised.set(false);
 }
 
-export async function inviteContactToMeeting(targetDeviceId: string) {
+export async function inviteContactToMeeting(target: string | string[]) {
+  const ids = Array.isArray(target) ? target : [target];
   const roomId = get(currentRoomId);
   const title = get(currentRoomTitle);
   const me = getMyInfo();
 
-  knownRoomPeers.add(targetDeviceId);
+  for (const targetDeviceId of ids) {
+    if (!targetDeviceId) continue;
+    knownRoomPeers.add(targetDeviceId);
 
-  await raydropApi.sendMeetingSignal(
-    targetDeviceId,
-    `meeting:${roomId}`,
-    {
-      type: 'meeting_invite',
-      roomId,
-      roomTitle: title,
-      fromDeviceId: me.deviceId,
-      fromAlias: me.alias,
-      fromAvatar: me.avatar,
-    }
-  );
+    await raydropApi.sendMeetingSignal(
+      targetDeviceId,
+      `meeting:${roomId}`,
+      {
+        type: 'meeting_invite',
+        roomId,
+        roomTitle: title,
+        fromDeviceId: me.deviceId,
+        fromAlias: me.alias,
+        fromAvatar: me.avatar,
+      }
+    ).catch(() => {});
+  }
 }
 
 export function toggleMicMute() {
@@ -443,7 +447,9 @@ async function addTrackToPeers(track: MediaStreamTrack) {
   for (const [peerId, pc] of peerConnections.entries()) {
     try {
       const senders = pc.getSenders();
-      const existingSender = senders.find((s) => s.track && s.track.kind === track.kind);
+      const existingSender = senders.find(
+        (s) => (s.track && s.track.kind === track.kind) || (!s.track && s.kind === track.kind)
+      );
       if (existingSender) {
         await existingSender.replaceTrack(track);
       } else {
@@ -461,7 +467,9 @@ async function removeTrackFromPeers(kind: 'audio' | 'video') {
   for (const [peerId, pc] of peerConnections.entries()) {
     try {
       const senders = pc.getSenders();
-      const sender = senders.find((s) => s.track && s.track.kind === kind);
+      const sender = senders.find(
+        (s) => (s.track && s.track.kind === kind) || (!s.track && s.kind === kind)
+      );
       if (sender) {
         await sender.replaceTrack(null);
       }
@@ -478,14 +486,34 @@ function getOrCreatePeerConnection(peerDeviceId: string): RTCPeerConnection {
   pc = new RTCPeerConnection(ICE_SERVERS);
   peerConnections.set(peerDeviceId, pc);
 
-  // Add local tracks
-  const aStream = get(localAudioStream);
-  if (aStream) {
-    aStream.getAudioTracks().forEach((track) => pc!.addTrack(track, aStream));
+  // Pre-negotiate audio and video transceivers so track replacement (screen share / camera) works seamlessly without renegotiation
+  try {
+    pc.addTransceiver('audio', { direction: 'sendrecv' });
+    pc.addTransceiver('video', { direction: 'sendrecv' });
+  } catch (err) {
+    console.warn('Transceiver add warning:', err);
   }
+
+  // Attach local audio track if ready
+  const aStream = get(localAudioStream);
+  if (aStream && aStream.getAudioTracks().length > 0) {
+    const aSender = pc.getSenders().find((s) => s.kind === 'audio' || (s.track && s.track.kind === 'audio'));
+    if (aSender) {
+      aSender.replaceTrack(aStream.getAudioTracks()[0]).catch(() => {});
+    } else {
+      pc.addTrack(aStream.getAudioTracks()[0], aStream);
+    }
+  }
+
+  // Attach local video track if ready
   const vStream = get(localVideoStream);
-  if (vStream) {
-    vStream.getVideoTracks().forEach((track) => pc!.addTrack(track, vStream));
+  if (vStream && vStream.getVideoTracks().length > 0) {
+    const vSender = pc.getSenders().find((s) => s.kind === 'video' || (s.track && s.track.kind === 'video'));
+    if (vSender) {
+      vSender.replaceTrack(vStream.getVideoTracks()[0]).catch(() => {});
+    } else {
+      pc.addTrack(vStream.getVideoTracks()[0], vStream);
+    }
   }
 
   // ICE candidates
@@ -502,28 +530,40 @@ function getOrCreatePeerConnection(peerDeviceId: string): RTCPeerConnection {
   pc.ontrack = (event) => {
     let stream = remoteStreams.get(peerDeviceId);
     if (!stream) {
-      stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream();
+      stream = new MediaStream();
       remoteStreams.set(peerDeviceId, stream);
     }
-    if (!stream.getTracks().includes(event.track)) {
+    if (!stream.getTracks().some((t) => t.id === event.track.id)) {
       stream.addTrack(event.track);
     }
 
-    participants.update((map) => {
-      if (map[peerDeviceId]) {
-        map[peerDeviceId].stream = stream!;
-      }
-      return { ...map };
-    });
-  };
-
-  pc.onconnectionstatechange = () => {
-    if (pc?.connectionState === 'disconnected' || pc?.connectionState === 'failed') {
+    const pushFreshStream = () => {
+      const freshStream = new MediaStream(stream!.getTracks());
       participants.update((map) => {
-        delete map[peerDeviceId];
+        if (map[peerDeviceId]) {
+          map[peerDeviceId].stream = freshStream;
+        }
         return { ...map };
       });
-      peerConnections.delete(peerDeviceId);
+    };
+
+    event.track.onunmute = pushFreshStream;
+    event.track.onended = pushFreshStream;
+    pushFreshStream();
+  };
+
+  // Only handle terminal failure (never delete participant on transient 'disconnected')
+  pc.onconnectionstatechange = () => {
+    if (pc?.connectionState === 'failed') {
+      setTimeout(() => {
+        if (pc?.connectionState === 'failed') {
+          participants.update((map) => {
+            delete map[peerDeviceId];
+            return { ...map };
+          });
+          peerConnections.delete(peerDeviceId);
+        }
+      }, 5000);
     }
   };
 

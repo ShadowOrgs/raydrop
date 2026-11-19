@@ -46,10 +46,10 @@
   let remoteBrowserTarget: { deviceId: string; alias: string } | null = null;
   let myDirectAddr: { ip: string; port: number } | null = null;
 
-  async function startMeetingWith(deviceId: string, alias: string) {
+  async function startMeetingWith(target: string | string[], alias: string) {
     activeMainTab.set("meeting");
     await createMeetingRoom(`Meeting with ${alias}`);
-    await inviteContactToMeeting(deviceId);
+    await inviteContactToMeeting(target);
   }
   let directAddrCopied = false;
   let showConnectIpModal = false;
@@ -714,6 +714,18 @@
                     >
                       <Send class="w-3.5 h-3.5" />
                       <span>Send</span>
+                    </button>
+                    <button
+                      on:click={() =>
+                        startMeetingWith(
+                          group.devices.map((d) => d.device_id),
+                          group.name,
+                        )}
+                      class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/30 text-xs font-semibold transition-all"
+                      title="Invite all user devices to Online Meeting"
+                    >
+                      <Video class="w-3.5 h-3.5" />
+                      <span>Meet</span>
                     </button>
                   </div>
                 {/if}
