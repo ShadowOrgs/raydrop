@@ -460,6 +460,8 @@ export const raydropApi = {
     invoke<RemoteFileItem[]>('browse_remote_dir', { peerDeviceId, shareId, subpath }),
   pullRemoteFile: (peerDeviceId: string, shareId: string, relativePath: string) =>
     invoke<string>('pull_remote_file', { peerDeviceId, shareId, relativePath }),
+  sendMeetingSignal: (targetDeviceId: string, sessionId: string, payload: any) =>
+    invoke<void>('send_meeting_signal', { targetDeviceId, sessionId, payload }),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>
     listen<T>(event, (e) => handler(e.payload)),
 };

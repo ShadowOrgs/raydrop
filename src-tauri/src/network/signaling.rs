@@ -456,6 +456,23 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 return;
             }
 
+            // P2P Voice & Online Meeting Room Signaling Handler
+            if session_id.starts_with("meeting:") {
+                if let Ok(bytes) = hex::decode(payload_json) {
+                    if let Ok(signal_val) = serde_json::from_slice::<Value>(&bytes) {
+                        let _ = app.emit(
+                            "meeting_signal_received",
+                            serde_json::json!({
+                                "from_device_id": from_device_id,
+                                "session_id": session_id,
+                                "payload": signal_val,
+                            }),
+                        );
+                    }
+                }
+                return;
+            }
+
             let existing_tx = state
                 .relay_streams
                 .lock()

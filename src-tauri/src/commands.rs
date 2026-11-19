@@ -2062,6 +2062,70 @@ pub async fn pull_remote_file(
 }
 
 #[tauri::command]
+pub async fn send_meeting_signal(
+    _app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    target_device_id: String,
+    session_id: String,
+    payload: serde_json::Value,
+) -> Result<(), String> {
+    let payload_str = payload.to_string();
+    let hex_payload = hex::encode(payload_str.as_bytes());
+
+    // 1. Send via active WAN signaling relay
+    let sent_via_relay = if let Some(sig_tx) = state.signaling_tx.lock().unwrap().as_ref() {
+        let packet = serde_json::json!({
+            "type": "RELAY_CONTROL",
+            "session_id": session_id,
+            "from_device_id": state.identity.device_id,
+            "target_device_id": target_device_id,
+            "payload_json": hex_payload
+        })
+        .to_string();
+        sig_tx.send(packet).is_ok()
+    } else {
+        false
+    };
+
+    // 2. Also send directly via LAN TCP if contact has known local IP/port
+    if let Ok(Some(contact)) = state.db.get_contact(&target_device_id) {
+        if let (Some(ip), Some(port)) = (contact.last_known_ip, contact.last_known_port) {
+            let target_addr = format!("{}:{}", ip, port);
+            let my_dev_id = state.identity.device_id.clone();
+            let sid = session_id.clone();
+            let p_clone = payload.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(Ok(mut stream)) = tokio::time::timeout(
+                    std::time::Duration::from_millis(1500),
+                    tokio::net::TcpStream::connect(&target_addr),
+                )
+                .await
+                {
+                    let packet_val = serde_json::json!({
+                        "type": "MEETING_SIGNAL",
+                        "from_device_id": my_dev_id,
+                        "session_id": sid,
+                        "payload": p_clone
+                    });
+                    if let Ok(data) = serde_json::to_vec(&packet_val) {
+                        let len_prefix = (data.len() as u32).to_be_bytes();
+                        use tokio::io::AsyncWriteExt;
+                        let _ = stream.write_all(&len_prefix).await;
+                        let _ = stream.write_all(&data).await;
+                    }
+                }
+            });
+        }
+    }
+
+    if sent_via_relay {
+        Ok(())
+    } else {
+        Ok(())
+    }
+}
+
+#[tauri::command]
 pub async fn add_torrent_magnet(
     state: State<'_, Arc<AppState>>,
     magnet_url: String,

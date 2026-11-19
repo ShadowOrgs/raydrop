@@ -47,6 +47,7 @@
   } from 'lucide-svelte';
   import VoiceNotePlayer from './VoiceNotePlayer.svelte';
   import RemoteExplorerModal from './RemoteExplorerModal.svelte';
+  import { createMeetingRoom, inviteContactToMeeting } from '../stores/meeting';
   import { peerAvatars, myAvatar, loadPeerAvatar } from '../stores/avatars';
   import { contacts, lanContacts } from '../stores/contacts';
   import { cloudContacts, cloudMyDevices, activeChatPeerId, appSettings, incomingRequestQueue, activeMainTab } from '../stores/state';
@@ -1130,6 +1131,23 @@
             title="Browse & Pull files from this remote device"
           >
             <HardDrive class="w-4 h-4" />
+          </button>
+
+          <!-- Start Voice / Video Meeting Button -->
+          <button
+            type="button"
+            on:click={async () => {
+              if (activePeer) {
+                activeMainTab.set('meeting');
+                const title = `Call with ${activePeer.customName || activePeer.name}`;
+                await createMeetingRoom(title);
+                await inviteContactToMeeting(activePeer.id);
+              }
+            }}
+            class="p-1.5 rounded-xl transition cursor-pointer text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/15 border border-transparent hover:border-emerald-500/30"
+            title="Start P2P Voice & Video Meeting with this contact"
+          >
+            <Video class="w-4 h-4" />
           </button>
 
           <!-- Block / Unblock Button -->

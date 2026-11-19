@@ -436,6 +436,7 @@ pub fn run() {
             commands::browse_remote_shares,
             commands::browse_remote_dir,
             commands::pull_remote_file,
+            commands::send_meeting_signal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Raydrop Tauri application");

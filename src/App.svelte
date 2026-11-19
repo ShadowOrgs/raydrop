@@ -13,9 +13,12 @@
   import UpdateModal from "./lib/components/UpdateModal.svelte";
   import MagnetDownloadModal from "./lib/components/MagnetDownloadModal.svelte";
   import BrowserExtensionModal from "./lib/components/BrowserExtensionModal.svelte";
+  import MeetingView from "./lib/components/MeetingView.svelte";
+  import MeetingInviteModal from "./lib/components/MeetingInviteModal.svelte";
+  import { setupMeetingSignalListener } from "./lib/stores/meeting";
   import { initTorrentStore } from "./lib/stores/torrents";
   import { initAvatarStore, peerAvatars } from "./lib/stores/avatars";
-  import { Upload, X, Zap, MessageSquare, Wifi, Users } from "lucide-svelte";
+  import { Upload, X, Zap, MessageSquare, Wifi, Users, Video } from "lucide-svelte";
   import {
     appSettings,
     deviceCryptoMeta,
@@ -85,6 +88,9 @@
   });
 
   onMount(async () => {
+    // 0. Initialize WebRTC P2P Voice & Online Meeting Signaling
+    setupMeetingSignalListener();
+
     // 1. Immediately subscribe to all real-time backend events FIRST to prevent startup race conditions
     await raydropApi.listenEvent<boolean>(
       "signaling_status_changed",
@@ -433,8 +439,16 @@
       <ChatView />
     </div>
     <div
+      class="h-full w-full {$activeMainTab === 'meeting'
+        ? 'flex flex-col'
+        : 'hidden'}"
+    >
+      <MeetingView />
+    </div>
+    <div
       class="h-full w-full {$activeMainTab !== 'transfers' &&
-      $activeMainTab !== 'chat'
+      $activeMainTab !== 'chat' &&
+      $activeMainTab !== 'meeting'
         ? 'flex flex-col'
         : 'hidden'}"
     >
@@ -543,6 +557,7 @@
   <UpdateModal />
   <MagnetDownloadModal />
   <BrowserExtensionModal />
+  <MeetingInviteModal />
 
   <!-- Mobile Bottom Navigation Bar (md:hidden) -->
   <nav
@@ -592,7 +607,22 @@
       <span class="text-[10px]">Chat</span>
     </button>
 
-    <!-- 3. LAN Radar -->
+    <!-- 3. Online Meeting -->
+    <button
+      type="button"
+      on:click={() => activeMainTab.set("meeting")}
+      class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all {$activeMainTab ===
+      'meeting'
+        ? 'text-indigo-400 font-bold'
+        : 'text-slate-400 hover:text-slate-200'}"
+    >
+      <div class="relative">
+        <Video class="w-5 h-5" />
+      </div>
+      <span class="text-[10px]">Meeting</span>
+    </button>
+
+    <!-- 4. LAN Radar -->
     <button
       type="button"
       on:click={() => activeMainTab.set("lan")}

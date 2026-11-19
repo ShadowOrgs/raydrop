@@ -713,6 +713,31 @@ where
         return Ok(());
     }
 
+    if frame_type == "MEETING_SIGNAL" {
+        let from_dev_id = raw_val
+            .get("from_device_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let session_id = raw_val
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let payload = raw_val.get("payload").cloned().unwrap_or(serde_json::Value::Null);
+
+        let _ = app.emit(
+            "meeting_signal_received",
+            serde_json::json!({
+                "from_device_id": from_dev_id,
+                "session_id": session_id,
+                "payload": payload,
+            }),
+        );
+        let _ = writer.write_all(b"OK").await;
+        return Ok(());
+    }
+
     if frame_type == "CHAT" {
         let from_device_id = raw_val
             .get("from_device_id")

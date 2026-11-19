@@ -39,6 +39,7 @@
     Plus,
     MessageSquare,
     Camera,
+    Video,
   } from "lucide-svelte";
 
   let copied = false;
@@ -123,7 +124,7 @@
           {#if $updateChecking}
             <RefreshCw class="w-2.5 h-2.5 animate-spin text-cyan-400" />
           {/if}
-          <span>v1.2.15</span>
+          <span>v1.2.18</span>
         </button>
 
         {#if $updateInfo?.has_update}
@@ -221,7 +222,24 @@
       {/if}
     </button>
 
-    <!-- 3. LAN Radar (Inactive Tab) -->
+    <!-- 3. Online Meeting & Voice Room Tab -->
+    <button
+      type="button"
+      on:click={() => activeMainTab.set("meeting")}
+      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      'meeting'
+        ? 'bg-gradient-to-r from-indigo-500/25 to-sky-500/25 text-indigo-300 border border-indigo-500/40 shadow-sm shadow-indigo-500/15'
+        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
+    >
+      <Video
+        class="w-3.5 h-3.5 {$activeMainTab === 'meeting'
+          ? 'text-indigo-400'
+          : 'text-slate-400'}"
+      />
+      <span>Meeting</span>
+    </button>
+
+    <!-- 4. LAN Radar (Inactive Tab) -->
     <button
       type="button"
       on:click={() => activeMainTab.set("lan")}

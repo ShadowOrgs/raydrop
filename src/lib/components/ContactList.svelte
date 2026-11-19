@@ -38,11 +38,19 @@
     Network,
     Copy,
     HardDrive,
+    Video,
   } from "lucide-svelte";
   import RemoteExplorerModal from "./RemoteExplorerModal.svelte";
+  import { createMeetingRoom, inviteContactToMeeting } from "../stores/meeting";
 
   let remoteBrowserTarget: { deviceId: string; alias: string } | null = null;
   let myDirectAddr: { ip: string; port: number } | null = null;
+
+  async function startMeetingWith(deviceId: string, alias: string) {
+    activeMainTab.set("meeting");
+    await createMeetingRoom(`Meeting with ${alias}`);
+    await inviteContactToMeeting(deviceId);
+  }
   let directAddrCopied = false;
   let showConnectIpModal = false;
   let directConnectIp = "";
@@ -1046,6 +1054,18 @@
                     >
                       <HardDrive class="w-4 h-4" />
                     </button>
+                    <button
+                      type="button"
+                      on:click={() =>
+                        startMeetingWith(
+                          peer.device_id,
+                          peer.custom_name || peer.alias_name,
+                        )}
+                      class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-emerald-200 border border-emerald-500/30"
+                      title="Start Voice / Video Meeting"
+                    >
+                      <Video class="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               {/each}
@@ -1240,6 +1260,14 @@
                 title="Browse Remote Files"
               >
                 <HardDrive class="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                on:click={() => startMeetingWith(peer.device_id, peer.alias_name)}
+                class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-emerald-200 border border-emerald-500/30"
+                title="Start Voice / Video Meeting"
+              >
+                <Video class="w-4 h-4" />
               </button>
             </div>
           </div>

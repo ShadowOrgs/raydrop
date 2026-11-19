@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.17"
+    tag = clean_args[0] if clean_args else "v1.2.18"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Quick Voice Notes, Continuous Real-Time Folder Mirroring & Remote Folder Browser"
+    title = f"Raydrop {tag}: P2P Online Meeting, Discord-Style Voice Rooms & HD Screen Sharing"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Quick Voice Notes, Continuous Real-Time Folder Mirroring & Remote Folder Browser</h2>
+<h2 align="center">Raydrop {tag}: P2P Online Meeting, Discord-Style Voice Rooms & HD Screen Sharing</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,20 +126,32 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🎙️ Quick Voice Notes (Perekam Suara Cepat di Chat)
-- **Instant Audio Recording:** Tap the microphone icon in the chat input bar to record voice notes on the fly with live timer and visual pulse indicators.
-- **Embedded Audio Player:** Play, pause, seek, and download voice notes directly inside the conversation stream with formatted timestamps and track duration.
-- **Media Drawer Integration:** Audio messages are automatically cataloged into the conversation Media drawer for easy review.
+#### 🎙️ Discord-Style P2P Voice Rooms & Speaking Detection
+- **Full-Mesh WebRTC Audio:** Ultra-low latency (<50ms) direct device-to-device audio stream with zero server recording or hosting fees.
+- **Active Speaking Indicator:** Web Audio `AnalyserNode` monitoring highlights speakers with glowing emerald borders in real-time.
+- **Persistent Voice Channels:** Jump into preset team lounges (*Lounge Room*, *Dev Standup*, *Gaming Channel*) or spin up custom rooms instantly.
+- **Audio Processing & Shortcuts:** Built-in echo cancellation, noise suppression, and auto gain control with keyboard shortcut `M` for instant mute/unmute.
 
-#### 🔄 Continuous Real-Time Folder Mirroring (Background Sync)
-- **Automatic Filesystem Watching:** Powered by Rust's `notify` subsystem, Raydrop continuously watches your configured local directories for any created, modified, or deleted files.
-- **Smart Debounced Mirroring:** Intelligently debounces rapid file operations before triggering accelerated P2P transfers to your trusted target device.
-- **Live Status Streaming:** Real-time visual status badges ("Real-Time Mirror Active", "Mirroring changes...") in the Folder Mirror & Sync manager.
+#### 🖥️ Zoom-Style Video Grid & 1080p Screen Sharing
+- **Dynamic Video Grid:** Fluid multi-participant layout supporting 1 to 8 peers with automatic scaling.
+- **Spotlight Screen Share:** Stream desktop, application windows, or browser tabs in crystal-clear 1080p 60fps directly P2P without compression throttling.
+- **Webcam Cam Toggle:** Toggle your video feed on/off with shortcut `V`.
 
-#### 📂 Remote Folder Browser (On-Demand File Pulling)
-- **Browse Remote Directories:** Directly explore folders and directory trees exposed by your trusted remote peers and own devices.
-- **On-Demand File Pull:** Select and pull specific files across LAN or WAN with end-to-end encryption.
-- **Path-Traversal Protected:** Strict server-side verification ensures remote peers can never access files outside designated shared paths.
-- **Shared Folders Manager:** Configure custom shared directories easily in Raydrop Settings with one-click folder sharing.
+#### 🚀 In-Meeting P2P File Drop (*Raydrop Exclusive*)
+- **Unlimited File Sharing Inside Calls:** Drag and drop or browse files of any size (even 10GB+ ISOs/videos) directly inside the meeting.
+- **Simultaneous Peer Transfer:** All room participants receive the file instantly via Raydrop's high-speed P2P transport engine.
+
+#### ✋ Raise Hand, Floating Reactions & Meeting Chat
+- **Raise Hand (Shortcut `H`):** Queue speaking turns cleanly with hand indicators.
+- **Floating Live Reactions:** Send floating emoji reactions (👍, ❤️, 👏, 😂, 🎉, 🔥) drifting across everyone's screens.
+- **In-Meeting Chat Drawer:** Collapsible sidebar for real-time messaging during presentations.
+
+#### ⏺️ Local Meeting Recording (Free & Zero-Cloud)
+- **Local Screen & Audio Recording:** Record meeting video and mixed audio directly to disk via `MediaRecorder` with live REC timer.
+- **Zero Cloud Costs:** Files save directly to your Raydrop download folder without limits or watermarks.
+
+#### 👥 Direct Contact Ring & Room Invite Links
+- **One-Click Ring / Invite:** Ring online contacts directly from chat header or contact list with accept/decline popup dialog.
+- **Shareable Links:** Copy `raydrop://room/<id>` links to invite external peers in one click.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)
