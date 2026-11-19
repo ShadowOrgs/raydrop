@@ -75,6 +75,7 @@
   let isPanning = false;
   let startPan = { x: 0, y: 0 };
   let transferThumbnails: Record<string, string> = {};
+  let failedThumbnails: Record<string, boolean> = {};
 
   let showHashModal = false;
   let hashTargetFile: { name: string; path: string } | null = null;
@@ -208,13 +209,34 @@
   }
 
   async function ensureTransferThumbnail(path: string | null) {
-    if (!path || transferThumbnails[path]) return;
+    if (!path || transferThumbnails[path] || failedThumbnails[path]) return;
     try {
       const thumb = await raydropApi.getFileThumbnail(path);
       if (thumb) {
         transferThumbnails = { ...transferThumbnails, [path]: thumb };
+      } else {
+        failedThumbnails = { ...failedThumbnails, [path]: true };
       }
-    } catch (_) {}
+    } catch (_) {
+      failedThumbnails = { ...failedThumbnails, [path]: true };
+    }
+  }
+
+  // Preload thumbnails for all image items in active transfers & history
+  $: if (filteredHistory.length > 0 || filteredActive.length > 0) {
+    for (const h of filteredHistory) {
+      const files = parseFilePaths(h.source_paths);
+      const primaryFilePath = files[0] || h.target_path;
+      if (primaryFilePath && isImageFile(primaryFilePath) && !transferThumbnails[primaryFilePath] && !failedThumbnails[primaryFilePath]) {
+        ensureTransferThumbnail(primaryFilePath);
+      }
+    }
+    for (const t of filteredActive) {
+      const activeFiles = parseFilePaths(t.source_paths);
+      if (activeFiles[0] && isImageFile(activeFiles[0]) && !transferThumbnails[activeFiles[0]] && !failedThumbnails[activeFiles[0]]) {
+        ensureTransferThumbnail(activeFiles[0]);
+      }
+    }
   }
 
   function openImagePreview(path: string, name: string) {
@@ -1192,15 +1214,40 @@
             {@const isParallel = t.total_bytes >= 4 * 1024 * 1024}
             {@const activeFiles = parseFilePaths(t.source_paths)}
             {@const primaryName = activeFiles[0] ? getBaseName(activeFiles[0]) : 'Transfer Stream'}
+            {@const primaryFilePath = activeFiles[0]}
             {@const badge = getFileTypeBadge(primaryName)}
+            {@const isImg = isImageFile(primaryName)}
 
             <div class="p-4 rounded-2xl bg-slate-900/90 border {t.status === 'paused' ? 'border-amber-500/40 shadow-amber-500/5' : 'border-cyan-500/30 shadow-cyan-500/5'} shadow-xl space-y-3 transition-all">
               <div class="flex items-start justify-between gap-3">
                 <div class="flex items-center gap-3 min-w-0">
-                  <!-- File Type Icon Box (Matching Landing Page Demo Window) -->
-                  <div class="w-11 h-11 rounded-xl {badge.color} border flex items-center justify-center font-mono font-extrabold text-xs shrink-0 shadow-sm">
-                    {badge.label}
-                  </div>
+                  <!-- File Type Icon / Thumbnail Box -->
+                  {#if isImg && primaryFilePath && transferThumbnails[primaryFilePath]}
+                    <div class="w-11 h-11 rounded-xl overflow-hidden border border-cyan-500/30 bg-slate-800 shrink-0 shadow-sm">
+                      <img
+                        src={transferThumbnails[primaryFilePath]}
+                        alt=""
+                        class="w-full h-full object-cover"
+                      />
+                    </div>
+                  {:else if isImg && primaryFilePath && !failedThumbnails[primaryFilePath]}
+                    <div class="w-11 h-11 rounded-xl overflow-hidden border border-cyan-500/30 bg-slate-800 shrink-0 shadow-sm">
+                      <img
+                        src={convertFileSrc(primaryFilePath)}
+                        alt=""
+                        on:error={() => {
+                          if (!transferThumbnails[primaryFilePath]) {
+                            failedThumbnails = { ...failedThumbnails, [primaryFilePath]: true };
+                          }
+                        }}
+                        class="w-full h-full object-cover"
+                      />
+                    </div>
+                  {:else}
+                    <div class="w-11 h-11 rounded-xl {badge.color} border flex items-center justify-center font-mono font-extrabold text-xs shrink-0 shadow-sm">
+                      {badge.label}
+                    </div>
+                  {/if}
 
                   <div class="min-w-0">
                     <h4 class="text-sm font-bold text-white truncate" title={primaryName}>
@@ -1447,7 +1494,7 @@
             <div class="p-3.5 rounded-xl bg-slate-900/70 hover:bg-slate-900 border border-slate-800/90 hover:border-slate-700 flex flex-col gap-2.5 transition-colors">
               <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div class="flex items-center gap-3 min-w-0">
-                  {#if isImg && primaryFilePath}
+                  {#if isImg && primaryFilePath && transferThumbnails[primaryFilePath]}
                     <button
                       type="button"
                       on:click={() => openImagePreview(primaryFilePath, primaryName)}
@@ -1455,8 +1502,29 @@
                       title="Click to view image"
                     >
                       <img
-                        src={transferThumbnails[primaryFilePath] || convertFileSrc(primaryFilePath)}
-                        alt={primaryName}
+                        src={transferThumbnails[primaryFilePath]}
+                        alt=""
+                        class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                      />
+                      <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <Eye class="w-4 h-4 text-white" />
+                      </div>
+                    </button>
+                  {:else if isImg && primaryFilePath && !failedThumbnails[primaryFilePath]}
+                    <button
+                      type="button"
+                      on:click={() => openImagePreview(primaryFilePath, primaryName)}
+                      class="w-10 h-10 rounded-xl overflow-hidden border border-cyan-500/30 bg-slate-800 shrink-0 relative group shadow-sm hover:ring-2 hover:ring-cyan-500/50 transition cursor-zoom-in"
+                      title="Click to view image"
+                    >
+                      <img
+                        src={convertFileSrc(primaryFilePath)}
+                        alt=""
+                        on:error={() => {
+                          if (!transferThumbnails[primaryFilePath]) {
+                            failedThumbnails = { ...failedThumbnails, [primaryFilePath]: true };
+                          }
+                        }}
                         class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                       />
                       <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
@@ -1845,6 +1913,12 @@
         <img
           src={convertFileSrc(previewImage.path)}
           alt={previewImage.name}
+          on:error={(e) => {
+            const target = e.currentTarget;
+            if (previewImage && transferThumbnails[previewImage.path] && target.src !== transferThumbnails[previewImage.path]) {
+              target.src = transferThumbnails[previewImage.path];
+            }
+          }}
           class="max-w-full max-h-full object-contain pointer-events-none transition-transform duration-75"
           style="transform: scale({zoomScale}) translate({zoomTranslate.x}px, {zoomTranslate.y}px);"
           draggable="false"
