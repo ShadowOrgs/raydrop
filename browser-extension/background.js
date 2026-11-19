@@ -54,6 +54,29 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 chrome.downloads.onCreated.addListener(async (downloadItem) => {
   if (handledDownloadIds.has(downloadItem.id)) return;
 
+  // 1. Only intercept active, in-progress downloads (not historical or completed items restored by browser)
+  if (downloadItem.state && downloadItem.state !== "in_progress") {
+    return;
+  }
+
+  // 2. Ignore completed items or items with endTime
+  if (downloadItem.endTime) {
+    return;
+  }
+
+  // 3. Ignore items started in the past (> 15 seconds ago, e.g. cache clear / history rebuild / browser session restore)
+  if (downloadItem.startTime) {
+    const startMs = new Date(downloadItem.startTime).getTime();
+    if (!isNaN(startMs) && Date.now() - startMs > 15000) {
+      return;
+    }
+  }
+
+  // 4. Ignore downloads that have already received bytes from a previous session
+  if (downloadItem.bytesReceived && downloadItem.bytesReceived > 0) {
+    return;
+  }
+
   const config = await chrome.storage.local.get(["enabled", "autoCapture", "extensions"]);
   if (config.enabled === false || config.autoCapture === false) return;
 

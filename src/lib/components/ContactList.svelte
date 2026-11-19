@@ -9,6 +9,7 @@
     activeChatPeerId,
   } from '../stores/state';
   import { contacts, lanContacts } from '../stores/contacts';
+  import { peerAvatars, myAvatar, loadPeerAvatar } from '../stores/avatars';
   import {
     raydropApi,
     cloudApi,
@@ -56,6 +57,33 @@
 
   let editingDeviceId: string | null = null;
   let editingDeviceName = '';
+
+  let editingCustomNameDeviceId: string | null = null;
+  let editingCustomNameValue = '';
+
+  async function handleSaveContactCustomName(deviceId: string) {
+    try {
+      await raydropApi.setContactCustomName(deviceId, editingCustomNameValue.trim());
+      const updated = await raydropApi.getContacts();
+      contacts.set(updated);
+    } catch (err) {
+      console.warn('Failed to update contact custom name:', err);
+    } finally {
+      editingCustomNameDeviceId = null;
+    }
+  }
+
+  $: localOnlyContacts = $contacts.filter((c) => {
+    if (c.is_own_device) return false;
+    if (!$cloudContacts || $cloudContacts.length === 0) return true;
+    return !c.user_email || !$cloudContacts.some((cg) => cg.email.toLowerCase() === (c.user_email || '').toLowerCase());
+  });
+
+  $: for (const c of $contacts) {
+    if (c.avatar_hash && !$peerAvatars[c.device_id]) {
+      loadPeerAvatar(c.device_id);
+    }
+  }
 
   async function syncWithCloud() {
     if (!$appSettings.auth_token) return;
@@ -317,8 +345,14 @@
           {@const isThisDevice = dev.device_id === $appSettings.device_id}
           <div class="p-3.5 rounded-xl bg-slate-900/90 border {isThisDevice ? 'border-cyan-500/40' : 'border-slate-800'} flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div class="flex items-center gap-3 min-w-0">
-              <div class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
-                <Laptop class="w-5 h-5 text-cyan-400" />
+              <div class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden">
+                {#if isThisDevice && $myAvatar}
+                  <img src={$myAvatar} alt="" class="w-full h-full object-cover" />
+                {:else if $peerAvatars[dev.device_id]}
+                  <img src={$peerAvatars[dev.device_id]} alt="" class="w-full h-full object-cover" />
+                {:else}
+                  <Laptop class="w-5 h-5 text-cyan-400" />
+                {/if}
                 <span
                   class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 {dev.is_online || isThisDevice
                     ? 'bg-emerald-400'
@@ -421,24 +455,38 @@
       {/if}
 
     {:else if activeTab === 'contacts'}
-      {#if !$appSettings.auth_token}
+      {#if !$appSettings.auth_token && localOnlyContacts.length === 0}
         <div class="h-60 flex flex-col items-center justify-center text-center px-6">
-          <p class="text-sm font-semibold text-slate-200">Sign in to sync your persistent Email contacts</p>
+          <div class="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mb-3 text-cyan-400">
+            <Users class="w-6 h-6" />
+          </div>
+          <p class="text-sm font-semibold text-slate-200">No contacts yet</p>
+          <p class="text-xs text-slate-400 mt-1 max-w-sm">
+            Contacts are automatically added when you chat and reply to peers, or you can sign in to sync contacts across all your devices.
+          </p>
           <button
             on:click={() => authModalOpen.set(true)}
-            class="mt-3 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs"
+            class="mt-4 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/20"
           >
-            Sign In
+            Sign In with Email
           </button>
         </div>
       {:else}
+        <!-- Cloud Account Contacts -->
         {#each $cloudContacts as group (group.email)}
           {@const primaryDev = pickPrimaryDevice(group)}
-          <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2.5">
+          {@const primaryAvatar = primaryDev ? $peerAvatars[primaryDev.device_id] : null}
+          <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div class="flex items-center gap-3 min-w-0">
-                <div class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
-                  <Mail class="w-5 h-5 text-cyan-400" />
+                <div class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden">
+                  {#if primaryAvatar}
+                    <img src={primaryAvatar} alt={group.name} class="w-full h-full object-cover" />
+                  {:else}
+                    <div class="font-bold text-xs text-cyan-300">
+                      {group.name.slice(0, 2).toUpperCase()}
+                    </div>
+                  {/if}
                   <span
                     class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 {group.is_online
                       ? 'bg-emerald-400'
@@ -484,13 +532,6 @@
                       <Send class="w-3.5 h-3.5" />
                       <span>Send</span>
                     </button>
-                    <button
-                      on:click={() => sendToDeviceId(primaryDev.device_id, `${group.name} (${primaryDev.device_name})`, true)}
-                      class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
-                      title="Send Folder"
-                    >
-                      <FolderUp class="w-4 h-4" />
-                    </button>
                   </div>
                 {/if}
 
@@ -504,50 +545,272 @@
               </div>
             </div>
 
-            <!-- List of Contact's Devices if > 0 -->
+            <!-- List of Contact's Devices -->
             {#if group.devices.length > 0}
-              <div class="pt-2 border-t border-slate-800/70 flex flex-wrap gap-1.5">
-                {#each group.devices as cdev (cdev.device_id)}
-                  <button
-                    on:click={() => sendToDeviceId(cdev.device_id, `${group.name} - ${cdev.device_name}`, false)}
-                    class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[11px] text-slate-300 transition-colors"
-                    title="Click to send files directly to {cdev.device_name}"
-                  >
-                    <span class="w-1.5 h-1.5 rounded-full {cdev.is_online ? 'bg-emerald-400' : 'bg-slate-600'}"></span>
-                    <span class="font-medium">{cdev.device_name}</span>
-                    <span class="text-[10px] text-slate-500 uppercase">({cdev.os_type})</span>
-                  </button>
-                {/each}
+              <div class="pt-2.5 border-t border-slate-800/80">
+                <div class="text-[11px] font-semibold text-slate-400 mb-2 flex items-center justify-between">
+                  <span>Linked Devices ({group.devices.length}):</span>
+                  <span class="text-[10px] text-slate-500 font-mono">Set initials or send files directly</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {#each group.devices as cdev (cdev.device_id)}
+                    {@const devLocalContact = $contacts.find((c) => c.device_id === cdev.device_id)}
+                    {@const customNick = devLocalContact?.custom_name}
+                    {@const devAvatar = $peerAvatars[cdev.device_id]}
+                    <div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/90 flex flex-col justify-between gap-2">
+                      <div class="flex items-center justify-between gap-2 min-w-0">
+                        <div class="flex items-center gap-2 min-w-0">
+                          <div class="relative w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
+                            {#if devAvatar}
+                              <img src={devAvatar} alt="" class="w-full h-full object-cover" />
+                            {:else}
+                              <Laptop class="w-3.5 h-3.5 text-cyan-400" />
+                            {/if}
+                            <span class="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full {cdev.is_online ? 'bg-emerald-400' : 'bg-slate-500'}"></span>
+                          </div>
+                          <div class="min-w-0">
+                            {#if editingCustomNameDeviceId === cdev.device_id}
+                              <form
+                                class="flex items-center gap-1"
+                                on:submit|preventDefault={() => handleSaveContactCustomName(cdev.device_id)}
+                              >
+                                <input
+                                  type="text"
+                                  bind:value={editingCustomNameValue}
+                                  placeholder="Initial / nickname..."
+                                  class="bg-slate-900 border border-cyan-500/50 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none"
+                                  autofocus
+                                />
+                                <button type="submit" class="p-0.5 text-emerald-400 hover:bg-slate-800 rounded">
+                                  <Check class="w-3 h-3" />
+                                </button>
+                                <button type="button" on:click={() => (editingCustomNameDeviceId = null)} class="p-0.5 text-slate-400 hover:bg-slate-800 rounded">
+                                  <X class="w-3 h-3" />
+                                </button>
+                              </form>
+                            {:else}
+                              <div class="flex items-center gap-1.5">
+                                <span class="text-xs font-semibold text-white truncate">
+                                  {customNick ? `${customNick} (${cdev.device_name})` : cdev.device_name}
+                                </span>
+                                <button
+                                  type="button"
+                                  on:click={() => {
+                                    editingCustomNameDeviceId = cdev.device_id;
+                                    editingCustomNameValue = customNick || '';
+                                  }}
+                                  class="p-0.5 text-slate-500 hover:text-cyan-400 rounded"
+                                  title="Set initial / nickname"
+                                >
+                                  <Pencil class="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                            {/if}
+                            <p class="text-[10px] font-mono text-slate-400 truncate">
+                              <span class="uppercase text-slate-500">{cdev.os_type}</span>
+                              {#if cdev.last_ip}
+                                <span> • {cdev.last_ip}</span>
+                              {/if}
+                              <span class={cdev.is_online ? 'text-emerald-400' : 'text-slate-500'}> • {cdev.is_online ? 'Online' : 'Offline'}</span>
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="flex items-center gap-1.5 pt-1.5 border-t border-slate-800/60 justify-end">
+                        <button
+                          on:click={() => openChatWith(cdev.device_id)}
+                          class="px-2 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 text-[11px] font-medium transition flex items-center gap-1"
+                          title="Chat with {cdev.device_name}"
+                        >
+                          <MessageSquare class="w-3 h-3" />
+                          <span>Chat</span>
+                        </button>
+                        <button
+                          on:click={() => sendToDeviceId(cdev.device_id, `${group.name} - ${customNick || cdev.device_name}`, false)}
+                          class="px-2 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-[11px] font-medium transition flex items-center gap-1"
+                          title="Send Files to {cdev.device_name}"
+                        >
+                          <Send class="w-3 h-3" />
+                          <span>Files</span>
+                        </button>
+                        <button
+                          on:click={() => sendToDeviceId(cdev.device_id, `${group.name} - ${customNick || cdev.device_name}`, true)}
+                          class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                          title="Send Folder to {cdev.device_name}"
+                        >
+                          <FolderUp class="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
               </div>
             {/if}
           </div>
-        {:else}
-          <div class="h-56 flex flex-col items-center justify-center text-center px-6">
-            <Users class="w-8 h-8 text-cyan-400/60 mb-2" />
-            <p class="text-sm font-medium text-slate-300">No contacts added yet</p>
-            <p class="text-xs text-slate-500 mt-1 max-w-xs">
-              Click <strong>Add by Email</strong> to add a friend or colleague by their registered email address. Contacts are saved persistently on the server.
-            </p>
-          </div>
         {/each}
+
+        <!-- Direct / Replied Chat Contacts & Unlinked Peers -->
+        {#if localOnlyContacts.length > 0}
+          <div class="pt-2">
+            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+              Discovered & Chat Contacts ({localOnlyContacts.length})
+            </h4>
+            <div class="space-y-2.5">
+              {#each localOnlyContacts as peer (peer.device_id)}
+                {@const peerAvatar = $peerAvatars[peer.device_id]}
+                <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden">
+                      {#if peerAvatar}
+                        <img src={peerAvatar} alt={peer.alias_name} class="w-full h-full object-cover" />
+                      {:else}
+                        <div class="font-bold text-xs text-cyan-300">
+                          {(peer.custom_name || peer.alias_name).slice(0, 2).toUpperCase()}
+                        </div>
+                      {/if}
+                      <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 {peer.is_online ? 'bg-emerald-400' : 'bg-slate-500'}"></span>
+                    </div>
+
+                    <div class="min-w-0">
+                      {#if editingCustomNameDeviceId === peer.device_id}
+                        <form
+                          class="flex items-center gap-1 mb-1"
+                          on:submit|preventDefault={() => handleSaveContactCustomName(peer.device_id)}
+                        >
+                          <input
+                            type="text"
+                            bind:value={editingCustomNameValue}
+                            placeholder="Initial / nickname..."
+                            class="bg-slate-950 border border-cyan-500 rounded px-2 py-0.5 text-xs text-white focus:outline-none"
+                            autofocus
+                          />
+                          <button type="submit" class="p-1 text-emerald-400 hover:bg-slate-800 rounded">
+                            <Check class="w-3.5 h-3.5" />
+                          </button>
+                          <button type="button" on:click={() => (editingCustomNameDeviceId = null)} class="p-1 text-slate-400 hover:bg-slate-800 rounded">
+                            <X class="w-3.5 h-3.5" />
+                          </button>
+                        </form>
+                      {:else}
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                          <p class="text-sm font-bold text-white truncate">
+                            {peer.custom_name ? `${peer.custom_name} (${peer.alias_name})` : peer.alias_name}
+                          </p>
+                          <button
+                            type="button"
+                            on:click={() => {
+                              editingCustomNameDeviceId = peer.device_id;
+                              editingCustomNameValue = peer.custom_name || '';
+                            }}
+                            class="p-1 text-slate-400 hover:text-cyan-400 rounded transition"
+                            title="Set initial / nickname"
+                          >
+                            <Pencil class="w-3 h-3" />
+                          </button>
+                          <span class="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                            {peer.os_type}
+                          </span>
+                          <span class="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 border border-slate-700">
+                            {peer.network_type}
+                          </span>
+                        </div>
+                      {/if}
+                      <p class="text-xs font-mono text-slate-400 truncate">
+                        {peer.user_email || peer.device_id}
+                        <span class={peer.is_online ? 'text-emerald-400' : 'text-slate-500'}> • {peer.is_online ? 'Online' : 'Offline'}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center gap-1.5 shrink-0 justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60">
+                    <button
+                      on:click={() => openChatWith(peer.device_id)}
+                      class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500 text-indigo-300 hover:text-slate-950 border border-indigo-500/30 text-xs font-semibold transition-all"
+                      title="P2P Chat"
+                    >
+                      <MessageSquare class="w-3.5 h-3.5" />
+                      <span>Chat</span>
+                    </button>
+                    <button
+                      on:click={() => sendToDeviceId(peer.device_id, peer.custom_name || peer.alias_name, false)}
+                      class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/30 text-xs font-semibold transition-all"
+                    >
+                      <Send class="w-3.5 h-3.5" />
+                      <span>Files</span>
+                    </button>
+                    <button
+                      on:click={() => sendToDeviceId(peer.device_id, peer.custom_name || peer.alias_name, true)}
+                      class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
+                      title="Send Folder"
+                    >
+                      <FolderUp class="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
       {/if}
 
     {:else}
       <!-- LAN Radar Tab -->
       {#each $lanContacts as peer (peer.device_id)}
+        {@const localContact = $contacts.find((c) => c.device_id === peer.device_id)}
+        {@const customNick = localContact?.custom_name}
+        {@const lanAvatar = $peerAvatars[peer.device_id]}
         <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div class="flex items-center gap-3 min-w-0">
-            <div class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
-              <Laptop class="w-5 h-5 text-cyan-400" />
+            <div class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden">
+              {#if lanAvatar}
+                <img src={lanAvatar} alt="" class="w-full h-full object-cover" />
+              {:else}
+                <Laptop class="w-5 h-5 text-cyan-400" />
+              {/if}
               <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 bg-emerald-400"></span>
             </div>
             <div class="min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                <p class="text-sm font-semibold text-slate-100 truncate">{peer.alias_name}</p>
-                {#if peer.user_email}
-                  <span class="text-[11px] font-mono text-cyan-300 truncate">{peer.user_email}</span>
-                {/if}
-              </div>
+              {#if editingCustomNameDeviceId === peer.device_id}
+                <form
+                  class="flex items-center gap-1 mb-1"
+                  on:submit|preventDefault={() => handleSaveContactCustomName(peer.device_id)}
+                >
+                  <input
+                    type="text"
+                    bind:value={editingCustomNameValue}
+                    placeholder="Initial / nickname..."
+                    class="bg-slate-950 border border-cyan-500 rounded px-2 py-0.5 text-xs text-white focus:outline-none"
+                    autofocus
+                  />
+                  <button type="submit" class="p-1 text-emerald-400 hover:bg-slate-800 rounded">
+                    <Check class="w-3.5 h-3.5" />
+                  </button>
+                  <button type="button" on:click={() => (editingCustomNameDeviceId = null)} class="p-1 text-slate-400 hover:bg-slate-800 rounded">
+                    <X class="w-3.5 h-3.5" />
+                  </button>
+                </form>
+              {:else}
+                <div class="flex items-center gap-2 flex-wrap">
+                  <p class="text-sm font-semibold text-slate-100 truncate">
+                    {customNick ? `${customNick} (${peer.alias_name})` : peer.alias_name}
+                  </p>
+                  <button
+                    type="button"
+                    on:click={() => {
+                      editingCustomNameDeviceId = peer.device_id;
+                      editingCustomNameValue = customNick || '';
+                    }}
+                    class="p-0.5 text-slate-500 hover:text-cyan-400 rounded"
+                    title="Set initial / nickname"
+                  >
+                    <Pencil class="w-2.5 h-2.5" />
+                  </button>
+                  {#if peer.user_email}
+                    <span class="text-[11px] font-mono text-cyan-300 truncate">{peer.user_email}</span>
+                  {/if}
+                </div>
+              {/if}
               <p class="text-xs font-mono text-slate-400 truncate mt-0.5">
                 {peer.device_id}
                 {#if peer.last_known_ip}

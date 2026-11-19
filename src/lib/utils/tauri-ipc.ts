@@ -30,6 +30,7 @@ export interface AppStateSnapshot {
 export interface Contact {
   device_id: string;
   alias_name: string;
+  custom_name?: string | null;
   user_email: string | null;
   user_name: string | null;
   os_type: string | null;
@@ -42,6 +43,7 @@ export interface Contact {
   is_online: boolean;
   last_seen_at: number;
   created_at: number;
+  avatar_hash?: string | null;
 }
 
 export interface CloudDeviceNode {
@@ -402,6 +404,14 @@ export const raydropApi = {
     invoke<string>('open_browser_extension_dir'),
   openBrowserExtensionUrl: (browser: string) =>
     invoke<void>('open_browser_extension_url', { browser }),
+  setMyAvatar: (imageData: string) =>
+    invoke<string>('set_my_avatar', { imageData }),
+  getMyAvatar: () =>
+    invoke<string | null>('get_my_avatar'),
+  getPeerAvatar: (peerDeviceId: string) =>
+    invoke<string | null>('get_peer_avatar', { peerDeviceId }),
+  setContactCustomName: (deviceId: string, customName: string) =>
+    invoke<Contact>('set_contact_custom_name', { deviceId, customName }),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>
     listen<T>(event, (e) => handler(e.payload)),
 };

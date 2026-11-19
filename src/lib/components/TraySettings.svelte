@@ -10,6 +10,7 @@
   import { checkForUpdates } from "../utils/updater";
   import { raydropApi } from "../utils/tauri-ipc";
   import { browserExtensionModalOpen } from "../stores/torrents";
+  import { myAvatar } from "../stores/avatars";
   import {
     FolderOpen,
     Terminal,
@@ -21,6 +22,8 @@
     Sparkles,
     Gauge,
     Puzzle,
+    Camera,
+    Upload,
   } from "lucide-svelte";
 
   let aliasName = "";
@@ -43,6 +46,25 @@
       .getWin11DirectMenu()
       .then((res) => (win11DirectMenu = res))
       .catch(() => {});
+  }
+
+  async function handleUploadAvatar() {
+    try {
+      const picked = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'] }],
+        title: 'Choose Profile Avatar',
+      });
+      if (typeof picked === 'string') {
+        const b64 = await raydropApi.setMyAvatar(picked);
+        myAvatar.set(b64);
+        statusBanner = 'Profile avatar updated and synced across all your devices!';
+        setTimeout(() => (statusBanner = ''), 3000);
+      }
+    } catch (err) {
+      console.warn('Failed to upload avatar:', err);
+    }
   }
 
   async function browseDownloadDir() {
@@ -149,6 +171,33 @@
       </div>
 
       <div class="space-y-4 py-4 flex-1 overflow-y-auto pr-1">
+        <!-- Profile Avatar Section -->
+        <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="relative w-12 h-12 rounded-xl overflow-hidden border border-slate-700 bg-slate-800 flex items-center justify-center shrink-0">
+              {#if $myAvatar}
+                <img src={$myAvatar} alt="Profile Avatar" class="w-full h-full object-cover" />
+              {:else}
+                <span class="text-sm font-bold text-cyan-300">
+                  {(aliasName || 'RD').slice(0, 2).toUpperCase()}
+                </span>
+              {/if}
+            </div>
+            <div>
+              <p class="text-xs font-semibold text-white">Profile Avatar</p>
+              <p class="text-[11px] text-slate-400">Synced to other peers during chat & transfer</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            on:click={handleUploadAvatar}
+            class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition cursor-pointer"
+          >
+            <Camera class="w-3.5 h-3.5 text-cyan-400" />
+            <span>Upload Avatar</span>
+          </button>
+        </div>
+
         <div>
           <label
             for="setting-alias"
@@ -392,7 +441,7 @@
               <span
                 class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700"
               >
-                Current: v1.2.14
+                Current: v1.2.15
               </span>
             </div>
             <p class="text-[11px] text-slate-400 mt-0.5">

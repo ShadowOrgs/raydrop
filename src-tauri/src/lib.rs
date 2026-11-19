@@ -410,6 +410,10 @@ pub fn run() {
             commands::delete_http_download,
             commands::open_browser_extension_dir,
             commands::open_browser_extension_url,
+            commands::set_my_avatar,
+            commands::get_my_avatar,
+            commands::get_peer_avatar,
+            commands::set_contact_custom_name,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Raydrop Tauri application");

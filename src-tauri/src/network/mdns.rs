@@ -34,6 +34,9 @@ pub fn start_mdns_daemon(app: AppHandle, state: Arc<AppState>) {
         if let Some(ref name) = settings.user_name {
             properties.insert("user_name".to_string(), name.clone());
         }
+        if let Ok(Some(av_hash)) = state.db.get_setting("avatar_hash") {
+            properties.insert("avatar_hash".to_string(), av_hash);
+        }
 
         if let Ok(service_info) = ServiceInfo::new(
             SERVICE_TYPE,
@@ -105,9 +108,12 @@ pub fn start_mdns_daemon(app: AppHandle, state: Arc<AppState>) {
                             }
                         });
 
+                    let peer_avatar_hash = info.get_property_val_str("avatar_hash").map(|s| s.to_string());
+
                     let contact = Contact {
                         device_id: peer_id.to_string(),
                         alias_name: alias,
+                        custom_name: existing.as_ref().and_then(|c| c.custom_name.clone()),
                         user_email: peer_email.or_else(|| existing.as_ref().and_then(|c| c.user_email.clone())),
                         user_name: peer_user_name.or_else(|| existing.as_ref().and_then(|c| c.user_name.clone())),
                         os_type: peer_os.or_else(|| existing.as_ref().and_then(|c| c.os_type.clone())),
@@ -120,6 +126,7 @@ pub fn start_mdns_daemon(app: AppHandle, state: Arc<AppState>) {
                         is_online: true,
                         last_seen_at: now_unix_secs(),
                         created_at: now_unix_secs(),
+                        avatar_hash: peer_avatar_hash.or_else(|| existing.as_ref().and_then(|c| c.avatar_hash.clone())),
                     };
 
                     let _ = state.db.upsert_contact(&contact);

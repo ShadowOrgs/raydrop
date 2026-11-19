@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct Contact {
     pub device_id: String,
     pub alias_name: String,
+    pub custom_name: Option<String>,
     pub user_email: Option<String>,
     pub user_name: Option<String>,
     pub os_type: Option<String>,
@@ -22,6 +23,7 @@ pub struct Contact {
     pub is_online: bool,
     pub last_seen_at: u64,
     pub created_at: u64,
+    pub avatar_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,6 +230,8 @@ impl Database {
             "ALTER TABLE contacts ADD COLUMN is_own_device INTEGER DEFAULT 0",
             [],
         );
+        let _ = conn.execute("ALTER TABLE contacts ADD COLUMN custom_name TEXT", []);
+        let _ = conn.execute("ALTER TABLE contacts ADD COLUMN avatar_hash TEXT", []);
         let _ = conn.execute("ALTER TABLE transfer_history ADD COLUMN source_paths TEXT", []);
         // Any transfer left in 'in_progress' from a previous PC shutdown/crash becomes 'paused' (resumable)
         let _ = conn.execute(
@@ -365,8 +369,8 @@ impl Database {
             "INSERT INTO contacts (
                 device_id, alias_name, user_email, user_name, os_type, is_own_device,
                 ed25519_pubkey, network_type, last_known_ip, last_known_port,
-                trust_level, is_online, last_seen_at, created_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
             ON CONFLICT(device_id) DO UPDATE SET
                 alias_name = excluded.alias_name,
                 user_email = COALESCE(excluded.user_email, contacts.user_email),
@@ -379,7 +383,9 @@ impl Database {
                 last_known_port = COALESCE(excluded.last_known_port, contacts.last_known_port),
                 trust_level = excluded.trust_level,
                 is_online = excluded.is_online,
-                last_seen_at = excluded.last_seen_at",
+                last_seen_at = excluded.last_seen_at,
+                custom_name = COALESCE(excluded.custom_name, contacts.custom_name),
+                avatar_hash = COALESCE(excluded.avatar_hash, contacts.avatar_hash)",
             params![
                 c.device_id,
                 c.alias_name,
@@ -395,6 +401,8 @@ impl Database {
                 if c.is_online { 1 } else { 0 },
                 c.last_seen_at as i64,
                 c.created_at as i64,
+                c.custom_name,
+                c.avatar_hash,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -467,7 +475,7 @@ impl Database {
         conn.query_row(
             "SELECT device_id, alias_name, user_email, user_name, os_type, is_own_device,
                     ed25519_pubkey, network_type, last_known_ip, last_known_port,
-                    trust_level, is_online, last_seen_at, created_at
+                    trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash
              FROM contacts WHERE device_id = ?1",
             params![device_id],
             |row| {
@@ -486,6 +494,8 @@ impl Database {
                     is_online: row.get::<_, i64>(11)? != 0,
                     last_seen_at: row.get::<_, i64>(12)? as u64,
                     created_at: row.get::<_, i64>(13)? as u64,
+                    custom_name: row.get(14)?,
+                    avatar_hash: row.get(15)?,
                 })
             },
         )
@@ -499,7 +509,7 @@ impl Database {
             .prepare(
                 "SELECT device_id, alias_name, user_email, user_name, os_type, is_own_device,
                         ed25519_pubkey, network_type, last_known_ip, last_known_port,
-                        trust_level, is_online, last_seen_at, created_at
+                        trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash
                  FROM contacts ORDER BY is_online DESC, last_seen_at DESC",
             )
             .map_err(|e| e.to_string())?;
@@ -521,6 +531,8 @@ impl Database {
                     is_online: row.get::<_, i64>(11)? != 0,
                     last_seen_at: row.get::<_, i64>(12)? as u64,
                     created_at: row.get::<_, i64>(13)? as u64,
+                    custom_name: row.get(14)?,
+                    avatar_hash: row.get(15)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -530,6 +542,59 @@ impl Database {
             list.push(r.map_err(|e| e.to_string())?);
         }
         Ok(list)
+    }
+
+    pub fn set_contact_custom_name(&self, device_id: &str, custom_name: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE contacts SET custom_name = ?1 WHERE device_id = ?2",
+            params![custom_name, device_id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn set_contact_avatar_hash(&self, device_id: &str, avatar_hash: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE contacts SET avatar_hash = ?1 WHERE device_id = ?2",
+            params![avatar_hash, device_id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn has_incoming_chat(&self, peer_device_id: &str) -> Result<bool, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM chat_messages WHERE peer_device_id = ?1 AND direction = 'incoming'",
+            params![peer_device_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+        Ok(count > 0)
+    }
+
+    pub fn has_outgoing_chat(&self, peer_device_id: &str) -> Result<bool, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM chat_messages WHERE peer_device_id = ?1 AND direction = 'outgoing'",
+            params![peer_device_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+        Ok(count > 0)
+    }
+
+    pub fn has_two_way_chat(&self, peer_device_id: &str) -> Result<bool, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(DISTINCT direction) FROM chat_messages WHERE peer_device_id = ?1",
+            params![peer_device_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+        Ok(count >= 2)
     }
 
     pub fn upsert_transfer(&self, t: &TransferRecord) -> Result<(), String> {

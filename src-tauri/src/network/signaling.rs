@@ -358,11 +358,48 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                     created_at,
                 };
 
+                let from_alias = chat_val
+                    .get("from_alias")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let avatar_data = chat_val
+                    .get("from_avatar_data")
+                    .and_then(|v| v.as_str());
+                let avatar_hash = chat_val
+                    .get("from_avatar_hash")
+                    .and_then(|v| v.as_str());
+
+                if let Some(av_data) = avatar_data {
+                    let _ = crate::commands::save_peer_avatar_internal(
+                        app,
+                        state,
+                        &from_device_id,
+                        av_data,
+                        avatar_hash,
+                    );
+                }
+
                 let _ = state.db.insert_chat_message(&chat_msg);
                 if let Ok(counts) = state.db.get_unread_chat_counts() {
                     let total: u32 = counts.values().sum();
                     crate::tray_badge::update_tray_unread_badge(app, total);
                 }
+
+                // Auto-contact if replied (two-way chat established)
+                if let Ok(has_outgoing) = state.db.has_outgoing_chat(&from_device_id) {
+                    if has_outgoing {
+                        crate::commands::auto_add_contact_from_chat(
+                            state,
+                            app,
+                            &from_device_id,
+                            Some(from_alias),
+                        );
+                    }
+                }
+
+                // Windows & OS notification banner (bottom-right, without opening/focusing main window)
+                crate::network::transport::show_incoming_chat_notification(app, state, &from_device_id, from_alias, &chat_msg);
+
                 if chat_msg.msg_type == "clipboard" {
                     crate::network::transport::process_incoming_clipboard_if_trusted(
                         app,

@@ -36,6 +36,54 @@ pub fn notify_os(app: &AppHandle, title: &str, body: &str) {
         .show();
 }
 
+pub fn show_incoming_chat_notification(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    from_device_id: &str,
+    from_alias: &str,
+    chat_msg: &crate::db::storage::ChatMessage,
+) {
+    let sender_name = state
+        .db
+        .get_contact(from_device_id)
+        .ok()
+        .flatten()
+        .and_then(|c| {
+            c.custom_name.filter(|n| !n.trim().is_empty())
+                .or_else(|| if !c.alias_name.trim().is_empty() { Some(c.alias_name) } else { None })
+                .or(c.user_name)
+        })
+        .unwrap_or_else(|| {
+            if !from_alias.trim().is_empty() {
+                from_alias.to_string()
+            } else {
+                let s: String = from_device_id.chars().take(8).collect();
+                format!("Raydrop Peer ({s})")
+            }
+        });
+
+    let preview_body = if chat_msg.content.starts_with("data:image/") {
+        "🖼️ [Image Received]".to_string()
+    } else if chat_msg.msg_type == "clipboard" {
+        "📋 [Clipboard Content]".to_string()
+    } else if chat_msg.msg_type == "file_transfer" {
+        "📎 [Sent a file]".to_string()
+    } else {
+        let mut t = chat_msg.content.trim().to_string();
+        if t.len() > 100 {
+            t.truncate(100);
+            t.push_str("...");
+        }
+        t
+    };
+
+    notify_os(
+        app,
+        &format!("💬 {}", sender_name),
+        &preview_body,
+    );
+}
+
 pub fn format_bytes_human(bytes: u64) -> String {
     if bytes < 1024 {
         format!("{bytes} B")
@@ -675,11 +723,48 @@ where
                             created_at,
                         };
 
+                        let from_alias = chat_val
+                            .get("from_alias")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let avatar_data = chat_val
+                            .get("from_avatar_data")
+                            .and_then(|v| v.as_str());
+                        let avatar_hash = chat_val
+                            .get("from_avatar_hash")
+                            .and_then(|v| v.as_str());
+
+                        if let Some(av_data) = avatar_data {
+                            let _ = crate::commands::save_peer_avatar_internal(
+                                &app,
+                                &state,
+                                &from_device_id,
+                                av_data,
+                                avatar_hash,
+                            );
+                        }
+
                         let _ = state.db.insert_chat_message(&chat_msg);
                         if let Ok(counts) = state.db.get_unread_chat_counts() {
                             let total: u32 = counts.values().sum();
                             crate::tray_badge::update_tray_unread_badge(&app, total);
                         }
+
+                        // Auto-contact if replied (two-way chat established)
+                        if let Ok(has_outgoing) = state.db.has_outgoing_chat(&from_device_id) {
+                            if has_outgoing {
+                                crate::commands::auto_add_contact_from_chat(
+                                    &state,
+                                    &app,
+                                    &from_device_id,
+                                    Some(from_alias),
+                                );
+                            }
+                        }
+
+                        // Windows & OS notification banner (bottom-right, without opening/focusing main window)
+                        show_incoming_chat_notification(&app, &state, &from_device_id, from_alias, &chat_msg);
+
                         if chat_msg.msg_type == "clipboard" {
                             process_incoming_clipboard_if_trusted(
                                 &app,
@@ -738,6 +823,7 @@ where
     let contact = Contact {
         device_id: hello.sender_device_id.clone(),
         alias_name: hello.sender_alias.clone(),
+        custom_name: existing_contact.as_ref().and_then(|c| c.custom_name.clone()),
         user_email: existing_contact.as_ref().and_then(|c| c.user_email.clone()),
         user_name: existing_contact.as_ref().and_then(|c| c.user_name.clone()),
         os_type: existing_contact.as_ref().and_then(|c| c.os_type.clone()),
@@ -762,6 +848,7 @@ where
         is_online: true,
         last_seen_at: now_unix_secs(),
         created_at: now_unix_secs(),
+        avatar_hash: existing_contact.as_ref().and_then(|c| c.avatar_hash.clone()),
     };
     let _ = state.db.upsert_contact(&contact);
     let _ = app.emit("contacts_updated", ());
@@ -1619,6 +1706,7 @@ async fn start_or_resume_transfer(
             let fallback = Contact {
                 device_id: target_device_id.clone(),
                 alias_name: target_device_id.clone(),
+                custom_name: None,
                 user_email: None,
                 user_name: None,
                 os_type: None,
@@ -1631,6 +1719,7 @@ async fn start_or_resume_transfer(
                 is_online: true,
                 last_seen_at: now_unix_secs(),
                 created_at: now_unix_secs(),
+                avatar_hash: None,
             };
             let _ = state.db.upsert_contact(&fallback);
             fallback

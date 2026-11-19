@@ -160,6 +160,7 @@ pub fn sync_cloud_data_to_local(
         let c = Contact {
             device_id: dev.device_id,
             alias_name: dev.device_name,
+            custom_name: existing.as_ref().and_then(|c| c.custom_name.clone()),
             user_email: Some(dev.user_email),
             user_name: Some(dev.user_name),
             os_type: Some(dev.os_type),
@@ -172,6 +173,7 @@ pub fn sync_cloud_data_to_local(
             is_online: dev.is_online,
             last_seen_at: now,
             created_at: now,
+            avatar_hash: existing.as_ref().and_then(|c| c.avatar_hash.clone()),
         };
         let _ = state.db.upsert_contact(&c);
     }
@@ -196,6 +198,7 @@ pub fn sync_cloud_data_to_local(
             let c = Contact {
                 device_id: dev.device_id,
                 alias_name: dev.device_name,
+                custom_name: existing.as_ref().and_then(|c| c.custom_name.clone()),
                 user_email: Some(contact_group.email.clone()),
                 user_name: Some(contact_group.name.clone()),
                 os_type: Some(dev.os_type),
@@ -208,6 +211,7 @@ pub fn sync_cloud_data_to_local(
                 is_online: dev.is_online,
                 last_seen_at: now,
                 created_at: now,
+                avatar_hash: existing.as_ref().and_then(|c| c.avatar_hash.clone()),
             };
             let _ = state.db.upsert_contact(&c);
         }
@@ -354,6 +358,7 @@ pub fn add_wan_contact(
     let contact = Contact {
         device_id: clean_id.clone(),
         alias_name: alias_name.trim().to_string(),
+        custom_name: None,
         user_email: None,
         user_name: None,
         os_type: None,
@@ -366,6 +371,7 @@ pub fn add_wan_contact(
         is_online: false,
         last_seen_at: now_unix_secs(),
         created_at: now_unix_secs(),
+        avatar_hash: None,
     };
     state.db.upsert_contact(&contact)?;
 
@@ -1139,6 +1145,223 @@ pub fn get_file_thumbnail(path: String) -> Result<String, String> {
     generate_image_thumbnail(&path, 320, 240)
 }
 
+pub fn get_avatars_dir() -> std::path::PathBuf {
+    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "raydrop", "Raydrop") {
+        let dir = proj_dirs.data_dir().join("avatars");
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    } else {
+        let dir = std::path::PathBuf::from("avatars");
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    }
+}
+
+pub fn get_my_avatar_internal() -> Option<String> {
+    let file = get_avatars_dir().join("my_avatar.png");
+    if file.exists() {
+        if let Ok(bytes) = std::fs::read(&file) {
+            let b64 = BASE64_STANDARD.encode(&bytes);
+            return Some(format!("data:image/png;base64,{b64}"));
+        }
+    }
+    None
+}
+
+pub fn save_peer_avatar_internal(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    peer_device_id: &str,
+    base64_data: &str,
+    avatar_hash: Option<&str>,
+) -> Result<(), String> {
+    let clean_data = if let Some(idx) = base64_data.find(',') {
+        &base64_data[idx + 1..]
+    } else {
+        base64_data
+    };
+
+    let bytes = BASE64_STANDARD
+        .decode(clean_data.trim())
+        .map_err(|e| format!("Base64 decode error: {e}"))?;
+
+    let safe_id: String = peer_device_id
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' })
+        .collect();
+
+    let target_path = get_avatars_dir().join(format!("{safe_id}.png"));
+    std::fs::write(&target_path, &bytes).map_err(|e| format!("Failed to save avatar: {e}"))?;
+
+    if let Some(h) = avatar_hash {
+        let _ = state.db.set_contact_avatar_hash(peer_device_id, h);
+    }
+
+    let full_data_url = if base64_data.starts_with("data:image/") {
+        base64_data.to_string()
+    } else {
+        format!("data:image/png;base64,{clean_data}")
+    };
+
+    let _ = app.emit(
+        "peer_avatar_updated",
+        serde_json::json!({
+            "device_id": peer_device_id,
+            "avatar_data": full_data_url
+        }),
+    );
+
+    Ok(())
+}
+
+pub fn auto_add_contact_from_chat(
+    state: &Arc<AppState>,
+    app: &AppHandle,
+    peer_device_id: &str,
+    peer_alias: Option<&str>,
+) {
+    let now = now_unix_secs();
+    let existing = state.db.get_contact(peer_device_id).ok().flatten();
+    let default_alias = format!(
+        "Raydrop-{}",
+        if peer_device_id.len() >= 6 {
+            &peer_device_id[..6]
+        } else {
+            peer_device_id
+        }
+    );
+    let alias = peer_alias
+        .filter(|a| !a.trim().is_empty())
+        .map(|a| a.to_string())
+        .or_else(|| existing.as_ref().map(|c| c.alias_name.clone()))
+        .unwrap_or(default_alias);
+
+    let contact = Contact {
+        device_id: peer_device_id.to_string(),
+        alias_name: alias,
+        custom_name: existing.as_ref().and_then(|c| c.custom_name.clone()),
+        user_email: existing.as_ref().and_then(|c| c.user_email.clone()),
+        user_name: existing.as_ref().and_then(|c| c.user_name.clone()),
+        os_type: existing.as_ref().and_then(|c| c.os_type.clone()),
+        is_own_device: existing.as_ref().map(|c| c.is_own_device).unwrap_or(false),
+        ed25519_pubkey: existing.as_ref().and_then(|c| c.ed25519_pubkey.clone()),
+        network_type: existing
+            .as_ref()
+            .map(|c| c.network_type.clone())
+            .unwrap_or_else(|| "wan".to_string()),
+        last_known_ip: existing.as_ref().and_then(|c| c.last_known_ip.clone()),
+        last_known_port: existing.as_ref().and_then(|c| c.last_known_port),
+        trust_level: existing
+            .as_ref()
+            .map(|c| c.trust_level.clone())
+            .unwrap_or_else(|| "ask".to_string()),
+        is_online: true,
+        last_seen_at: now,
+        created_at: existing.as_ref().map(|c| c.created_at).unwrap_or(now),
+        avatar_hash: existing.as_ref().and_then(|c| c.avatar_hash.clone()),
+    };
+    let _ = state.db.upsert_contact(&contact);
+    let _ = app.emit("contacts_updated", ());
+    let _ = app.emit("peer_discovered", &contact);
+}
+
+#[tauri::command]
+pub fn set_my_avatar(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    image_data: String,
+) -> Result<String, String> {
+    let bytes = if image_data.starts_with("data:image/") || image_data.contains(";base64,") {
+        let clean = if let Some(pos) = image_data.find(',') {
+            &image_data[pos + 1..]
+        } else {
+            &image_data
+        };
+        BASE64_STANDARD
+            .decode(clean.trim())
+            .map_err(|e| format!("Base64 decode error: {e}"))?
+    } else {
+        let p = std::path::Path::new(&image_data);
+        if !p.exists() {
+            return Err("Image file does not exist".to_string());
+        }
+        std::fs::read(p).map_err(|e| format!("Failed to read image file: {e}"))?
+    };
+
+    let img = image::load_from_memory(&bytes)
+        .map_err(|e| format!("Failed to decode image format: {e}"))?;
+
+    // Square crop / resize to 192x192
+    let resized = img.resize_to_fill(192, 192, image::imageops::FilterType::Lanczos3);
+
+    let mut buf = std::io::Cursor::new(Vec::new());
+    resized
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .map_err(|e| format!("Failed to encode avatar PNG: {e}"))?;
+
+    let png_bytes = buf.into_inner();
+    let hash = blake3::hash(&png_bytes).to_hex().to_string();
+
+    let my_avatar_file = get_avatars_dir().join("my_avatar.png");
+    std::fs::write(&my_avatar_file, &png_bytes)
+        .map_err(|e| format!("Failed to save avatar file: {e}"))?;
+
+    state.db.set_setting("avatar_hash", &hash)?;
+
+    let b64 = format!(
+        "data:image/png;base64,{}",
+        BASE64_STANDARD.encode(&png_bytes)
+    );
+
+    let _ = app.emit(
+        "my_avatar_updated",
+        serde_json::json!({
+            "hash": &hash,
+            "avatar_data": &b64
+        }),
+    );
+
+    Ok(b64)
+}
+
+#[tauri::command]
+pub fn get_my_avatar() -> Result<Option<String>, String> {
+    Ok(get_my_avatar_internal())
+}
+
+#[tauri::command]
+pub fn get_peer_avatar(peer_device_id: String) -> Result<Option<String>, String> {
+    let safe_id: String = peer_device_id
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' })
+        .collect();
+
+    let file = get_avatars_dir().join(format!("{safe_id}.png"));
+    if file.exists() {
+        if let Ok(bytes) = std::fs::read(&file) {
+            let b64 = BASE64_STANDARD.encode(&bytes);
+            return Ok(Some(format!("data:image/png;base64,{b64}")));
+        }
+    }
+    Ok(None)
+}
+
+#[tauri::command]
+pub fn set_contact_custom_name(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    device_id: String,
+    custom_name: String,
+) -> Result<Contact, String> {
+    let trimmed = custom_name.trim();
+    state.db.set_contact_custom_name(&device_id, trimmed)?;
+    let _ = app.emit("contacts_updated", ());
+    state
+        .db
+        .get_contact(&device_id)?
+        .ok_or_else(|| "Contact not found".to_string())
+}
+
 #[tauri::command]
 pub fn send_chat_message(
     app: AppHandle,
@@ -1215,6 +1438,20 @@ pub fn send_chat_message(
 
     state.db.insert_chat_message(&chat_msg)?;
 
+    // If this is a reply to an incoming chat, automatically add the peer to contacts on both sides
+    if let Ok(has_incoming) = state.db.has_incoming_chat(&peer_device_id) {
+        if has_incoming {
+            auto_add_contact_from_chat(&state, &app, &peer_device_id, None);
+        }
+    }
+
+    let my_avatar_hash = state.db.get_setting("avatar_hash").ok().flatten();
+    let my_avatar_b64 = if my_avatar_hash.is_some() {
+        get_my_avatar_internal()
+    } else {
+        None
+    };
+
     let payload_obj = json!({
         "id": msg_id,
         "content": content,
@@ -1222,6 +1459,8 @@ pub fn send_chat_message(
         "transfer_session_id": transfer_session_id,
         "files_json": enriched_files_json,
         "from_alias": state.settings.lock().unwrap().alias_name,
+        "from_avatar_hash": my_avatar_hash,
+        "from_avatar_data": my_avatar_b64,
         "created_at": now
     })
     .to_string();

@@ -8,6 +8,7 @@
     activeMainTab,
   } from "../stores/state";
   import { contacts } from "../stores/contacts";
+  import { peerAvatars } from "../stores/avatars";
   import { raydropApi, formatBytes, type Contact } from "../utils/tauri-ipc";
   import {
     Download,
@@ -29,6 +30,7 @@
   let alwaysAutoAccept = false;
 
   $: currentIncoming = $incomingRequestQueue[0] ?? null;
+  $: currentIncomingContact = currentIncoming ? $contacts.find((c) => c.device_id === currentIncoming.sender_device_id) : null;
   $: if (currentIncoming && !customTargetDir) {
     customTargetDir = $appSettings.download_dir;
   }
@@ -167,7 +169,9 @@
           </div>
           <p class="text-xs text-slate-400">
             From <span class="text-slate-200 font-semibold"
-              >{currentIncoming.sender_alias}</span
+              >{currentIncomingContact?.custom_name
+                ? `${currentIncomingContact.custom_name} (${currentIncoming.sender_alias})`
+                : currentIncoming.sender_alias}</span
             >
             <span class="font-mono text-slate-500"
               >({currentIncoming.sender_device_id})</span
@@ -364,9 +368,11 @@
               >
                 <div class="flex items-center gap-2 min-w-0">
                   <div
-                    class="relative w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0"
+                    class="relative w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden"
                   >
-                    {#if peer.is_own_device}
+                    {#if $peerAvatars[peer.device_id]}
+                      <img src={$peerAvatars[peer.device_id]} alt="" class="w-full h-full object-cover" />
+                    {:else if peer.is_own_device}
                       <Laptop class="w-3.5 h-3.5 text-cyan-400" />
                     {:else if peer.network_type === "lan"}
                       <Wifi class="w-3.5 h-3.5 text-emerald-400" />
@@ -381,7 +387,7 @@
                   </div>
                   <div class="min-w-0">
                     <p class="text-xs font-semibold text-slate-100 truncate">
-                      {peer.alias_name}
+                      {peer.custom_name ? `${peer.custom_name} (${peer.alias_name})` : peer.alias_name}
                     </p>
                     <p class="text-[10px] font-mono text-slate-400 truncate">
                       {peer.user_email ||
@@ -408,7 +414,7 @@
           <option value="">-- Or Select from Contact / Device List --</option>
           {#each $contacts as peer}
             <option value={peer.device_id}>
-              {peer.is_own_device ? "💻 [My Device] " : ""}{peer.alias_name}
+              {peer.is_own_device ? "💻 [My Device] " : ""}{peer.custom_name ? `${peer.custom_name} (${peer.alias_name})` : peer.alias_name}
               {peer.user_email
                 ? `(${peer.user_email})`
                 : `(${peer.network_type.toUpperCase()})`}

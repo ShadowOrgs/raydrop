@@ -16,6 +16,7 @@
   import { raydropApi } from '../utils/tauri-ipc';
   import { updateInfo, updateModalOpen, updateChecking } from '../stores/update';
   import { checkForUpdates } from '../utils/updater';
+  import { myAvatar } from '../stores/avatars';
   import {
     Copy,
     Check,
@@ -33,6 +34,7 @@
     Zap,
     Plus,
     MessageSquare,
+    Camera,
   } from 'lucide-svelte';
 
   let copied = false;
@@ -55,6 +57,23 @@
     appSettings.set(updated);
     cloudMyDevices.set([]);
     cloudContacts.set([]);
+  }
+
+  async function handleUploadAvatar() {
+    try {
+      const picked = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'] }],
+        title: 'Choose Profile Avatar',
+      });
+      if (typeof picked === 'string') {
+        const b64 = await raydropApi.setMyAvatar(picked);
+        myAvatar.set(b64);
+      }
+    } catch (err) {
+      console.warn('Failed to upload avatar:', err);
+    }
   }
 </script>
 
@@ -85,7 +104,7 @@
           {#if $updateChecking}
             <RefreshCw class="w-2.5 h-2.5 animate-spin text-cyan-400" />
           {/if}
-          <span>v1.2.14</span>
+          <span>v1.2.15</span>
         </button>
 
         {#if $updateInfo?.has_update}
@@ -287,6 +306,25 @@
     >
       <Plus class="w-3.5 h-3.5 stroke-[2.5]" />
       <span class="hidden sm:inline">Send Files</span>
+    </button>
+
+    <!-- User Avatar Upload / Profile Button -->
+    <button
+      type="button"
+      on:click={handleUploadAvatar}
+      class="relative group w-7 h-7 sm:w-8 sm:h-8 rounded-xl overflow-hidden border border-slate-700/80 hover:border-cyan-400 bg-slate-800 flex items-center justify-center shrink-0 transition cursor-pointer shadow-sm"
+      title="Click to set or change your profile avatar"
+    >
+      {#if $myAvatar}
+        <img src={$myAvatar} alt="My Avatar" class="w-full h-full object-cover" />
+      {:else}
+        <span class="text-[11px] font-bold text-cyan-300">
+          {($appSettings.alias_name || 'RD').slice(0, 2).toUpperCase()}
+        </span>
+      {/if}
+      <div class="absolute inset-0 bg-slate-950/70 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+        <Camera class="w-3.5 h-3.5 text-cyan-300" />
+      </div>
     </button>
 
     <!-- Settings Trigger Button -->

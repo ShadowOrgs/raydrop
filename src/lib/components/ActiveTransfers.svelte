@@ -1,5 +1,6 @@
 <script lang="ts">
   import { open } from '@tauri-apps/plugin-dialog';
+  import { convertFileSrc } from '@tauri-apps/api/core';
   import { activeTransfers, historicalTransfers } from '../stores/transfers';
   import { appSettings, cliQueuedFiles, activeMainTab } from '../stores/state';
   import { torrentTasks, httpTasks, magnetModalOpen, browserExtensionModalOpen } from '../stores/torrents';
@@ -41,6 +42,11 @@
     Download,
     Puzzle,
     Link,
+    ZoomIn,
+    ZoomOut,
+    Eye,
+    Image as ImageIcon,
+    X,
   } from 'lucide-svelte';
 
   let resumingId = '';
@@ -56,6 +62,80 @@
   let showClipboardModal = false;
   let showFolderSyncModal = false;
   let showSpeedLimitMenu = false;
+
+  let previewImage: { path: string; name: string } | null = null;
+  let zoomScale = 1;
+  let zoomTranslate = { x: 0, y: 0 };
+  let isPanning = false;
+  let startPan = { x: 0, y: 0 };
+  let transferThumbnails: Record<string, string> = {};
+
+  function isImageFile(fileName: string): boolean {
+    return /\.(jpe?g|png|webp|gif|bmp|svg|ico|avif)$/i.test(fileName || '');
+  }
+
+  async function ensureTransferThumbnail(path: string | null) {
+    if (!path || transferThumbnails[path]) return;
+    try {
+      const thumb = await raydropApi.getFileThumbnail(path);
+      if (thumb) {
+        transferThumbnails = { ...transferThumbnails, [path]: thumb };
+      }
+    } catch (_) {}
+  }
+
+  function openImagePreview(path: string, name: string) {
+    previewImage = { path, name };
+    zoomScale = 1;
+    zoomTranslate = { x: 0, y: 0 };
+    isPanning = false;
+  }
+
+  function closeImagePreview() {
+    previewImage = null;
+    zoomScale = 1;
+    zoomTranslate = { x: 0, y: 0 };
+    isPanning = false;
+  }
+
+  function zoomIn() {
+    zoomScale = Math.min(zoomScale + 0.25, 5);
+  }
+
+  function zoomOut() {
+    zoomScale = Math.max(zoomScale - 0.25, 0.3);
+  }
+
+  function resetZoom() {
+    zoomScale = 1;
+    zoomTranslate = { x: 0, y: 0 };
+  }
+
+  function handleWheelZoom(e: WheelEvent) {
+    if (e.deltaY < 0) {
+      zoomScale = Math.min(zoomScale + 0.15, 5);
+    } else {
+      zoomScale = Math.max(zoomScale - 0.15, 0.3);
+    }
+  }
+
+  function handleMouseDown(e: MouseEvent) {
+    if (e.button !== 0) return;
+    isPanning = true;
+    startPan = { x: e.clientX - zoomTranslate.x * zoomScale, y: e.clientY - zoomTranslate.y * zoomScale };
+  }
+
+  function handleMouseMove(e: MouseEvent) {
+    if (!isPanning) return;
+    zoomTranslate = {
+      x: (e.clientX - startPan.x) / zoomScale,
+      y: (e.clientY - startPan.y) / zoomScale,
+    };
+  }
+
+  function handleMouseUp() {
+    isPanning = false;
+  }
 
   async function handlePauseHttp(id: string) {
     try {
@@ -1143,13 +1223,32 @@
             {@const primaryFilePath = files[0] || h.target_path}
             {@const primaryName = files[0] ? getBaseName(files[0]) : (h.target_path ? getBaseName(h.target_path) : 'File Package')}
             {@const badge = getFileTypeBadge(primaryName)}
+            {@const isImg = isImageFile(primaryName)}
 
             <div class="p-3.5 rounded-xl bg-slate-900/70 hover:bg-slate-900 border border-slate-800/90 hover:border-slate-700 flex flex-col gap-2.5 transition-colors">
               <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div class="flex items-center gap-3 min-w-0">
-                  <div class="w-9 h-9 rounded-xl {badge.color} border flex items-center justify-center font-mono font-bold text-[10px] shrink-0">
-                    {badge.label}
-                  </div>
+                  {#if isImg && primaryFilePath}
+                    <button
+                      type="button"
+                      on:click={() => openImagePreview(primaryFilePath, primaryName)}
+                      class="w-10 h-10 rounded-xl overflow-hidden border border-cyan-500/30 bg-slate-800 shrink-0 relative group shadow-sm hover:ring-2 hover:ring-cyan-500/50 transition cursor-zoom-in"
+                      title="Click to view image"
+                    >
+                      <img
+                        src={transferThumbnails[primaryFilePath] || convertFileSrc(primaryFilePath)}
+                        alt={primaryName}
+                        class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                      />
+                      <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <Eye class="w-4 h-4 text-white" />
+                      </div>
+                    </button>
+                  {:else}
+                    <div class="w-9 h-9 rounded-xl {badge.color} border flex items-center justify-center font-mono font-bold text-[10px] shrink-0">
+                      {badge.label}
+                    </div>
+                  {/if}
 
                   <div class="min-w-0">
                     <div class="flex items-center gap-2">
@@ -1234,12 +1333,27 @@
               {#if expandedTransferIds[h.id] && files.length > 1}
                 <div class="pt-2 border-t border-slate-800/80 space-y-1.5 max-h-40 overflow-y-auto pr-1">
                   {#each files as fp}
+                    {@const subImg = isImageFile(fp)}
                     <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-950/80 border border-slate-800">
                       <div class="flex items-center gap-2 min-w-0">
-                        <FileText class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        {#if subImg}
+                          <ImageIcon class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        {:else}
+                          <FileText class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        {/if}
                         <span class="text-xs text-slate-200 truncate" title={fp}>{getBaseName(fp)}</span>
                       </div>
                       <div class="flex items-center gap-2 shrink-0">
+                        {#if subImg}
+                          <button
+                            type="button"
+                            on:click={() => openImagePreview(fp, getBaseName(fp))}
+                            class="text-[11px] text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-0.5"
+                          >
+                            <Eye class="w-3 h-3" />
+                            <span>Preview</span>
+                          </button>
+                        {/if}
                         <button
                           type="button"
                           on:click={() => handleOpenFile(fp)}
@@ -1371,6 +1485,122 @@
             {/if}
           </button>
         </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Image Zoom Lightbox Modal -->
+  {#if previewImage}
+    <div
+      class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-between p-3 sm:p-5 select-none"
+      on:keydown={(e) => e.key === 'Escape' && closeImagePreview()}
+      role="dialog"
+      tabindex="-1"
+    >
+      <!-- Modal Header -->
+      <div class="w-full max-w-4xl flex items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 rounded-2xl px-4 py-2.5 shadow-2xl">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <ImageIcon class="w-4 h-4 text-cyan-400 shrink-0" />
+          <span class="text-xs font-bold text-white truncate max-w-xs sm:max-w-md">{previewImage.name}</span>
+          <span class="text-[10px] font-mono text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20 shrink-0">
+            {Math.round(zoomScale * 100)}%
+          </span>
+        </div>
+
+        <div class="flex items-center gap-1.5 shrink-0">
+          <!-- Zoom Out -->
+          <button
+            type="button"
+            on:click={zoomOut}
+            disabled={zoomScale <= 0.3}
+            class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 hover:text-white transition"
+            title="Zoom Out (-)"
+          >
+            <ZoomOut class="w-4 h-4" />
+          </button>
+
+          <!-- Reset Zoom -->
+          <button
+            type="button"
+            on:click={resetZoom}
+            class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-400 transition"
+            title="Reset Zoom (100%)"
+          >
+            <RotateCcw class="w-4 h-4" />
+          </button>
+
+          <!-- Zoom In -->
+          <button
+            type="button"
+            on:click={zoomIn}
+            disabled={zoomScale >= 5}
+            class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 hover:text-white transition"
+            title="Zoom In (+)"
+          >
+            <ZoomIn class="w-4 h-4" />
+          </button>
+
+          <div class="w-px h-5 bg-slate-800 mx-1"></div>
+
+          <!-- Open File -->
+          <button
+            type="button"
+            on:click={() => handleOpenFile(previewImage.path)}
+            class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 hover:text-white transition flex items-center gap-1.5"
+            title="Open in default app"
+          >
+            <ExternalLink class="w-3.5 h-3.5 text-cyan-400" />
+            <span class="hidden sm:inline">Open</span>
+          </button>
+
+          <!-- Open Folder -->
+          <button
+            type="button"
+            on:click={() => handleOpenFolder(previewImage.path)}
+            class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-amber-300 transition"
+            title="Show in folder"
+          >
+            <FolderOpen class="w-4 h-4" />
+          </button>
+
+          <!-- Close -->
+          <button
+            type="button"
+            on:click={closeImagePreview}
+            class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 transition ml-1"
+            title="Close (Esc)"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      <!-- Image Canvas Area with Pan & Wheel Zoom -->
+      <div
+        class="flex-1 w-full max-w-4xl my-3 rounded-2xl bg-slate-950/70 border border-slate-800/80 overflow-hidden flex items-center justify-center relative cursor-grab active:cursor-grabbing"
+        role="region"
+        aria-label="Image preview canvas"
+        on:wheel|preventDefault={handleWheelZoom}
+        on:mousedown={handleMouseDown}
+        on:mousemove={handleMouseMove}
+        on:mouseup={handleMouseUp}
+        on:mouseleave={handleMouseUp}
+      >
+        <img
+          src={convertFileSrc(previewImage.path)}
+          alt={previewImage.name}
+          class="max-w-full max-h-full object-contain pointer-events-none transition-transform duration-75"
+          style="transform: scale({zoomScale}) translate({zoomTranslate.x}px, {zoomTranslate.y}px);"
+          draggable="false"
+        />
+      </div>
+
+      <div class="text-[11px] text-slate-400 font-mono flex items-center gap-2">
+        <span>Scroll mouse wheel to zoom</span>
+        <span>•</span>
+        <span>Drag to pan when zoomed</span>
+        <span>•</span>
+        <span>Press Esc to close</span>
       </div>
     </div>
   {/if}

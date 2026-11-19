@@ -76,7 +76,9 @@ Unlike traditional file-sharing services that upload your files to third-party c
 - **Direct File Launch:** Open shared files directly from chat bubbles with system default apps or reveal them in Windows Explorer with 1 click.
 - **Zero Server Storage & Zero Server DB:** Chat history is stored 100% locally on each peer's private SQLite database. The server never stores chat messages or conversation logs.
 
-### ⚡ IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Engine (New in v1.2.14)
+### ⚡ IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Engine (New in v1.2.15)
+- **Profile Avatars & Contact Nicknames:** Personalized device nicknames/initials and persistent avatar syncing across peers.
+- **Image Lightbox & Device Inspector:** Direct image thumbnails in transfer history with zoom/pan lightbox, plus complete linked-device inspector in contact list.
 - **Pre-Flight Disk Space Checker & OS Notifications:** Native OS API inspection (`GetDiskFreeSpaceExW` on Windows, `statvfs` on macOS, Linux, and Android) verifies target filesystem free capacity prior to downloading. Prevents disk exhaustion (100% full drives) by rejecting insufficient targets and dispatching instant native OS notifications.
 - **Smart Multi-Unit ETA Formatting:** Replaced raw seconds counters with intelligent multi-unit remaining time estimates (`45s`, `2m 15s`, `1h 30m`, `2d 4h`) across P2P file transfers, HTTP multi-segment downloads, and BitTorrent tasks.
 - **IDM-Style Refresh Download Address (Expired Session Resume):** When downloading from file hosters or CDNs with temporary security tokens (e.g. 403 Forbidden or session timeout after pausing), users can refresh the download URL directly in Raydrop or simply click download again in Chrome/Edge. Raydrop automatically updates the address and seamlessly resumes from the exact byte offset without restarting or losing downloaded progress.
@@ -148,11 +150,11 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.14/Raydrop_1.2.14_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.14/Raydrop_1.2.14_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.14/Raydrop_1.2.14_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.14/Raydrop_1.2.14_amd64.AppImage) |
-| **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.14/Raydrop-arm64-v8a.apk) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.15/Raydrop_1.2.15_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.15/Raydrop_1.2.15_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.15/Raydrop_1.2.15_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.15/Raydrop_1.2.15_amd64.AppImage) |
+| **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.15/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**
 

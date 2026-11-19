@@ -20,7 +20,7 @@ def get_git_token():
 
 import time
 
-def update_release(tag="v1.2.14", title=None, body=None, wait_for_assets=False):
+def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
     token = get_git_token()
     if not token:
         print("ERROR: GitHub token not found in git credentials.", file=sys.stderr)
@@ -95,15 +95,15 @@ def update_release(tag="v1.2.14", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.14"
+    tag = clean_args[0] if clean_args else "v1.2.15"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Clean Download Cancellation, Free Space Reclamation & Browser Retry Fixes"
+    title = f"Raydrop {tag}: Profile Avatars, Contact Initials, Device Inspector, Transfer Image Zoom & Chat OS Toasts"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Clean Download Cancellation, Free Space Reclamation & Browser Retry Fixes</h2>
+<h2 align="center">Raydrop {tag}: Profile Avatars, Contact Initials, Device Inspector, Transfer Image Zoom & Chat OS Toasts</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,13 +126,27 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🔄 Clean Download Cancellation & Seamless Re-Download
-- **Eliminated Cancellation Race Condition:** Removed unconditional file deletion in background worker routines. Terminating workers now exit cleanly without touching or wiping newly initiated downloads targeting the same filename or path.
-- **Immediate Disk Space Reclamation:** Incomplete and cancelled downloads now clean up temporary disk files properly when deleted from the task list, releasing disk storage right away.
-- **Accurate Re-Download Disk Verification:** Pre-flight disk space checker calculates existing partial file bytes when re-downloading, preventing false "Insufficient disk space" rejections on drives with limited spare capacity.
+#### 🔔 Windows Native Chat Notification Toasts
+- **Non-Intrusive Bottom-Right Action Center Notifications:** Incoming P2P and cloud chat messages now trigger native Windows notifications without forcing the main Raydrop window to popup or steal keyboard focus.
 
-#### 🌐 Browser Extension Retry & Interruption Resilience
-- **Instant Browser Re-Download Support:** Fixed browser extension download tracking by auto-expiring handled download IDs and listening to browser download state changes (`interrupted`, `complete`). Clicking "Retry" or re-downloading in Chrome/Edge immediately triggers Raydrop without being ignored.
-- **Robust Multi-Stream Reconnection:** Ensured downloads that were previously stopped or cancelled can be restarted immediately without requiring an application restart.
+#### 🏷️ Device Custom Initials & Nicknames
+- **Personalized Device Identification:** Easily set local initials and custom nicknames for peers and devices (saved persistently in local SQLite contacts) to instantly tell apart devices named `Raydrop-Device`.
+- **Integrated Display:** Custom initials and nicknames are displayed throughout Chat headers, Chat sidebar, Transfer file pickers, incoming request prompts, and Contact list tabs.
+
+#### 🛡️ Chrome Extension Cache-Clear Protection
+- **Zero Replay of Historical Downloads:** Hardened `chrome.downloads.onCreated` listener to strictly verify that download items are active and initiated within the last 15 seconds, preventing Chrome from re-queuing old download history when browser cache is cleared.
+
+#### 👥 Automatic Two-Way Chat Contact Creation
+- **Auto-Add Contacts on Replied Chat:** Once two users exchange messages (send and reply), both peers are automatically added to each other's contacts with real-time UI synchronization.
+
+#### 🖼️ User Profile Avatars & Peer Syncing
+- **Upload & Cache Avatars:** Users can upload custom avatars in Header or Tray Settings. Avatars are automatically synchronized over local mDNS discovery and P2P chat messages, and saved persistently to local cache.
+
+#### 🔍 Transfer History Image Thumbnails & Zoom Lightbox Modal
+- **Direct Image Thumbnails:** Completed transfers containing images now display thumbnail previews instead of generic extension badges.
+- **Interactive Lightbox:** Clicking any image opens a full lightbox modal with Zoom In (+), Zoom Out (-), 100% Reset, mouse wheel zooming, drag-and-pan navigation, and Open File / Open Folder shortcuts.
+
+#### 💻 Contact List Device Inspector
+- **Comprehensive Device Breakdown:** Contact cards now feature a dedicated "Linked Devices" section detailing every device registered to the user, complete with OS type, IP address, online status, custom initials, and direct Chat & File transfer actions.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Raydrop Download Manager Integration",
   "short_name": "Raydrop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Accelerate and capture web downloads directly into Raydrop with IDM-style multi-threaded segment acceleration and BitTorrent engine.",
   "permissions": [
     "downloads",

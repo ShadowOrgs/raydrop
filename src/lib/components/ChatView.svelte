@@ -37,7 +37,9 @@
     Clipboard,
     Download,
     Loader2,
+    Pencil,
   } from 'lucide-svelte';
+  import { peerAvatars, myAvatar, loadPeerAvatar } from '../stores/avatars';
   import { contacts, lanContacts } from '../stores/contacts';
   import { cloudContacts, cloudMyDevices, activeChatPeerId, appSettings, incomingRequestQueue, activeMainTab } from '../stores/state';
   import {
@@ -75,6 +77,21 @@
   let relativeTimeTicker = 0;
   let localThumbnails: Record<string, string> = {};
   let previewModalImage: string | null = null;
+  let isEditingPeerNickname = false;
+  let editingPeerNicknameValue = '';
+
+  async function handleSaveCustomName() {
+    if (!$activeChatPeerId) return;
+    try {
+      await raydropApi.setContactCustomName($activeChatPeerId, editingPeerNicknameValue.trim());
+      const updated = await raydropApi.getContacts();
+      contacts.set(updated);
+    } catch (err) {
+      console.warn('Failed to update contact custom name:', err);
+    } finally {
+      isEditingPeerNickname = false;
+    }
+  }
 
   async function ensureLocalThumbnail(path: string | null) {
     if (!path || localThumbnails[path]) return;
@@ -133,9 +150,14 @@
     const peerMap = new Map<string, any>();
 
     for (const c of $contacts) {
+      if (c.avatar_hash && !$peerAvatars[c.device_id]) {
+        loadPeerAvatar(c.device_id);
+      }
       peerMap.set(c.device_id, {
         id: c.device_id,
         name: c.alias_name || c.user_name || 'Raydrop Peer',
+        customName: c.custom_name || '',
+        avatarHash: c.avatar_hash || '',
         email: c.user_email || '',
         osType: c.os_type || 'windows',
         isOnline: c.is_online,
@@ -151,6 +173,8 @@
         peerMap.set(dev.device_id, {
           id: dev.device_id,
           name: dev.device_name || 'My Device',
+          customName: '',
+          avatarHash: '',
           email: dev.user_email || '',
           osType: dev.os_type || 'windows',
           isOnline: dev.is_online,
@@ -170,6 +194,8 @@
           peerMap.set(dev.device_id, {
             id: dev.device_id,
             name: group.name ? `${group.name} (${dev.device_name})` : dev.device_name,
+            customName: '',
+            avatarHash: '',
             email: group.email || '',
             osType: dev.os_type || 'windows',
             isOnline: dev.is_online,
@@ -719,9 +745,17 @@
             <div class="flex items-center gap-3 min-w-0">
               <!-- Avatar / Status Ring -->
               <div class="relative shrink-0">
-                <div class="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-cyan-300">
-                  {peer.name.slice(0, 2).toUpperCase()}
-                </div>
+                {#if $peerAvatars[peer.id]}
+                  <img
+                    src={$peerAvatars[peer.id]}
+                    alt={peer.customName || peer.name}
+                    class="w-9 h-9 rounded-xl object-cover border border-slate-700 bg-slate-800"
+                  />
+                {:else}
+                  <div class="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-cyan-300">
+                    {(peer.customName || peer.name).slice(0, 2).toUpperCase()}
+                  </div>
+                {/if}
                 {#if blocked}
                   <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 border-2 border-slate-950 flex items-center justify-center">
                     <span class="w-1.5 h-0.5 bg-white"></span>
@@ -735,10 +769,15 @@
 
               <!-- Name & Subtext -->
               <div class="min-w-0">
-                <div class="flex items-center gap-1.5">
-                  <span class="text-xs font-bold text-white truncate max-w-[130px] sm:max-w-[150px]">
-                    {peer.name}
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="text-xs font-bold text-white truncate max-w-[120px] sm:max-w-[140px]" title={peer.customName ? `${peer.customName} (${peer.name})` : peer.name}>
+                    {peer.customName || peer.name}
                   </span>
+                  {#if peer.customName}
+                    <span class="text-[9px] px-1 rounded bg-slate-800/80 text-slate-400 font-mono truncate max-w-[65px]" title={peer.name}>
+                      {peer.name}
+                    </span>
+                  {/if}
                   {#if peer.isOwnDevice}
                     <span class="text-[9px] px-1 rounded bg-indigo-500/20 text-indigo-300 font-mono">You</span>
                   {/if}
@@ -802,9 +841,17 @@
           </button>
 
           <div class="relative shrink-0">
-            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-cyan-300">
-              {activePeer.name.slice(0, 2).toUpperCase()}
-            </div>
+            {#if $peerAvatars[activePeer.id]}
+              <img
+                src={$peerAvatars[activePeer.id]}
+                alt={activePeer.customName || activePeer.name}
+                class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover border border-slate-700 shadow-sm"
+              />
+            {:else}
+              <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-cyan-300">
+                {(activePeer.customName || activePeer.name).slice(0, 2).toUpperCase()}
+              </div>
+            {/if}
             {#if activePeer.isOnline}
               <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-emerald-500 border-2 border-slate-950 shadow-sm shadow-emerald-500/50"></span>
             {/if}
@@ -812,7 +859,38 @@
 
           <div class="min-w-0">
             <div class="flex items-center gap-1.5 sm:gap-2">
-              <h2 class="text-xs font-bold text-white truncate max-w-[120px] sm:max-w-none">{activePeer.name}</h2>
+              {#if isEditingPeerNickname}
+                <form class="flex items-center gap-1" on:submit|preventDefault={handleSaveCustomName}>
+                  <input
+                    type="text"
+                    bind:value={editingPeerNicknameValue}
+                    placeholder="Set custom nickname / initial..."
+                    class="bg-slate-900 border border-cyan-500/50 rounded-lg px-2 py-0.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                    autofocus
+                  />
+                  <button type="submit" class="p-1 text-emerald-400 hover:bg-emerald-500/20 rounded" title="Save nickname">
+                    <Check class="w-3.5 h-3.5" />
+                  </button>
+                  <button type="button" on:click={() => (isEditingPeerNickname = false)} class="p-1 text-slate-400 hover:bg-slate-800 rounded" title="Cancel">
+                    <X class="w-3.5 h-3.5" />
+                  </button>
+                </form>
+              {:else}
+                <h2 class="text-xs sm:text-sm font-bold text-white truncate max-w-[120px] sm:max-w-none">
+                  {activePeer.customName || activePeer.name}
+                </h2>
+                <button
+                  type="button"
+                  on:click={() => {
+                    editingPeerNicknameValue = activePeer.customName || '';
+                    isEditingPeerNickname = true;
+                  }}
+                  class="p-1 text-slate-400 hover:text-cyan-400 hover:bg-slate-800/80 rounded transition"
+                  title="Edit custom name/initial"
+                >
+                  <Pencil class="w-3 h-3" />
+                </button>
+              {/if}
               <span class="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono">
                 {activePeer.networkType.toUpperCase()}
               </span>
@@ -822,6 +900,11 @@
                 </span>
               {/if}
             </div>
+            {#if activePeer.customName}
+              <p class="text-[10px] text-cyan-400/80 font-mono truncate">
+                Device: {activePeer.name}
+              </p>
+            {/if}
             <p class="text-[10px] sm:text-[11px] text-slate-400 truncate font-mono">
               {activePeer.email || activePeer.id}
             </p>

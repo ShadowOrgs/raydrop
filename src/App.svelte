@@ -14,6 +14,7 @@
   import MagnetDownloadModal from "./lib/components/MagnetDownloadModal.svelte";
   import BrowserExtensionModal from "./lib/components/BrowserExtensionModal.svelte";
   import { initTorrentStore } from "./lib/stores/torrents";
+  import { initAvatarStore, peerAvatars } from "./lib/stores/avatars";
   import { Upload, X, Zap, MessageSquare, Wifi, Users } from "lucide-svelte";
   import {
     appSettings,
@@ -253,6 +254,7 @@
             (c) => c.device_id === msg.peer_device_id,
           );
           const peerName =
+            peer?.custom_name ||
             peer?.alias_name ||
             peer?.user_name ||
             msg.peer_device_id.slice(0, 14);
@@ -265,6 +267,14 @@
         }
       },
     );
+
+    // Listen for contacts updates (e.g. auto-added after two-way chat or renamed)
+    await raydropApi.listenEvent("contacts_updated", async () => {
+      try {
+        const list = await raydropApi.getContacts();
+        contacts.set(list);
+      } catch (_) {}
+    });
 
     await raydropApi.listenEvent<ClipboardSyncedPayload>(
       "clipboard_synced",
@@ -357,6 +367,7 @@
 
     // Initialize Torrent Engine & listeners
     initTorrentStore().catch(() => {});
+    initAvatarStore().catch(() => {});
 
     // Auto-check for software updates silently on startup after brief initialization
     setTimeout(() => {
@@ -484,11 +495,19 @@
           class="p-4 rounded-2xl bg-slate-900/95 border border-cyan-500/50 shadow-2xl shadow-cyan-500/20 backdrop-blur-xl flex items-start justify-between gap-3 cursor-pointer hover:border-cyan-400 hover:scale-[1.02] transition-all transform animate-in slide-in-from-bottom duration-200"
         >
           <div class="flex items-start gap-3 min-w-0">
-            <div
-              class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500/20 to-indigo-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-300 font-bold text-xs shrink-0 mt-0.5"
-            >
-              {toast.peerName.slice(0, 2).toUpperCase()}
-            </div>
+            {#if $peerAvatars[toast.peerDeviceId]}
+              <img
+                src={$peerAvatars[toast.peerDeviceId]}
+                alt={toast.peerName}
+                class="w-9 h-9 rounded-xl object-cover border border-cyan-500/40 shrink-0 mt-0.5 shadow-sm"
+              />
+            {:else}
+              <div
+                class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500/20 to-indigo-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-300 font-bold text-xs shrink-0 mt-0.5"
+              >
+                {toast.peerName.slice(0, 2).toUpperCase()}
+              </div>
+            {/if}
             <div class="min-w-0">
               <div class="flex items-center gap-1.5">
                 <span class="text-xs font-bold text-white truncate"
