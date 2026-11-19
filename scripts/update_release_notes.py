@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.15"
+    tag = clean_args[0] if clean_args else "v1.2.16"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Profile Avatars, Contact Initials, Device Inspector, Transfer Image Zoom & Chat OS Toasts"
+    title = f"Raydrop {tag}: Smart Auto-Sort, Download Queue, Auto-Power, In-App Media Player & Direct IP"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Profile Avatars, Contact Initials, Device Inspector, Transfer Image Zoom & Chat OS Toasts</h2>
+<h2 align="center">Raydrop {tag}: Smart Auto-Sort, Download Queue, Auto-Power, In-App Media Player, SHA-256 Checksum, Direct IP & Chat Media Drawer</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,27 +126,34 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🔔 Windows Native Chat Notification Toasts
-- **Non-Intrusive Bottom-Right Action Center Notifications:** Incoming P2P and cloud chat messages now trigger native Windows notifications without forcing the main Raydrop window to popup or steal keyboard focus.
+#### 📁 IDM-Style Smart Auto-Sort Subfolders
+- **Automatic Organization by Extension:** HTTP Accelerator downloads are now intelligently sorted into clean subfolders (`Documents/`, `Videos/`, `Music/`, `Compressed/`, `Programs/`, `General/`) based on their file extension.
+- **Configurable in Settings:** Toggle on or off anytime inside Raydrop Tray Settings.
 
-#### 🏷️ Device Custom Initials & Nicknames
-- **Personalized Device Identification:** Easily set local initials and custom nicknames for peers and devices (saved persistently in local SQLite contacts) to instantly tell apart devices named `Raydrop-Device`.
-- **Integrated Display:** Custom initials and nicknames are displayed throughout Chat headers, Chat sidebar, Transfer file pickers, incoming request prompts, and Contact list tabs.
+#### 🚦 Concurrency Limiter & Queue Manager
+- **Limit Active Simultaneous Downloads:** Configure maximum concurrent downloads (`1`, `2`, `3`, `5`, or `Unlimited`) to prevent bandwidth exhaustion.
+- **Automatic Queue Progression:** Extra tasks are marked as `QUEUED` and automatically start downloading as active tasks finish or pause.
+- **Force Start:** Click "Start Now" on any queued download to override the queue and start immediately.
 
-#### 🛡️ Chrome Extension Cache-Clear Protection
-- **Zero Replay of Historical Downloads:** Hardened `chrome.downloads.onCreated` listener to strictly verify that download items are active and initiated within the last 15 seconds, preventing Chrome from re-queuing old download history when browser cache is cleared.
+#### 🔌 Auto-Power (Sleep / Shutdown / Hibernate) on Task Completion
+- **Automate After Long Downloads & Transfers:** Configure Raydrop to automatically Put PC to Sleep, Shut Down, or Hibernate once all active transfers and downloads complete.
+- **Safety 30-Second Countdown:** Includes a 30-second warning countdown dialog with sound/visual alert, enabling user cancellation before any OS command executes.
 
-#### 👥 Automatic Two-Way Chat Contact Creation
-- **Auto-Add Contacts on Replied Chat:** Once two users exchange messages (send and reply), both peers are automatically added to each other's contacts with real-time UI synchronization.
+#### 🎬 In-App Media Player Lightbox (Video & Audio)
+- **Direct Preview Inside Raydrop:** Click "Play" on completed videos (`.mp4`, `.webm`, `.mkv`, etc.) or audio tracks (`.mp3`, `.flac`, `.wav`, etc.) in transfer history or download list to launch an in-app media player with playback and seeking controls.
+- **System Player Shortcut:** Option to jump straight to the default desktop media player.
 
-#### 🖼️ User Profile Avatars & Peer Syncing
-- **Upload & Cache Avatars:** Users can upload custom avatars in Header or Tray Settings. Avatars are automatically synchronized over local mDNS discovery and P2P chat messages, and saved persistently to local cache.
+#### 🛡️ SHA-256 Checksum / Hash Calculator & Verifier
+- **Verify File Integrity:** Click "Hash" on any completed file to compute high-performance streaming SHA-256 checksums with one-click copy.
+- **Dynamic Checksum Matcher:** Paste expected hashes from source websites (ISO distributors, driver portals) to instantly verify 100% integrity match.
 
-#### 🔍 Transfer History Image Thumbnails & Zoom Lightbox Modal
-- **Direct Image Thumbnails:** Completed transfers containing images now display thumbnail previews instead of generic extension badges.
-- **Interactive Lightbox:** Clicking any image opens a full lightbox modal with Zoom In (+), Zoom Out (-), 100% Reset, mouse wheel zooming, drag-and-pan navigation, and Open File / Open Folder shortcuts.
+#### 🌐 Direct LAN / IP Connect (Bypass Wi-Fi AP Isolation)
+- **Bypass Client Isolation & Guest Networks:** Direct IP:Port probing exchanges a TCP ping-pong handshake to connect peers directly without depending on mDNS multicast packets.
+- **Direct LAN Address Display:** Convenient banner in the LAN Radar tab shows your exact IP:Port address with one-click copy.
 
-#### 💻 Contact List Device Inspector
-- **Comprehensive Device Breakdown:** Contact cards now feature a dedicated "Linked Devices" section detailing every device registered to the user, complete with OS type, IP address, online status, custom initials, and direct Chat & File transfer actions.
+#### 🔍 Chat Message Search & Shared Media / Files Drawer
+- **In-Chat Keyword Search:** Filter conversation history in real-time with highlighted match counters and quick reset.
+- **Shared Media & Files Drawer:** Collapsible sidebar organizing all shared images, videos, audio, and documents across the conversation with quick view, open, and folder locate buttons.
+"""
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)
