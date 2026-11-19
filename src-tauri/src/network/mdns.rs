@@ -130,6 +130,9 @@ pub fn start_mdns_daemon(app: AppHandle, state: Arc<AppState>) {
                     };
 
                     let _ = state.db.upsert_contact(&contact);
+                    if contact.avatar_hash.is_some() {
+                        crate::commands::request_peer_avatar_internal(&state, &contact.device_id);
+                    }
                     let _ = app.emit("peer_discovered", &contact);
                 }
             }

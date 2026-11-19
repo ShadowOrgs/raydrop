@@ -473,6 +473,35 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 return;
             }
 
+            // Real-Time P2P Avatar Synchronization Handler (WAN Relay)
+            if session_id.starts_with("avatar:") {
+                if let Ok(bytes) = hex::decode(payload_json) {
+                    if let Ok(av_val) = serde_json::from_slice::<Value>(&bytes) {
+                        let pkt_type = av_val.get("type").and_then(|v| v.as_str()).unwrap_or_default();
+                        if pkt_type == "AVATAR_UPDATE" {
+                            let av_data = av_val.get("avatar_data").and_then(|v| v.as_str());
+                            let av_hash = av_val.get("avatar_hash").and_then(|v| v.as_str());
+                            if let Some(data) = av_data {
+                                let _ = crate::commands::save_peer_avatar_internal(
+                                    app,
+                                    state,
+                                    &from_device_id,
+                                    data,
+                                    av_hash,
+                                );
+                                let _ = app.emit("contacts_updated", ());
+                            }
+                        } else if pkt_type == "AVATAR_REQUEST" {
+                            if let Some(my_b64) = crate::commands::get_my_avatar_internal() {
+                                let my_hash = state.db.get_setting("avatar_hash").ok().flatten().unwrap_or_default();
+                                crate::commands::send_avatar_update_to_peer(state, &from_device_id, &my_b64, &my_hash);
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+
             let existing_tx = state
                 .relay_streams
                 .lock()

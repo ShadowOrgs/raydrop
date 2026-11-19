@@ -10,7 +10,7 @@
     activeChatPeerId,
   } from "../stores/state";
   import { contacts, lanContacts } from "../stores/contacts";
-  import { peerAvatars, myAvatar, loadPeerAvatar } from "../stores/avatars";
+  import { peerAvatars, peerAvatarHashes, myAvatar, loadPeerAvatar } from "../stores/avatars";
   import {
     raydropApi,
     cloudApi,
@@ -157,8 +157,8 @@
   });
 
   $: for (const c of $contacts) {
-    if (c.avatar_hash && !$peerAvatars[c.device_id]) {
-      loadPeerAvatar(c.device_id);
+    if (c.avatar_hash && (!$peerAvatars[c.device_id] || $peerAvatarHashes[c.device_id] !== c.avatar_hash)) {
+      loadPeerAvatar(c.device_id, c.avatar_hash);
     }
   }
 

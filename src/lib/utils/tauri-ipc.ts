@@ -446,6 +446,8 @@ export const raydropApi = {
     invoke<string | null>('get_my_avatar'),
   getPeerAvatar: (peerDeviceId: string) =>
     invoke<string | null>('get_peer_avatar', { peerDeviceId }),
+  requestPeerAvatar: (peerDeviceId: string) =>
+    invoke<void>('request_peer_avatar', { peerDeviceId }),
   setContactCustomName: (deviceId: string, customName: string) =>
     invoke<Contact>('set_contact_custom_name', { deviceId, customName }),
   listSharedFolders: () =>

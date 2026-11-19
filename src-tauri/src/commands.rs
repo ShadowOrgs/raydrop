@@ -1223,6 +1223,7 @@ pub fn save_peer_avatar_internal(
         "peer_avatar_updated",
         serde_json::json!({
             "device_id": peer_device_id,
+            "hash": avatar_hash,
             "avatar_data": full_data_url
         }),
     );
@@ -1337,7 +1338,142 @@ pub fn set_my_avatar(
         }),
     );
 
+    // Broadcast new avatar to all contacts & connected peers
+    broadcast_avatar_update(&state, &b64, &hash);
+
     Ok(b64)
+}
+
+pub fn send_avatar_update_to_peer(
+    state: &Arc<AppState>,
+    target_device_id: &str,
+    avatar_data: &str,
+    avatar_hash: &str,
+) {
+    let payload = serde_json::json!({
+        "type": "AVATAR_UPDATE",
+        "avatar_hash": avatar_hash,
+        "avatar_data": avatar_data
+    });
+    let payload_str = payload.to_string();
+    let hex_payload = hex::encode(payload_str.as_bytes());
+
+    // 1. Send via active WAN signaling relay
+    if let Some(sig_tx) = state.signaling_tx.lock().unwrap().as_ref() {
+        let packet = serde_json::json!({
+            "type": "RELAY_CONTROL",
+            "session_id": "avatar:sync",
+            "from_device_id": state.identity.device_id,
+            "target_device_id": target_device_id,
+            "payload_json": hex_payload
+        })
+        .to_string();
+        let _ = sig_tx.send(packet);
+    }
+
+    // 2. Also send directly via LAN TCP if contact has known local IP/port
+    if let Ok(Some(contact)) = state.db.get_contact(target_device_id) {
+        if let (Some(ip), Some(port)) = (contact.last_known_ip, contact.last_known_port) {
+            let target_addr = format!("{}:{}", ip, port);
+            let my_dev_id = state.identity.device_id.clone();
+            let av_hash = avatar_hash.to_string();
+            let av_data = avatar_data.to_string();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(Ok(mut stream)) = tokio::time::timeout(
+                    std::time::Duration::from_millis(2000),
+                    tokio::net::TcpStream::connect(&target_addr),
+                )
+                .await
+                {
+                    let packet_val = serde_json::json!({
+                        "type": "AVATAR_UPDATE",
+                        "from_device_id": my_dev_id,
+                        "avatar_hash": av_hash,
+                        "avatar_data": av_data
+                    });
+                    if let Ok(data) = serde_json::to_vec(&packet_val) {
+                        let len_prefix = (data.len() as u32).to_be_bytes();
+                        use tokio::io::AsyncWriteExt;
+                        let _ = stream.write_all(&len_prefix).await;
+                        let _ = stream.write_all(&data).await;
+                    }
+                }
+            });
+        }
+    }
+}
+
+pub fn broadcast_avatar_update(
+    state: &Arc<AppState>,
+    avatar_data: &str,
+    avatar_hash: &str,
+) {
+    if let Ok(contacts) = state.db.list_contacts() {
+        for c in contacts {
+            if c.device_id != state.identity.device_id {
+                send_avatar_update_to_peer(state, &c.device_id, avatar_data, avatar_hash);
+            }
+        }
+    }
+}
+
+pub fn request_peer_avatar_internal(
+    state: &Arc<AppState>,
+    peer_device_id: &str,
+) {
+    // 1. Send via active WAN signaling relay
+    if let Some(sig_tx) = state.signaling_tx.lock().unwrap().as_ref() {
+        let payload = serde_json::json!({
+            "type": "AVATAR_REQUEST"
+        });
+        let payload_str = payload.to_string();
+        let hex_payload = hex::encode(payload_str.as_bytes());
+        let packet = serde_json::json!({
+            "type": "RELAY_CONTROL",
+            "session_id": "avatar:sync",
+            "from_device_id": state.identity.device_id,
+            "target_device_id": peer_device_id,
+            "payload_json": hex_payload
+        })
+        .to_string();
+        let _ = sig_tx.send(packet);
+    }
+
+    // 2. Also send via LAN TCP
+    if let Ok(Some(contact)) = state.db.get_contact(peer_device_id) {
+        if let (Some(ip), Some(port)) = (contact.last_known_ip, contact.last_known_port) {
+            let target_addr = format!("{}:{}", ip, port);
+            let my_dev_id = state.identity.device_id.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(Ok(mut stream)) = tokio::time::timeout(
+                    std::time::Duration::from_millis(2000),
+                    tokio::net::TcpStream::connect(&target_addr),
+                )
+                .await
+                {
+                    let packet_val = serde_json::json!({
+                        "type": "AVATAR_REQUEST",
+                        "from_device_id": my_dev_id
+                    });
+                    if let Ok(data) = serde_json::to_vec(&packet_val) {
+                        let len_prefix = (data.len() as u32).to_be_bytes();
+                        use tokio::io::AsyncWriteExt;
+                        let _ = stream.write_all(&len_prefix).await;
+                        let _ = stream.write_all(&data).await;
+                    }
+                }
+            });
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn request_peer_avatar(
+    state: State<'_, Arc<AppState>>,
+    peer_device_id: String,
+) -> Result<(), String> {
+    request_peer_avatar_internal(&state, &peer_device_id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -2440,7 +2576,7 @@ pub async fn connect_peer_by_ip(
 
     let (mut reader, mut writer) = tokio::io::split(stream);
 
-    let my_avatar_hash = get_my_avatar_internal();
+    let my_avatar_hash = state.db.get_setting("avatar_hash").ok().flatten();
     let my_alias = state.settings.lock().map(|s| s.alias_name.clone()).unwrap_or_else(|_| "Raydrop".to_string());
     let ping = serde_json::json!({
         "type": "DIRECT_PING",
@@ -2477,10 +2613,13 @@ pub async fn connect_peer_by_ip(
         is_online: true,
         last_seen_at: crate::db::storage::now_unix_secs(),
         created_at: crate::db::storage::now_unix_secs(),
-        avatar_hash: peer_avatar_hash.or_else(|| existing.as_ref().and_then(|e| e.avatar_hash.clone())),
+        avatar_hash: peer_avatar_hash.clone().or_else(|| existing.as_ref().and_then(|e| e.avatar_hash.clone())),
     };
 
     state.db.upsert_contact(&contact)?;
+    if peer_avatar_hash.is_some() {
+        request_peer_avatar_internal(&state, &contact.device_id);
+    }
     let _ = app.emit("contacts_updated", ());
     let _ = app.emit("lan_contacts_updated", ());
 

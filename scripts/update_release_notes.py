@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.19"
+    tag = clean_args[0] if clean_args else "v1.2.20"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: P2P Online Meeting Handshake Fix, Mesh Sync & HD Screen Sharing"
+    title = f"Raydrop {tag}: Real-Time P2P Avatar Automatic Sync & Online Meeting Mesh"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: P2P Online Meeting Handshake Fix, Mesh Sync & HD Screen Sharing</h2>
+<h2 align="center">Raydrop {tag}: Real-Time P2P Avatar Automatic Sync & Online Meeting Mesh</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,19 +126,13 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🛠️ P2P Meeting Handshake & Mesh Synchronization Fix
-- **Direct Host & Guest Handshake:** Fixed room join signaling protocol so host and invited guests instantly discover each other and populate the participant grid.
-- **Full Mesh Room Discovery:** Guests now receive existing room participant rosters upon joining (`room_welcome`), automatically establishing WebRTC connections with all members.
-- **WebRTC Candidate Queueing:** Early ICE candidates arriving before `remoteDescription` is set are now queued and flushed safely, preventing connection timeouts.
-- **Native MediaStream DOM Binding:** Added dedicated Svelte action `use:attachStream` for direct `.srcObject` assignment, guaranteeing live video and audio play smoothly without freezing.
+#### 👤 Real-Time P2P Avatar Synchronization Across Devices
+- **Automatic Multi-Peer Avatar Broadcast:** Whenever a user uploads or updates their profile avatar, an `AVATAR_UPDATE` payload is instantly broadcasted to all online contacts and peers across both LAN (direct TCP) and WAN (relay).
+- **Zero-Config Persistent Caching:** Receiving devices automatically store peer avatars in their local cache directory and update contact database records without manual intervention.
+- **On-Demand Avatar Pull (`AVATAR_REQUEST`):** When discovering a peer or when a peer's avatar hash updates, devices automatically request the latest avatar image on-demand.
+- **Reactive UI Live Updates:** Contact lists, chat headers, active transfer dialogs, and meeting tiles instantly re-render with the updated avatar without requiring an app restart.
 
-#### 🖥️ Seamless HD Screen Sharing & Webcam Renegotiation
-- **Dynamic Track Replacement:** Switching between camera and 1080p 60fps screen share now uses `replaceTrack` with renegotiation fallback, keeping the call alive and uninterrupted.
-- **Spotlight Mode Auto-Switch:** When any participant starts presenting their screen, the UI automatically transitions to spotlight view with a mini-participant filmstrip below.
-
-#### 📎 In-Meeting P2P File Drop Verified
-- **Multi-Peer Direct Transfer:** Files dropped or selected inside the meeting room are transferred in parallel to all active participants in the call via high-speed P2P transport.
-- **Real-Time Notification Banner:** Participants receive instant chat feedback showing the number of files shared across the room.
+#### 🎙️ P2P Meeting Handshake & Mesh Polish
+- Verified WebRTC early ICE candidate queueing and dynamic track replacement for 1080p screen sharing and camera toggles.
 """
-    update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

@@ -48,7 +48,7 @@
   import VoiceNotePlayer from './VoiceNotePlayer.svelte';
   import RemoteExplorerModal from './RemoteExplorerModal.svelte';
   import { createMeetingRoom, inviteContactToMeeting } from '../stores/meeting';
-  import { peerAvatars, myAvatar, loadPeerAvatar } from '../stores/avatars';
+  import { peerAvatars, peerAvatarHashes, myAvatar, loadPeerAvatar } from '../stores/avatars';
   import { contacts, lanContacts } from '../stores/contacts';
   import { cloudContacts, cloudMyDevices, activeChatPeerId, appSettings, incomingRequestQueue, activeMainTab } from '../stores/state';
   import {
@@ -265,8 +265,8 @@
     const peerMap = new Map<string, any>();
 
     for (const c of $contacts) {
-      if (c.avatar_hash && !$peerAvatars[c.device_id]) {
-        loadPeerAvatar(c.device_id);
+      if (c.avatar_hash && (!$peerAvatars[c.device_id] || $peerAvatarHashes[c.device_id] !== c.avatar_hash)) {
+        loadPeerAvatar(c.device_id, c.avatar_hash);
       }
       peerMap.set(c.device_id, {
         id: c.device_id,

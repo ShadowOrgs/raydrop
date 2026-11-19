@@ -686,14 +686,18 @@ where
                 is_online: true,
                 last_seen_at: crate::db::storage::now_unix_secs(),
                 created_at: crate::db::storage::now_unix_secs(),
-                avatar_hash: from_avatar_hash.or_else(|| existing.as_ref().and_then(|e| e.avatar_hash.clone())),
+                avatar_hash: from_avatar_hash.clone().or_else(|| existing.as_ref().and_then(|e| e.avatar_hash.clone())),
             };
             let _ = state.db.upsert_contact(&c);
             let _ = app.emit("contacts_updated", ());
             let _ = app.emit("lan_contacts_updated", ());
+
+            if from_avatar_hash.is_some() {
+                crate::commands::request_peer_avatar_internal(&state, &from_dev_id);
+            }
         }
 
-        let my_avatar_hash = crate::commands::get_my_avatar_internal();
+        let my_avatar_hash = state.db.get_setting("avatar_hash").ok().flatten();
         let my_alias = state.settings.lock().map(|s| s.alias_name.clone()).unwrap_or_else(|_| "Raydrop".to_string());
         let pong = serde_json::json!({
             "type": "DIRECT_PONG",
@@ -704,6 +708,33 @@ where
             "avatar_hash": my_avatar_hash,
         });
         write_json_packet(&mut writer, &pong).await?;
+        return Ok(());
+    }
+
+    if frame_type == "AVATAR_UPDATE" {
+        let from_dev_id = raw_val.get("from_device_id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let av_data = raw_val.get("avatar_data").and_then(|v| v.as_str());
+        let av_hash = raw_val.get("avatar_hash").and_then(|v| v.as_str());
+
+        if !from_dev_id.is_empty() {
+            if let Some(data) = av_data {
+                let _ = crate::commands::save_peer_avatar_internal(&app, &state, &from_dev_id, data, av_hash);
+                let _ = app.emit("contacts_updated", ());
+            }
+        }
+        let _ = writer.write_all(b"OK").await;
+        return Ok(());
+    }
+
+    if frame_type == "AVATAR_REQUEST" {
+        let from_dev_id = raw_val.get("from_device_id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        if !from_dev_id.is_empty() {
+            if let Some(my_b64) = crate::commands::get_my_avatar_internal() {
+                let my_hash = state.db.get_setting("avatar_hash").ok().flatten().unwrap_or_default();
+                crate::commands::send_avatar_update_to_peer(&state, &from_dev_id, &my_b64, &my_hash);
+            }
+        }
+        let _ = writer.write_all(b"OK").await;
         return Ok(());
     }
 
