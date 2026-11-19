@@ -155,5 +155,4 @@ if __name__ == "__main__":
 - **In-Chat Keyword Search:** Filter conversation history in real-time with highlighted match counters and quick reset.
 - **Shared Media & Files Drawer:** Collapsible sidebar organizing all shared images, videos, audio, and documents across the conversation with quick view, open, and folder locate buttons.
 """
-"""
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)
