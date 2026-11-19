@@ -271,6 +271,8 @@ pub fn update_settings(
     stun_addr: String,
     autostart: Option<bool>,
     speed_limit_mbps: Option<u32>,
+    auto_categorize: Option<bool>,
+    max_concurrent_downloads: Option<u32>,
 ) -> Result<AppSettings, String> {
     let resolved_stun = if stun_addr.trim().is_empty() {
         let host = signaling_url
@@ -297,13 +299,27 @@ pub fn update_settings(
 
     let mut s = state.settings.lock().map_err(|e| e.to_string())?;
     s.alias_name = alias_name;
-    s.download_dir = download_dir;
+    s.download_dir = download_dir.clone();
     s.signaling_url = signaling_url.trim().to_string();
     s.stun_addr = resolved_stun;
+
+    state.http_downloader.set_save_dir(std::path::PathBuf::from(download_dir));
 
     if let Some(limit) = speed_limit_mbps {
         state.db.set_setting("speed_limit_mbps", &limit.to_string())?;
         s.speed_limit_mbps = limit;
+    }
+
+    if let Some(cat) = auto_categorize {
+        state.db.set_setting("auto_categorize", if cat { "true" } else { "false" })?;
+        s.auto_categorize = cat;
+        state.http_downloader.set_auto_categorize(cat);
+    }
+
+    if let Some(conc) = max_concurrent_downloads {
+        state.db.set_setting("max_concurrent_downloads", &conc.to_string())?;
+        s.max_concurrent_downloads = conc;
+        state.http_downloader.set_max_concurrent_downloads(conc);
     }
 
     if let Some(auto) = autostart {
@@ -2079,5 +2095,194 @@ pub async fn open_browser_extension_url(browser: String) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn start_http_download_now(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> Result<(), String> {
+    state.http_downloader.start_task_now(&id).await
+}
+
+#[tauri::command]
+pub fn execute_system_power_action(action: String) -> Result<(), String> {
+    match action.to_lowercase().as_str() {
+        "shutdown" => {
+            #[cfg(target_os = "windows")]
+            {
+                std::process::Command::new("shutdown")
+                    .args(["/s", "/t", "0"])
+                    .spawn()
+                    .map_err(|e| format!("Shutdown failed: {e}"))?;
+            }
+            #[cfg(target_os = "macos")]
+            {
+                std::process::Command::new("osascript")
+                    .args(["-e", "tell app \"System Events\" to shut down"])
+                    .spawn()
+                    .map_err(|e| format!("Shutdown failed: {e}"))?;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                std::process::Command::new("systemctl")
+                    .arg("poweroff")
+                    .spawn()
+                    .map_err(|e| format!("Shutdown failed: {e}"))?;
+            }
+        }
+        "sleep" => {
+            #[cfg(target_os = "windows")]
+            {
+                std::process::Command::new("rundll32.exe")
+                    .args(["powrprof.dll,SetSuspendState", "0,1,0"])
+                    .spawn()
+                    .map_err(|e| format!("Sleep failed: {e}"))?;
+            }
+            #[cfg(target_os = "macos")]
+            {
+                std::process::Command::new("osascript")
+                    .args(["-e", "tell app \"System Events\" to sleep"])
+                    .spawn()
+                    .map_err(|e| format!("Sleep failed: {e}"))?;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                std::process::Command::new("systemctl")
+                    .arg("suspend")
+                    .spawn()
+                    .map_err(|e| format!("Sleep failed: {e}"))?;
+            }
+        }
+        "hibernate" => {
+            #[cfg(target_os = "windows")]
+            {
+                std::process::Command::new("shutdown")
+                    .args(["/h"])
+                    .spawn()
+                    .map_err(|e| format!("Hibernate failed: {e}"))?;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                std::process::Command::new("systemctl")
+                    .arg("hibernate")
+                    .spawn()
+                    .map_err(|e| format!("Hibernate failed: {e}"))?;
+            }
+            #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+            {
+                return Err("Hibernate is not supported on this platform".to_string());
+            }
+        }
+        _ => return Err(format!("Unknown power action: {action}")),
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn calculate_file_hash(path: String) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    use tokio::io::AsyncReadExt;
+
+    let mut file = tokio::fs::File::open(&path)
+        .await
+        .map_err(|e| format!("Failed to open file: {e}"))?;
+    let mut buffer = vec![0u8; 1024 * 1024]; // 1MB buffer
+    let mut hasher = Sha256::new();
+
+    loop {
+        let n = file
+            .read(&mut buffer)
+            .await
+            .map_err(|e| format!("Read error: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+#[derive(Serialize)]
+pub struct DirectAddressInfo {
+    pub ip: String,
+    pub port: u16,
+}
+
+#[tauri::command]
+pub fn get_direct_listen_address(state: State<'_, Arc<AppState>>) -> Result<DirectAddressInfo, String> {
+    Ok(DirectAddressInfo {
+        ip: state.local_ip.clone(),
+        port: state.listen_port,
+    })
+}
+
+#[tauri::command]
+pub async fn connect_peer_by_ip(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    ip: String,
+    port: Option<u16>,
+) -> Result<Contact, String> {
+    use tokio::net::TcpStream;
+    let target_port = port.unwrap_or(state.listen_port);
+    let target_addr = format!("{}:{}", ip.trim(), target_port);
+
+    let stream = tokio::time::timeout(
+        std::time::Duration::from_secs(4),
+        TcpStream::connect(&target_addr),
+    )
+    .await
+    .map_err(|_| format!("Connection to {target_addr} timed out"))?
+    .map_err(|e| format!("Failed to connect to {target_addr}: {e}"))?;
+
+    let (mut reader, mut writer) = tokio::io::split(stream);
+
+    let my_avatar_hash = get_my_avatar_internal();
+    let my_alias = state.settings.lock().map(|s| s.alias_name.clone()).unwrap_or_else(|_| "Raydrop".to_string());
+    let ping = serde_json::json!({
+        "type": "DIRECT_PING",
+        "device_id": state.identity.device_id,
+        "alias_name": my_alias,
+        "os_type": std::env::consts::OS,
+        "listen_port": state.listen_port,
+        "avatar_hash": my_avatar_hash,
+    });
+
+    crate::network::transport::write_json_packet(&mut writer, &ping).await?;
+    let resp: serde_json::Value = crate::network::transport::read_json_packet(&mut reader).await?;
+
+    let peer_dev_id = resp.get("device_id").and_then(|v| v.as_str()).ok_or("Invalid response from peer")?.to_string();
+    let peer_alias = resp.get("alias_name").and_then(|v| v.as_str()).unwrap_or("Raydrop").to_string();
+    let peer_os = resp.get("os_type").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let peer_listen_port = resp.get("listen_port").and_then(|v| v.as_u64()).map(|p| p as u16).unwrap_or(target_port);
+    let peer_avatar_hash = resp.get("avatar_hash").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+    let existing = state.db.get_contact(&peer_dev_id).ok().flatten();
+    let contact = Contact {
+        device_id: peer_dev_id,
+        alias_name: peer_alias,
+        custom_name: existing.as_ref().and_then(|e| e.custom_name.clone()),
+        user_email: existing.as_ref().and_then(|e| e.user_email.clone()),
+        user_name: existing.as_ref().and_then(|e| e.user_name.clone()),
+        os_type: peer_os,
+        is_own_device: false,
+        ed25519_pubkey: None,
+        network_type: "lan".to_string(),
+        last_known_ip: Some(ip.trim().to_string()),
+        last_known_port: Some(peer_listen_port),
+        trust_level: existing.as_ref().map(|e| e.trust_level.clone()).unwrap_or_else(|| "ask".to_string()),
+        is_online: true,
+        last_seen_at: crate::db::storage::now_unix_secs(),
+        created_at: crate::db::storage::now_unix_secs(),
+        avatar_hash: peer_avatar_hash.or_else(|| existing.as_ref().and_then(|e| e.avatar_hash.clone())),
+    };
+
+    state.db.upsert_contact(&contact)?;
+    let _ = app.emit("contacts_updated", ());
+    let _ = app.emit("lan_contacts_updated", ());
+
+    Ok(contact)
 }
 

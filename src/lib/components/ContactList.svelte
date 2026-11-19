@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { open } from '@tauri-apps/plugin-dialog';
+  import { onMount } from "svelte";
+  import { open } from "@tauri-apps/plugin-dialog";
   import {
     appSettings,
     cloudMyDevices,
@@ -7,9 +8,9 @@
     authModalOpen,
     activeMainTab,
     activeChatPeerId,
-  } from '../stores/state';
-  import { contacts, lanContacts } from '../stores/contacts';
-  import { peerAvatars, myAvatar, loadPeerAvatar } from '../stores/avatars';
+  } from "../stores/state";
+  import { contacts, lanContacts } from "../stores/contacts";
+  import { peerAvatars, myAvatar, loadPeerAvatar } from "../stores/avatars";
   import {
     raydropApi,
     cloudApi,
@@ -17,7 +18,7 @@
     type Contact,
     type CloudDeviceNode,
     type CloudContactGroup,
-  } from '../utils/tauri-ipc';
+  } from "../utils/tauri-ipc";
   import {
     Wifi,
     UserPlus,
@@ -34,40 +35,100 @@
     ShieldCheck,
     ArrowLeft,
     MessageSquare,
-  } from 'lucide-svelte';
+    Network,
+    Copy,
+  } from "lucide-svelte";
+
+  let myDirectAddr: { ip: string; port: number } | null = null;
+  let directAddrCopied = false;
+  let showConnectIpModal = false;
+  let directConnectIp = "";
+  let directConnectPort = 44325;
+  let isConnectingIp = false;
+  let directConnectError = "";
+  let directConnectSuccess = "";
+
+  onMount(async () => {
+    try {
+      myDirectAddr = await raydropApi.getDirectListenAddress();
+    } catch (_) {}
+  });
+
+  async function copyDirectAddr() {
+    if (!myDirectAddr) return;
+    const str = `${myDirectAddr.ip}:${myDirectAddr.port}`;
+    await navigator.clipboard.writeText(str);
+    directAddrCopied = true;
+    setTimeout(() => (directAddrCopied = false), 2000);
+  }
+
+  async function handleConnectByIp() {
+    directConnectError = "";
+    directConnectSuccess = "";
+    if (!directConnectIp.trim()) {
+      directConnectError = "Please enter an IP address";
+      return;
+    }
+    isConnectingIp = true;
+    try {
+      const peer = await raydropApi.connectPeerByIp(
+        directConnectIp.trim(),
+        directConnectPort || 44325,
+      );
+      directConnectSuccess = `Connected to ${peer.alias_name}!`;
+      const updated = await raydropApi.getContacts();
+      contacts.set(updated);
+      setTimeout(() => {
+        showConnectIpModal = false;
+        directConnectIp = "";
+        directConnectSuccess = "";
+      }, 1500);
+    } catch (err: any) {
+      directConnectError = String(err);
+    } finally {
+      isConnectingIp = false;
+    }
+  }
 
   function openChatWith(deviceId: string) {
     activeChatPeerId.set(deviceId);
-    activeMainTab.set('chat');
+    activeMainTab.set("chat");
   }
 
-  let activeTab: 'devices' | 'contacts' | 'lan' = 'devices';
+  let activeTab: "devices" | "contacts" | "lan" = "devices";
 
-  $: if ($activeMainTab === 'lan' || $activeMainTab === 'devices' || $activeMainTab === 'contacts') {
+  $: if (
+    $activeMainTab === "lan" ||
+    $activeMainTab === "devices" ||
+    $activeMainTab === "contacts"
+  ) {
     activeTab = $activeMainTab;
   }
 
-  function selectTab(tab: 'devices' | 'contacts' | 'lan') {
+  function selectTab(tab: "devices" | "contacts" | "lan") {
     activeTab = tab;
     activeMainTab.set(tab);
   }
   let showAddContactModal = false;
-  let newContactEmail = '';
-  let errorMsg = '';
+  let newContactEmail = "";
+  let errorMsg = "";
 
   let editingDeviceId: string | null = null;
-  let editingDeviceName = '';
+  let editingDeviceName = "";
 
   let editingCustomNameDeviceId: string | null = null;
-  let editingCustomNameValue = '';
+  let editingCustomNameValue = "";
 
   async function handleSaveContactCustomName(deviceId: string) {
     try {
-      await raydropApi.setContactCustomName(deviceId, editingCustomNameValue.trim());
+      await raydropApi.setContactCustomName(
+        deviceId,
+        editingCustomNameValue.trim(),
+      );
       const updated = await raydropApi.getContacts();
       contacts.set(updated);
     } catch (err) {
-      console.warn('Failed to update contact custom name:', err);
+      console.warn("Failed to update contact custom name:", err);
     } finally {
       editingCustomNameDeviceId = null;
     }
@@ -76,7 +137,12 @@
   $: localOnlyContacts = $contacts.filter((c) => {
     if (c.is_own_device) return false;
     if (!$cloudContacts || $cloudContacts.length === 0) return true;
-    return !c.user_email || !$cloudContacts.some((cg) => cg.email.toLowerCase() === (c.user_email || '').toLowerCase());
+    return (
+      !c.user_email ||
+      !$cloudContacts.some(
+        (cg) => cg.email.toLowerCase() === (c.user_email || "").toLowerCase(),
+      )
+    );
   });
 
   $: for (const c of $contacts) {
@@ -94,18 +160,18 @@
       cloudContacts.set(state.contacts);
       const localList = await raydropApi.syncCloudDataToLocal(
         state.my_devices,
-        state.contacts
+        state.contacts,
       );
       contacts.set(localList);
     } catch (e) {
-      console.warn('Cloud sync warning:', e);
+      console.warn("Cloud sync warning:", e);
     }
   }
 
   async function handleAddContactByEmail() {
-    errorMsg = '';
-    if (!newContactEmail.trim() || !newContactEmail.includes('@')) {
-      errorMsg = 'Please enter a valid registered email address.';
+    errorMsg = "";
+    if (!newContactEmail.trim() || !newContactEmail.includes("@")) {
+      errorMsg = "Please enter a valid registered email address.";
       return;
     }
     if (!$appSettings.auth_token) {
@@ -117,15 +183,15 @@
       const res = await cloudApi.addContactByEmail(
         baseUrl,
         $appSettings.auth_token,
-        newContactEmail.trim()
+        newContactEmail.trim(),
       );
       cloudContacts.set(res.contacts);
       const localList = await raydropApi.syncCloudDataToLocal(
         $cloudMyDevices,
-        res.contacts
+        res.contacts,
       );
       contacts.set(localList);
-      newContactEmail = '';
+      newContactEmail = "";
       showAddContactModal = false;
     } catch (e: any) {
       errorMsg = e?.message || String(e);
@@ -140,15 +206,18 @@
         baseUrl,
         $appSettings.auth_token,
         deviceId,
-        editingDeviceName.trim()
+        editingDeviceName.trim(),
       );
       cloudMyDevices.set(res.my_devices);
       if (deviceId === $appSettings.device_id) {
-        appSettings.update((s) => ({ ...s, alias_name: editingDeviceName.trim() }));
+        appSettings.update((s) => ({
+          ...s,
+          alias_name: editingDeviceName.trim(),
+        }));
       }
       const localList = await raydropApi.syncCloudDataToLocal(
         res.my_devices,
-        $cloudContacts
+        $cloudContacts,
       );
       contacts.set(localList);
       editingDeviceId = null;
@@ -164,7 +233,7 @@
       const res = await cloudApi.deleteDevice(
         baseUrl,
         $appSettings.auth_token,
-        deviceId
+        deviceId,
       );
       cloudMyDevices.set(res.my_devices);
       await raydropApi.deleteLocalContact({ deviceId });
@@ -182,13 +251,13 @@
         baseUrl,
         $appSettings.auth_token,
         email,
-        nextTrust
+        nextTrust,
       );
       cloudContacts.set(res.contacts);
       await raydropApi.updateContactTrust(
-        '',
-        nextTrust as Contact['trust_level'],
-        email
+        "",
+        nextTrust as Contact["trust_level"],
+        email,
       );
       contacts.set(await raydropApi.getContacts());
     } catch (e) {
@@ -203,7 +272,7 @@
       const res = await cloudApi.deleteContactByEmail(
         baseUrl,
         $appSettings.auth_token,
-        email
+        email,
       );
       cloudContacts.set(res.contacts);
       await raydropApi.deleteLocalContact({ email });
@@ -216,52 +285,62 @@
   async function handleLanTrustChange(peer: Contact, nextTrust: string) {
     await raydropApi.updateContactTrust(
       peer.device_id,
-      nextTrust as Contact['trust_level'],
-      peer.user_email
+      nextTrust as Contact["trust_level"],
+      peer.user_email,
     );
     contacts.set(await raydropApi.getContacts());
   }
 
-  async function sendToDeviceId(deviceId: string, label: string, directory = false) {
+  async function sendToDeviceId(
+    deviceId: string,
+    label: string,
+    directory = false,
+  ) {
     try {
       const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
       const shouldPickDir = directory && !isMobile;
       const selected = await open({
         multiple: true,
         directory: shouldPickDir,
-        title: shouldPickDir ? `Send Folder to ${label}` : `Send Files to ${label}`,
+        title: shouldPickDir
+          ? `Send Folder to ${label}`
+          : `Send Files to ${label}`,
       });
       if (!selected) return;
       const paths = Array.isArray(selected) ? selected : [selected];
       if (paths.length > 0) {
         await raydropApi.initiateTransfer(deviceId, paths);
-        activeMainTab.set('transfers');
+        activeMainTab.set("transfers");
       }
     } catch (err: any) {
-      console.error('Failed to send files:', err);
-      const msg = err?.toString() || '';
-      if (msg.includes('FolderPickerNotImplemented')) {
-        alert('Direct folder selection is not supported on Android. Please use Send Files.');
+      console.error("Failed to send files:", err);
+      const msg = err?.toString() || "";
+      if (msg.includes("FolderPickerNotImplemented")) {
+        alert(
+          "Direct folder selection is not supported on Android. Please use Send Files.",
+        );
       } else {
-        alert('Failed to send files: ' + (msg || 'Unknown error'));
+        alert("Failed to send files: " + (msg || "Unknown error"));
       }
     }
   }
 
   function pickPrimaryDevice(group: CloudContactGroup): CloudDeviceNode | null {
-    return (
-      group.devices.find((d) => d.is_online) || group.devices[0] || null
-    );
+    return group.devices.find((d) => d.is_online) || group.devices[0] || null;
   }
 </script>
 
-<div class="flex flex-col h-full bg-slate-900/40 border border-slate-800/80 rounded-2xl overflow-hidden">
+<div
+  class="flex flex-col h-full bg-slate-900/40 border border-slate-800/80 rounded-2xl overflow-hidden"
+>
   <!-- Navigation Tabs -->
-  <div class="p-3 sm:p-4 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-2 sm:gap-3 bg-slate-900/60 backdrop-blur-xl">
+  <div
+    class="p-3 sm:p-4 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-2 sm:gap-3 bg-slate-900/60 backdrop-blur-xl"
+  >
     <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
       <button
         type="button"
-        on:click={() => activeMainTab.set('transfers')}
+        on:click={() => activeMainTab.set("transfers")}
         class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition-colors"
         title="Return to Transfers & Streams"
       >
@@ -269,9 +348,11 @@
         <span>Transfers</span>
       </button>
 
-      <div class="flex items-center gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800 overflow-x-auto max-w-full">
+      <div
+        class="flex items-center gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800 overflow-x-auto max-w-full"
+      >
         <button
-          on:click={() => selectTab('devices')}
+          on:click={() => selectTab("devices")}
           class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 {activeTab ===
           'devices'
             ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
@@ -282,7 +363,7 @@
         </button>
 
         <button
-          on:click={() => selectTab('contacts')}
+          on:click={() => selectTab("contacts")}
           class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 {activeTab ===
           'contacts'
             ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
@@ -293,7 +374,7 @@
         </button>
 
         <button
-          on:click={() => selectTab('lan')}
+          on:click={() => selectTab("lan")}
           class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 {activeTab ===
           'lan'
             ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
@@ -305,13 +386,26 @@
       </div>
     </div>
 
-    {#if $appSettings.auth_token}
+    {#if activeTab === "lan"}
       <button
         on:click={() => {
-          errorMsg = '';
+          directConnectError = "";
+          directConnectSuccess = "";
+          showConnectIpModal = true;
+        }}
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-colors shadow-sm shadow-cyan-500/20 shrink-0 cursor-pointer"
+      >
+        <Network class="w-3.5 h-3.5" />
+        <span class="hidden sm:inline">Connect by IP</span>
+        <span class="sm:hidden">IP Connect</span>
+      </button>
+    {:else if $appSettings.auth_token}
+      <button
+        on:click={() => {
+          errorMsg = "";
           showAddContactModal = true;
         }}
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-colors shadow-sm shadow-cyan-500/20 shrink-0"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-colors shadow-sm shadow-cyan-500/20 shrink-0 cursor-pointer"
       >
         <UserPlus class="w-3.5 h-3.5" />
         <span class="hidden sm:inline">Add by Email</span>
@@ -322,15 +416,22 @@
 
   <!-- Tab Contents -->
   <div class="flex-1 overflow-y-auto p-4 space-y-2.5">
-    {#if activeTab === 'devices'}
+    {#if activeTab === "devices"}
       {#if !$appSettings.auth_token}
-        <div class="h-60 flex flex-col items-center justify-center text-center px-6">
-          <div class="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mb-3 text-cyan-400">
+        <div
+          class="h-60 flex flex-col items-center justify-center text-center px-6"
+        >
+          <div
+            class="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mb-3 text-cyan-400"
+          >
             <Laptop class="w-6 h-6" />
           </div>
-          <p class="text-sm font-bold text-white">Sign in to manage your devices like Tailscale</p>
+          <p class="text-sm font-bold text-white">
+            Sign in to manage your devices like Tailscale
+          </p>
           <p class="text-xs text-slate-400 mt-1 max-w-sm">
-            Link all your PCs and laptops under one email address for zero-prompt auto-accepted P2P transfers and persistent contacts.
+            Link all your PCs and laptops under one email address for
+            zero-prompt auto-accepted P2P transfers and persistent contacts.
           </p>
           <button
             on:click={() => authModalOpen.set(true)}
@@ -343,18 +444,33 @@
       {:else}
         {#each $cloudMyDevices as dev (dev.device_id)}
           {@const isThisDevice = dev.device_id === $appSettings.device_id}
-          <div class="p-3.5 rounded-xl bg-slate-900/90 border {isThisDevice ? 'border-cyan-500/40' : 'border-slate-800'} flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div
+            class="p-3.5 rounded-xl bg-slate-900/90 border {isThisDevice
+              ? 'border-cyan-500/40'
+              : 'border-slate-800'} flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          >
             <div class="flex items-center gap-3 min-w-0">
-              <div class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden">
+              <div
+                class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden"
+              >
                 {#if isThisDevice && $myAvatar}
-                  <img src={$myAvatar} alt="" class="w-full h-full object-cover" />
+                  <img
+                    src={$myAvatar}
+                    alt=""
+                    class="w-full h-full object-cover"
+                  />
                 {:else if $peerAvatars[dev.device_id]}
-                  <img src={$peerAvatars[dev.device_id]} alt="" class="w-full h-full object-cover" />
+                  <img
+                    src={$peerAvatars[dev.device_id]}
+                    alt=""
+                    class="w-full h-full object-cover"
+                  />
                 {:else}
                   <Laptop class="w-5 h-5 text-cyan-400" />
                 {/if}
                 <span
-                  class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 {dev.is_online || isThisDevice
+                  class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 {dev.is_online ||
+                  isThisDevice
                     ? 'bg-emerald-400'
                     : 'bg-slate-500'}"
                 ></span>
@@ -382,17 +498,25 @@
                   </div>
                 {:else}
                   <div class="flex items-center gap-2 flex-wrap">
-                    <p class="text-sm font-semibold text-slate-100 truncate">{dev.device_name}</p>
+                    <p class="text-sm font-semibold text-slate-100 truncate">
+                      {dev.device_name}
+                    </p>
                     {#if isThisDevice}
-                      <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                      <span
+                        class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30"
+                      >
                         This Device
                       </span>
                     {:else}
-                      <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1">
+                      <span
+                        class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1"
+                      >
                         <ShieldCheck class="w-3 h-3" /> Auto-Accept
                       </span>
                     {/if}
-                    <span class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                    <span
+                      class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700"
+                    >
                       {dev.os_type}
                     </span>
                   </div>
@@ -406,7 +530,9 @@
               </div>
             </div>
 
-            <div class="flex items-center gap-1.5 flex-wrap w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60">
+            <div
+              class="flex items-center gap-1.5 flex-wrap w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60"
+            >
               <button
                 on:click={() => {
                   editingDeviceId = dev.device_id;
@@ -428,14 +554,16 @@
                   <span>Chat</span>
                 </button>
                 <button
-                  on:click={() => sendToDeviceId(dev.device_id, dev.device_name, false)}
+                  on:click={() =>
+                    sendToDeviceId(dev.device_id, dev.device_name, false)}
                   class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/30 text-xs font-semibold transition-all"
                 >
                   <Send class="w-3.5 h-3.5" />
                   <span>Files</span>
                 </button>
                 <button
-                  on:click={() => sendToDeviceId(dev.device_id, dev.device_name, true)}
+                  on:click={() =>
+                    sendToDeviceId(dev.device_id, dev.device_name, true)}
                   class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
                   title="Send Folder"
                 >
@@ -453,16 +581,20 @@
           </div>
         {/each}
       {/if}
-
-    {:else if activeTab === 'contacts'}
+    {:else if activeTab === "contacts"}
       {#if !$appSettings.auth_token && localOnlyContacts.length === 0}
-        <div class="h-60 flex flex-col items-center justify-center text-center px-6">
-          <div class="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mb-3 text-cyan-400">
+        <div
+          class="h-60 flex flex-col items-center justify-center text-center px-6"
+        >
+          <div
+            class="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mb-3 text-cyan-400"
+          >
             <Users class="w-6 h-6" />
           </div>
           <p class="text-sm font-semibold text-slate-200">No contacts yet</p>
           <p class="text-xs text-slate-400 mt-1 max-w-sm">
-            Contacts are automatically added when you chat and reply to peers, or you can sign in to sync contacts across all your devices.
+            Contacts are automatically added when you chat and reply to peers,
+            or you can sign in to sync contacts across all your devices.
           </p>
           <button
             on:click={() => authModalOpen.set(true)}
@@ -475,13 +607,25 @@
         <!-- Cloud Account Contacts -->
         {#each $cloudContacts as group (group.email)}
           {@const primaryDev = pickPrimaryDevice(group)}
-          {@const primaryAvatar = primaryDev ? $peerAvatars[primaryDev.device_id] : null}
-          <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {@const primaryAvatar = primaryDev
+            ? $peerAvatars[primaryDev.device_id]
+            : null}
+          <div
+            class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3"
+          >
+            <div
+              class="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+            >
               <div class="flex items-center gap-3 min-w-0">
-                <div class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden">
+                <div
+                  class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden"
+                >
                   {#if primaryAvatar}
-                    <img src={primaryAvatar} alt={group.name} class="w-full h-full object-cover" />
+                    <img
+                      src={primaryAvatar}
+                      alt={group.name}
+                      class="w-full h-full object-cover"
+                    />
                   {:else}
                     <div class="font-bold text-xs text-cyan-300">
                       {group.name.slice(0, 2).toUpperCase()}
@@ -495,19 +639,31 @@
                 </div>
                 <div class="min-w-0">
                   <div class="flex items-center gap-2 flex-wrap">
-                    <p class="text-sm font-bold text-white truncate">{group.name}</p>
-                    <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-cyan-300 border border-slate-700">
+                    <p class="text-sm font-bold text-white truncate">
+                      {group.name}
+                    </p>
+                    <span
+                      class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-cyan-300 border border-slate-700"
+                    >
                       {group.devices.length} device(s)
                     </span>
                   </div>
-                  <p class="text-xs font-mono text-slate-400 truncate">{group.email}</p>
+                  <p class="text-xs font-mono text-slate-400 truncate">
+                    {group.email}
+                  </p>
                 </div>
               </div>
 
-              <div class="flex items-center gap-1.5 flex-wrap w-full sm:w-auto justify-between sm:justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60">
+              <div
+                class="flex items-center gap-1.5 flex-wrap w-full sm:w-auto justify-between sm:justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60"
+              >
                 <select
                   value={group.trust_level}
-                  on:change={(e) => handleContactTrustChange(group.email, e.currentTarget.value)}
+                  on:change={(e) =>
+                    handleContactTrustChange(
+                      group.email,
+                      e.currentTarget.value,
+                    )}
                   class="flex-1 sm:flex-initial bg-slate-950 border border-slate-700/80 rounded-lg px-2 py-1.5 text-[11px] text-slate-300 focus:outline-none focus:border-cyan-500"
                 >
                   <option value="ask">Ask</option>
@@ -526,7 +682,12 @@
                       <span>Chat</span>
                     </button>
                     <button
-                      on:click={() => sendToDeviceId(primaryDev.device_id, `${group.name} (${primaryDev.device_name})`, false)}
+                      on:click={() =>
+                        sendToDeviceId(
+                          primaryDev.device_id,
+                          `${group.name} (${primaryDev.device_name})`,
+                          false,
+                        )}
                       class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/30 text-xs font-semibold transition-all"
                     >
                       <Send class="w-3.5 h-3.5" />
@@ -548,31 +709,52 @@
             <!-- List of Contact's Devices -->
             {#if group.devices.length > 0}
               <div class="pt-2.5 border-t border-slate-800/80">
-                <div class="text-[11px] font-semibold text-slate-400 mb-2 flex items-center justify-between">
+                <div
+                  class="text-[11px] font-semibold text-slate-400 mb-2 flex items-center justify-between"
+                >
                   <span>Linked Devices ({group.devices.length}):</span>
-                  <span class="text-[10px] text-slate-500 font-mono">Set initials or send files directly</span>
+                  <span class="text-[10px] text-slate-500 font-mono"
+                    >Set initials or send files directly</span
+                  >
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {#each group.devices as cdev (cdev.device_id)}
-                    {@const devLocalContact = $contacts.find((c) => c.device_id === cdev.device_id)}
+                    {@const devLocalContact = $contacts.find(
+                      (c) => c.device_id === cdev.device_id,
+                    )}
                     {@const customNick = devLocalContact?.custom_name}
                     {@const devAvatar = $peerAvatars[cdev.device_id]}
-                    <div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/90 flex flex-col justify-between gap-2">
-                      <div class="flex items-center justify-between gap-2 min-w-0">
+                    <div
+                      class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/90 flex flex-col justify-between gap-2"
+                    >
+                      <div
+                        class="flex items-center justify-between gap-2 min-w-0"
+                      >
                         <div class="flex items-center gap-2 min-w-0">
-                          <div class="relative w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
+                          <div
+                            class="relative w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden"
+                          >
                             {#if devAvatar}
-                              <img src={devAvatar} alt="" class="w-full h-full object-cover" />
+                              <img
+                                src={devAvatar}
+                                alt=""
+                                class="w-full h-full object-cover"
+                              />
                             {:else}
                               <Laptop class="w-3.5 h-3.5 text-cyan-400" />
                             {/if}
-                            <span class="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full {cdev.is_online ? 'bg-emerald-400' : 'bg-slate-500'}"></span>
+                            <span
+                              class="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full {cdev.is_online
+                                ? 'bg-emerald-400'
+                                : 'bg-slate-500'}"
+                            ></span>
                           </div>
                           <div class="min-w-0">
                             {#if editingCustomNameDeviceId === cdev.device_id}
                               <form
                                 class="flex items-center gap-1"
-                                on:submit|preventDefault={() => handleSaveContactCustomName(cdev.device_id)}
+                                on:submit|preventDefault={() =>
+                                  handleSaveContactCustomName(cdev.device_id)}
                               >
                                 <input
                                   type="text"
@@ -581,23 +763,35 @@
                                   class="bg-slate-900 border border-cyan-500/50 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none"
                                   autofocus
                                 />
-                                <button type="submit" class="p-0.5 text-emerald-400 hover:bg-slate-800 rounded">
+                                <button
+                                  type="submit"
+                                  class="p-0.5 text-emerald-400 hover:bg-slate-800 rounded"
+                                >
                                   <Check class="w-3 h-3" />
                                 </button>
-                                <button type="button" on:click={() => (editingCustomNameDeviceId = null)} class="p-0.5 text-slate-400 hover:bg-slate-800 rounded">
+                                <button
+                                  type="button"
+                                  on:click={() =>
+                                    (editingCustomNameDeviceId = null)}
+                                  class="p-0.5 text-slate-400 hover:bg-slate-800 rounded"
+                                >
                                   <X class="w-3 h-3" />
                                 </button>
                               </form>
                             {:else}
                               <div class="flex items-center gap-1.5">
-                                <span class="text-xs font-semibold text-white truncate">
-                                  {customNick ? `${customNick} (${cdev.device_name})` : cdev.device_name}
+                                <span
+                                  class="text-xs font-semibold text-white truncate"
+                                >
+                                  {customNick
+                                    ? `${customNick} (${cdev.device_name})`
+                                    : cdev.device_name}
                                 </span>
                                 <button
                                   type="button"
                                   on:click={() => {
                                     editingCustomNameDeviceId = cdev.device_id;
-                                    editingCustomNameValue = customNick || '';
+                                    editingCustomNameValue = customNick || "";
                                   }}
                                   class="p-0.5 text-slate-500 hover:text-cyan-400 rounded"
                                   title="Set initial / nickname"
@@ -606,18 +800,30 @@
                                 </button>
                               </div>
                             {/if}
-                            <p class="text-[10px] font-mono text-slate-400 truncate">
-                              <span class="uppercase text-slate-500">{cdev.os_type}</span>
+                            <p
+                              class="text-[10px] font-mono text-slate-400 truncate"
+                            >
+                              <span class="uppercase text-slate-500"
+                                >{cdev.os_type}</span
+                              >
                               {#if cdev.last_ip}
                                 <span> • {cdev.last_ip}</span>
                               {/if}
-                              <span class={cdev.is_online ? 'text-emerald-400' : 'text-slate-500'}> • {cdev.is_online ? 'Online' : 'Offline'}</span>
+                              <span
+                                class={cdev.is_online
+                                  ? "text-emerald-400"
+                                  : "text-slate-500"}
+                              >
+                                • {cdev.is_online ? "Online" : "Offline"}</span
+                              >
                             </p>
                           </div>
                         </div>
                       </div>
 
-                      <div class="flex items-center gap-1.5 pt-1.5 border-t border-slate-800/60 justify-end">
+                      <div
+                        class="flex items-center gap-1.5 pt-1.5 border-t border-slate-800/60 justify-end"
+                      >
                         <button
                           on:click={() => openChatWith(cdev.device_id)}
                           class="px-2 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 text-[11px] font-medium transition flex items-center gap-1"
@@ -627,7 +833,12 @@
                           <span>Chat</span>
                         </button>
                         <button
-                          on:click={() => sendToDeviceId(cdev.device_id, `${group.name} - ${customNick || cdev.device_name}`, false)}
+                          on:click={() =>
+                            sendToDeviceId(
+                              cdev.device_id,
+                              `${group.name} - ${customNick || cdev.device_name}`,
+                              false,
+                            )}
                           class="px-2 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-[11px] font-medium transition flex items-center gap-1"
                           title="Send Files to {cdev.device_name}"
                         >
@@ -635,7 +846,12 @@
                           <span>Files</span>
                         </button>
                         <button
-                          on:click={() => sendToDeviceId(cdev.device_id, `${group.name} - ${customNick || cdev.device_name}`, true)}
+                          on:click={() =>
+                            sendToDeviceId(
+                              cdev.device_id,
+                              `${group.name} - ${customNick || cdev.device_name}`,
+                              true,
+                            )}
                           class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
                           title="Send Folder to {cdev.device_name}"
                         >
@@ -653,30 +869,47 @@
         <!-- Direct / Replied Chat Contacts & Unlinked Peers -->
         {#if localOnlyContacts.length > 0}
           <div class="pt-2">
-            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+            <h4
+              class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2"
+            >
               Discovered & Chat Contacts ({localOnlyContacts.length})
             </h4>
             <div class="space-y-2.5">
               {#each localOnlyContacts as peer (peer.device_id)}
                 {@const peerAvatar = $peerAvatars[peer.device_id]}
-                <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div
+                  class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
                   <div class="flex items-center gap-3 min-w-0">
-                    <div class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden">
+                    <div
+                      class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden"
+                    >
                       {#if peerAvatar}
-                        <img src={peerAvatar} alt={peer.alias_name} class="w-full h-full object-cover" />
+                        <img
+                          src={peerAvatar}
+                          alt={peer.alias_name}
+                          class="w-full h-full object-cover"
+                        />
                       {:else}
                         <div class="font-bold text-xs text-cyan-300">
-                          {(peer.custom_name || peer.alias_name).slice(0, 2).toUpperCase()}
+                          {(peer.custom_name || peer.alias_name)
+                            .slice(0, 2)
+                            .toUpperCase()}
                         </div>
                       {/if}
-                      <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 {peer.is_online ? 'bg-emerald-400' : 'bg-slate-500'}"></span>
+                      <span
+                        class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 {peer.is_online
+                          ? 'bg-emerald-400'
+                          : 'bg-slate-500'}"
+                      ></span>
                     </div>
 
                     <div class="min-w-0">
                       {#if editingCustomNameDeviceId === peer.device_id}
                         <form
                           class="flex items-center gap-1 mb-1"
-                          on:submit|preventDefault={() => handleSaveContactCustomName(peer.device_id)}
+                          on:submit|preventDefault={() =>
+                            handleSaveContactCustomName(peer.device_id)}
                         >
                           <input
                             type="text"
@@ -685,45 +918,66 @@
                             class="bg-slate-950 border border-cyan-500 rounded px-2 py-0.5 text-xs text-white focus:outline-none"
                             autofocus
                           />
-                          <button type="submit" class="p-1 text-emerald-400 hover:bg-slate-800 rounded">
+                          <button
+                            type="submit"
+                            class="p-1 text-emerald-400 hover:bg-slate-800 rounded"
+                          >
                             <Check class="w-3.5 h-3.5" />
                           </button>
-                          <button type="button" on:click={() => (editingCustomNameDeviceId = null)} class="p-1 text-slate-400 hover:bg-slate-800 rounded">
+                          <button
+                            type="button"
+                            on:click={() => (editingCustomNameDeviceId = null)}
+                            class="p-1 text-slate-400 hover:bg-slate-800 rounded"
+                          >
                             <X class="w-3.5 h-3.5" />
                           </button>
                         </form>
                       {:else}
                         <div class="flex items-center gap-1.5 flex-wrap">
                           <p class="text-sm font-bold text-white truncate">
-                            {peer.custom_name ? `${peer.custom_name} (${peer.alias_name})` : peer.alias_name}
+                            {peer.custom_name
+                              ? `${peer.custom_name} (${peer.alias_name})`
+                              : peer.alias_name}
                           </p>
                           <button
                             type="button"
                             on:click={() => {
                               editingCustomNameDeviceId = peer.device_id;
-                              editingCustomNameValue = peer.custom_name || '';
+                              editingCustomNameValue = peer.custom_name || "";
                             }}
                             class="p-1 text-slate-400 hover:text-cyan-400 rounded transition"
                             title="Set initial / nickname"
                           >
                             <Pencil class="w-3 h-3" />
                           </button>
-                          <span class="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                          <span
+                            class="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700"
+                          >
                             {peer.os_type}
                           </span>
-                          <span class="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 border border-slate-700">
+                          <span
+                            class="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 border border-slate-700"
+                          >
                             {peer.network_type}
                           </span>
                         </div>
                       {/if}
                       <p class="text-xs font-mono text-slate-400 truncate">
                         {peer.user_email || peer.device_id}
-                        <span class={peer.is_online ? 'text-emerald-400' : 'text-slate-500'}> • {peer.is_online ? 'Online' : 'Offline'}</span>
+                        <span
+                          class={peer.is_online
+                            ? "text-emerald-400"
+                            : "text-slate-500"}
+                        >
+                          • {peer.is_online ? "Online" : "Offline"}</span
+                        >
                       </p>
                     </div>
                   </div>
 
-                  <div class="flex items-center gap-1.5 shrink-0 justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60">
+                  <div
+                    class="flex items-center gap-1.5 shrink-0 justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60"
+                  >
                     <button
                       on:click={() => openChatWith(peer.device_id)}
                       class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500 text-indigo-300 hover:text-slate-950 border border-indigo-500/30 text-xs font-semibold transition-all"
@@ -733,14 +987,24 @@
                       <span>Chat</span>
                     </button>
                     <button
-                      on:click={() => sendToDeviceId(peer.device_id, peer.custom_name || peer.alias_name, false)}
+                      on:click={() =>
+                        sendToDeviceId(
+                          peer.device_id,
+                          peer.custom_name || peer.alias_name,
+                          false,
+                        )}
                       class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/30 text-xs font-semibold transition-all"
                     >
                       <Send class="w-3.5 h-3.5" />
                       <span>Files</span>
                     </button>
                     <button
-                      on:click={() => sendToDeviceId(peer.device_id, peer.custom_name || peer.alias_name, true)}
+                      on:click={() =>
+                        sendToDeviceId(
+                          peer.device_id,
+                          peer.custom_name || peer.alias_name,
+                          true,
+                        )}
                       class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
                       title="Send Folder"
                     >
@@ -753,28 +1017,88 @@
           </div>
         {/if}
       {/if}
-
     {:else}
       <!-- LAN Radar Tab -->
+      <!-- My Direct IP:Port Banner (AP Isolation Bypass) -->
+      <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-8 h-8 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 flex items-center justify-center shrink-0">
+            <Network class="w-4 h-4" />
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs font-semibold text-white">My Direct LAN Address:</span>
+              <span class="text-xs font-mono font-bold text-cyan-300 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/50">
+                {myDirectAddr ? `${myDirectAddr.ip}:${myDirectAddr.port}` : 'Detecting local IP...'}
+              </span>
+              {#if myDirectAddr}
+                <button
+                  type="button"
+                  on:click={copyDirectAddr}
+                  class="flex items-center gap-1 text-[11px] text-slate-400 hover:text-cyan-300 font-mono transition cursor-pointer"
+                  title="Copy Direct IP and Port"
+                >
+                  {#if directAddrCopied}
+                    <Check class="w-3 h-3 text-emerald-400" />
+                    <span class="text-emerald-400">Copied</span>
+                  {:else}
+                    <Copy class="w-3 h-3" />
+                    <span>Copy</span>
+                  {/if}
+                </button>
+              {/if}
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">
+              Connect directly across isolated Wi-Fi or router AP-isolation without multicast mDNS.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          on:click={() => {
+            directConnectError = '';
+            directConnectSuccess = '';
+            showConnectIpModal = true;
+          }}
+          class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-cyan-300 border border-slate-700 transition flex items-center gap-1.5 shrink-0 self-start sm:self-auto cursor-pointer"
+        >
+          <Network class="w-3.5 h-3.5 text-cyan-400" />
+          <span>Connect by IP</span>
+        </button>
+      </div>
+
       {#each $lanContacts as peer (peer.device_id)}
-        {@const localContact = $contacts.find((c) => c.device_id === peer.device_id)}
+        {@const localContact = $contacts.find(
+          (c) => c.device_id === peer.device_id,
+        )}
         {@const customNick = localContact?.custom_name}
         {@const lanAvatar = $peerAvatars[peer.device_id]}
-        <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div
+          class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        >
           <div class="flex items-center gap-3 min-w-0">
-            <div class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden">
+            <div
+              class="relative w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden"
+            >
               {#if lanAvatar}
-                <img src={lanAvatar} alt="" class="w-full h-full object-cover" />
+                <img
+                  src={lanAvatar}
+                  alt=""
+                  class="w-full h-full object-cover"
+                />
               {:else}
                 <Laptop class="w-5 h-5 text-cyan-400" />
               {/if}
-              <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 bg-emerald-400"></span>
+              <span
+                class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 bg-emerald-400"
+              ></span>
             </div>
             <div class="min-w-0">
               {#if editingCustomNameDeviceId === peer.device_id}
                 <form
                   class="flex items-center gap-1 mb-1"
-                  on:submit|preventDefault={() => handleSaveContactCustomName(peer.device_id)}
+                  on:submit|preventDefault={() =>
+                    handleSaveContactCustomName(peer.device_id)}
                 >
                   <input
                     type="text"
@@ -783,23 +1107,32 @@
                     class="bg-slate-950 border border-cyan-500 rounded px-2 py-0.5 text-xs text-white focus:outline-none"
                     autofocus
                   />
-                  <button type="submit" class="p-1 text-emerald-400 hover:bg-slate-800 rounded">
+                  <button
+                    type="submit"
+                    class="p-1 text-emerald-400 hover:bg-slate-800 rounded"
+                  >
                     <Check class="w-3.5 h-3.5" />
                   </button>
-                  <button type="button" on:click={() => (editingCustomNameDeviceId = null)} class="p-1 text-slate-400 hover:bg-slate-800 rounded">
+                  <button
+                    type="button"
+                    on:click={() => (editingCustomNameDeviceId = null)}
+                    class="p-1 text-slate-400 hover:bg-slate-800 rounded"
+                  >
                     <X class="w-3.5 h-3.5" />
                   </button>
                 </form>
               {:else}
                 <div class="flex items-center gap-2 flex-wrap">
                   <p class="text-sm font-semibold text-slate-100 truncate">
-                    {customNick ? `${customNick} (${peer.alias_name})` : peer.alias_name}
+                    {customNick
+                      ? `${customNick} (${peer.alias_name})`
+                      : peer.alias_name}
                   </p>
                   <button
                     type="button"
                     on:click={() => {
                       editingCustomNameDeviceId = peer.device_id;
-                      editingCustomNameValue = customNick || '';
+                      editingCustomNameValue = customNick || "";
                     }}
                     class="p-0.5 text-slate-500 hover:text-cyan-400 rounded"
                     title="Set initial / nickname"
@@ -807,7 +1140,9 @@
                     <Pencil class="w-2.5 h-2.5" />
                   </button>
                   {#if peer.user_email}
-                    <span class="text-[11px] font-mono text-cyan-300 truncate">{peer.user_email}</span>
+                    <span class="text-[11px] font-mono text-cyan-300 truncate"
+                      >{peer.user_email}</span
+                    >
                   {/if}
                 </div>
               {/if}
@@ -820,10 +1155,13 @@
             </div>
           </div>
 
-          <div class="flex items-center gap-1.5 flex-wrap w-full sm:w-auto justify-between sm:justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60">
+          <div
+            class="flex items-center gap-1.5 flex-wrap w-full sm:w-auto justify-between sm:justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60"
+          >
             <select
               value={peer.trust_level}
-              on:change={(e) => handleLanTrustChange(peer, e.currentTarget.value)}
+              on:change={(e) =>
+                handleLanTrustChange(peer, e.currentTarget.value)}
               class="flex-1 sm:flex-initial bg-slate-950 border border-slate-700/80 rounded-lg px-2 py-1.5 text-[11px] text-slate-300 focus:outline-none focus:border-cyan-500"
             >
               <option value="ask">Ask</option>
@@ -841,14 +1179,16 @@
                 <span>Chat</span>
               </button>
               <button
-                on:click={() => sendToDeviceId(peer.device_id, peer.alias_name, false)}
+                on:click={() =>
+                  sendToDeviceId(peer.device_id, peer.alias_name, false)}
                 class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/30 text-xs font-semibold transition-all"
               >
                 <Send class="w-3.5 h-3.5" />
                 <span>Files</span>
               </button>
               <button
-                on:click={() => sendToDeviceId(peer.device_id, peer.alias_name, true)}
+                on:click={() =>
+                  sendToDeviceId(peer.device_id, peer.alias_name, true)}
                 class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
                 title="Send Folder"
               >
@@ -858,11 +1198,16 @@
           </div>
         </div>
       {:else}
-        <div class="h-56 flex flex-col items-center justify-center text-center px-6">
+        <div
+          class="h-56 flex flex-col items-center justify-center text-center px-6"
+        >
           <Wifi class="w-8 h-8 text-cyan-400/70 animate-pulse mb-2" />
-          <p class="text-sm font-medium text-slate-300">Scanning local Wi-Fi / LAN via mDNS...</p>
+          <p class="text-sm font-medium text-slate-300">
+            Scanning local Wi-Fi / LAN via mDNS...
+          </p>
           <p class="text-xs text-slate-500 mt-1 max-w-xs">
-            Any device running Raydrop on the same local network will appear here automatically.
+            Any device running Raydrop on the same local network will appear
+            here automatically.
           </p>
         </div>
       {/each}
@@ -872,15 +1217,23 @@
 
 <!-- Add Contact by Email Modal -->
 {#if showAddContactModal}
-  <div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
+  <div
+    class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+  >
+    <div
+      class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl"
+    >
       <h3 class="text-base font-bold text-white">Add Contact by Email</h3>
       <p class="text-xs text-slate-400 mt-1">
-        Enter the email address of a registered Raydrop user. Their devices and online status will sync automatically and persist in your account.
+        Enter the email address of a registered Raydrop user. Their devices and
+        online status will sync automatically and persist in your account.
       </p>
 
       <div class="mt-4">
-        <label for="contact-email-input" class="block text-xs font-medium text-slate-300 mb-1">
+        <label
+          for="contact-email-input"
+          class="block text-xs font-medium text-slate-300 mb-1"
+        >
           Peer Email Address
         </label>
         <input
@@ -907,6 +1260,100 @@
           class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-xs font-bold text-slate-950"
         >
           Add Contact
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Direct IP Connect Modal -->
+{#if showConnectIpModal}
+  <div
+    class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 select-none"
+  >
+    <div
+      class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
+    >
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div class="flex items-center gap-2">
+          <Network class="w-4 h-4 text-cyan-400" />
+          <h3 class="text-sm font-bold text-white">Direct LAN / IP Connection</h3>
+        </div>
+        <button
+          type="button"
+          on:click={() => (showConnectIpModal = false)}
+          class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+        >
+          <X class="w-4 h-4" />
+        </button>
+      </div>
+
+      <p class="text-xs text-slate-300">
+        Bypasses Wi-Fi Client Isolation, router firewalls, and subnets by probing the target device's direct Raydrop listen port.
+      </p>
+
+      <div class="space-y-3">
+        <div>
+          <label for="direct-ip-input" class="block text-xs font-medium text-slate-300 mb-1">
+            Target IP Address
+          </label>
+          <input
+            id="direct-ip-input"
+            type="text"
+            bind:value={directConnectIp}
+            placeholder="e.g. 192.168.1.105"
+            class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+          />
+        </div>
+
+        <div>
+          <label for="direct-port-input" class="block text-xs font-medium text-slate-300 mb-1">
+            Port (Default: 44325)
+          </label>
+          <input
+            id="direct-port-input"
+            type="number"
+            bind:value={directConnectPort}
+            placeholder="44325"
+            class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+          />
+        </div>
+
+        {#if directConnectError}
+          <div class="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300">
+            {directConnectError}
+          </div>
+        {/if}
+
+        {#if directConnectSuccess}
+          <div class="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-2">
+            <Check class="w-4 h-4" />
+            <span>{directConnectSuccess}</span>
+          </div>
+        {/if}
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+        <button
+          type="button"
+          on:click={() => (showConnectIpModal = false)}
+          class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition cursor-pointer"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          on:click={handleConnectByIp}
+          disabled={isConnectingIp}
+          class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-xs font-bold text-slate-950 shadow-md shadow-cyan-500/20 transition flex items-center gap-1.5 cursor-pointer"
+        >
+          {#if isConnectingIp}
+            <span class="animate-spin text-xs">⏳</span>
+            <span>Probing Peer...</span>
+          {:else}
+            <Network class="w-3.5 h-3.5" />
+            <span>Connect Now</span>
+          {/if}
         </button>
       </div>
     </div>

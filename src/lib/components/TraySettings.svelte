@@ -24,6 +24,8 @@
     Puzzle,
     Camera,
     Upload,
+    Folders,
+    Layers,
   } from "lucide-svelte";
 
   let aliasName = "";
@@ -32,6 +34,8 @@
   let stunAddr = "";
   let autostart = true;
   let speedLimitMbps = 0;
+  let autoCategorize = true;
+  let maxConcurrentDownloads = 3;
   let win11DirectMenu = false;
   let statusBanner = "";
 
@@ -42,6 +46,8 @@
     stunAddr = $appSettings.stun_addr;
     autostart = $appSettings.autostart ?? true;
     speedLimitMbps = $appSettings.speed_limit_mbps ?? 0;
+    autoCategorize = $appSettings.auto_categorize ?? true;
+    maxConcurrentDownloads = $appSettings.max_concurrent_downloads ?? 3;
     raydropApi
       .getWin11DirectMenu()
       .then((res) => (win11DirectMenu = res))
@@ -87,6 +93,8 @@
       stunAddr,
       autostart,
       speedLimitMbps,
+      autoCategorize,
+      maxConcurrentDownloads,
     });
     appSettings.set(updated);
     statusBanner = "Settings saved! Autorun & Signaling configuration updated.";
@@ -233,6 +241,63 @@
               <FolderOpen class="w-3.5 h-3.5 text-cyan-400" />
               <span>Browse</span>
             </button>
+          </div>
+        </div>
+
+        <!-- IDM-style Auto-Categorize Subfolders -->
+        <div class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex items-center justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+              <Folders class="w-3.5 h-3.5 text-cyan-400" />
+              <span>Smart Download Categorization</span>
+            </p>
+            <p class="text-[11px] text-slate-400">
+              Automatically sort downloads into subfolders: <span class="text-slate-300">Documents, Videos, Music, Compressed, Programs</span>.
+            </p>
+          </div>
+          <button
+            type="button"
+            on:click={() => (autoCategorize = !autoCategorize)}
+            class="px-3 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-all {autoCategorize
+              ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
+              : 'bg-slate-800 border-slate-700 text-slate-400'}"
+          >
+            <span>{autoCategorize ? 'Enabled (ON)' : 'Disabled (OFF)'}</span>
+          </button>
+        </div>
+
+        <!-- Download Queue & Concurrency Limiter -->
+        <div class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col gap-2.5">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <Layers class="w-3.5 h-3.5 text-cyan-400" />
+                <span>Max Concurrent Downloads (Queue)</span>
+              </p>
+              <p class="text-[11px] text-slate-400 mt-0.5">
+                Limit simultaneously running downloads. Extra tasks are queued and start automatically.
+              </p>
+            </div>
+            <span
+              class="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full {maxConcurrentDownloads === 0
+                ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
+                : 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'}"
+            >
+              {maxConcurrentDownloads === 0 ? 'Unlimited' : `${maxConcurrentDownloads} Active`}
+            </span>
+          </div>
+          <div class="flex items-center gap-1.5 flex-wrap pt-1">
+            {#each [{ val: 1, label: '1 Download' }, { val: 2, label: '2 Downloads' }, { val: 3, label: '3 (Default)' }, { val: 5, label: '5 Downloads' }, { val: 0, label: 'Unlimited' }] as opt}
+              <button
+                type="button"
+                on:click={() => (maxConcurrentDownloads = opt.val)}
+                class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all {maxConcurrentDownloads === opt.val
+                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm shadow-cyan-500/30'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}"
+              >
+                {opt.label}
+              </button>
+            {/each}
           </div>
         </div>
 
@@ -441,7 +506,7 @@
               <span
                 class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700"
               >
-                Current: v1.2.15
+                Current: v1.2.16
               </span>
             </div>
             <p class="text-[11px] text-slate-400 mt-0.5">

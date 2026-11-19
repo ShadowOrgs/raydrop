@@ -80,6 +80,8 @@ pub struct AppSettings {
     pub download_dir: String,
     pub signaling_url: String,
     pub stun_addr: String,
+    pub auto_categorize: bool,
+    pub max_concurrent_downloads: u32,
 }
 
 pub struct Database {
@@ -323,6 +325,22 @@ impl Database {
             }
         };
 
+        let auto_categorize = match db.get_setting("auto_categorize")? {
+            Some(v) => v == "true" || v == "1",
+            None => {
+                let _ = db.set_setting("auto_categorize", "true");
+                true
+            }
+        };
+
+        let max_concurrent_downloads = match db.get_setting("max_concurrent_downloads")? {
+            Some(v) => v.parse::<u32>().unwrap_or(3),
+            None => {
+                let _ = db.set_setting("max_concurrent_downloads", "3");
+                3
+            }
+        };
+
         let settings = AppSettings {
             device_id: identity.device_id.clone(),
             alias_name,
@@ -336,6 +354,8 @@ impl Database {
             download_dir,
             signaling_url,
             stun_addr,
+            auto_categorize,
+            max_concurrent_downloads,
         };
 
         Ok((db, identity, settings))

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { open } from '@tauri-apps/plugin-dialog';
+  import { open } from "@tauri-apps/plugin-dialog";
   import {
     appSettings,
     networkInfo,
@@ -9,14 +9,18 @@
     cloudContacts,
     activeMainTab,
     cliQueuedFiles,
-  } from '../stores/state';
-  import { contacts, lanContacts } from '../stores/contacts';
-  import { activeTransfers } from '../stores/transfers';
-  import { totalUnreadCount } from '../stores/chat';
-  import { raydropApi } from '../utils/tauri-ipc';
-  import { updateInfo, updateModalOpen, updateChecking } from '../stores/update';
-  import { checkForUpdates } from '../utils/updater';
-  import { myAvatar } from '../stores/avatars';
+  } from "../stores/state";
+  import { contacts, lanContacts } from "../stores/contacts";
+  import { activeTransfers } from "../stores/transfers";
+  import { totalUnreadCount } from "../stores/chat";
+  import { raydropApi } from "../utils/tauri-ipc";
+  import {
+    updateInfo,
+    updateModalOpen,
+    updateChecking,
+  } from "../stores/update";
+  import { checkForUpdates } from "../utils/updater";
+  import { myAvatar } from "../stores/avatars";
   import {
     Copy,
     Check,
@@ -35,7 +39,7 @@
     Plus,
     MessageSquare,
     Camera,
-  } from 'lucide-svelte';
+  } from "lucide-svelte";
 
   let copied = false;
 
@@ -64,20 +68,27 @@
       const picked = await open({
         multiple: false,
         directory: false,
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'] }],
-        title: 'Choose Profile Avatar',
+        filters: [
+          {
+            name: "Images",
+            extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif"],
+          },
+        ],
+        title: "Choose Profile Avatar",
       });
-      if (typeof picked === 'string') {
+      if (typeof picked === "string") {
         const b64 = await raydropApi.setMyAvatar(picked);
         myAvatar.set(b64);
       }
     } catch (err) {
-      console.warn('Failed to upload avatar:', err);
+      console.warn("Failed to upload avatar:", err);
     }
   }
 </script>
 
-<header class="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-xl px-3 sm:px-5 pt-8 pb-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 z-20 shrink-0">
+<header
+  class="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-xl px-3 sm:px-5 pt-8 pb-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 z-20 shrink-0"
+>
   <!-- Brand & Identity (Left) -->
   <div class="flex items-center gap-2 sm:gap-3 shrink min-w-0">
     <img
@@ -87,12 +98,20 @@
     />
     <div class="min-w-0">
       <div class="flex items-center gap-1.5 sm:gap-2">
-        <h1 class="text-sm sm:text-base font-extrabold tracking-tight text-white font-display truncate">Raydrop</h1>
-        
+        <h1
+          class="text-sm sm:text-base font-extrabold tracking-tight text-white font-display truncate"
+        >
+          Raydrop
+        </h1>
+
         <!-- Online/Signaling Status Dot for Mobile -->
         <span
-          class="md:hidden w-2 h-2 rounded-full shrink-0 {$networkInfo.signalingConnected ? 'bg-emerald-400' : 'bg-amber-400'}"
-          title={$networkInfo.signalingConnected ? 'Online (Connected to Signaling)' : 'Standby'}
+          class="md:hidden w-2 h-2 rounded-full shrink-0 {$networkInfo.signalingConnected
+            ? 'bg-emerald-400'
+            : 'bg-amber-400'}"
+          title={$networkInfo.signalingConnected
+            ? "Online (Connected to Signaling)"
+            : "Standby"}
         ></span>
 
         <button
@@ -124,11 +143,16 @@
       <div class="hidden sm:flex items-center gap-2 mt-0.5">
         {#if $appSettings.user_email}
           <Mail class="w-3 h-3 text-cyan-400 shrink-0" />
-          <span class="text-xs font-mono text-cyan-300 truncate max-w-[130px]" title={$appSettings.user_email}>
+          <span
+            class="text-xs font-mono text-cyan-300 truncate max-w-[130px]"
+            title={$appSettings.user_email}
+          >
             {$appSettings.user_email}
           </span>
         {:else}
-          <span class="text-xs font-mono text-slate-400 truncate max-w-[130px]">{$appSettings.device_id}</span>
+          <span class="text-xs font-mono text-slate-400 truncate max-w-[130px]"
+            >{$appSettings.device_id}</span
+          >
         {/if}
         <button
           on:click={copyIdentity}
@@ -146,19 +170,28 @@
   </div>
 
   <!-- Center Segmented Navigation Tabs (Desktop only) -->
-  <nav class="hidden md:flex items-center gap-1 bg-slate-950/80 p-1 rounded-2xl border border-slate-800/80 shadow-inner">
+  <nav
+    class="hidden md:flex items-center gap-1 bg-slate-950/80 p-1 rounded-2xl border border-slate-800/80 shadow-inner"
+  >
     <!-- 1. Transfers & Streams (Default Active Full Tab) -->
     <button
       type="button"
-      on:click={() => activeMainTab.set('transfers')}
-      class="flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all {$activeMainTab === 'transfers'
+      on:click={() => activeMainTab.set("transfers")}
+      class="flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all {$activeMainTab ===
+      'transfers'
         ? 'bg-gradient-to-r from-cyan-500/25 to-indigo-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
     >
-      <Zap class="w-3.5 h-3.5 {$activeMainTab === 'transfers' ? 'text-cyan-400' : 'text-slate-400'}" />
+      <Zap
+        class="w-3.5 h-3.5 {$activeMainTab === 'transfers'
+          ? 'text-cyan-400'
+          : 'text-slate-400'}"
+      />
       <span>Transfers</span>
       {#if $activeTransfers.length > 0}
-        <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-400 text-slate-950 font-bold font-mono animate-pulse">
+        <span
+          class="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-400 text-slate-950 font-bold font-mono animate-pulse"
+        >
           {$activeTransfers.length}
         </span>
       {/if}
@@ -167,15 +200,22 @@
     <!-- 2. P2P Chat Tab -->
     <button
       type="button"
-      on:click={() => activeMainTab.set('chat')}
-      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab === 'chat'
+      on:click={() => activeMainTab.set("chat")}
+      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      'chat'
         ? 'bg-gradient-to-r from-cyan-500/25 to-indigo-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
     >
-      <MessageSquare class="w-3.5 h-3.5 {$activeMainTab === 'chat' ? 'text-cyan-400' : 'text-slate-400'}" />
+      <MessageSquare
+        class="w-3.5 h-3.5 {$activeMainTab === 'chat'
+          ? 'text-cyan-400'
+          : 'text-slate-400'}"
+      />
       <span>Chat</span>
       {#if $totalUnreadCount > 0}
-        <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-400 text-slate-950 font-bold font-mono animate-pulse">
+        <span
+          class="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-400 text-slate-950 font-bold font-mono animate-pulse"
+        >
           {$totalUnreadCount}
         </span>
       {/if}
@@ -184,15 +224,22 @@
     <!-- 3. LAN Radar (Inactive Tab) -->
     <button
       type="button"
-      on:click={() => activeMainTab.set('lan')}
-      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab === 'lan'
+      on:click={() => activeMainTab.set("lan")}
+      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      'lan'
         ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
     >
-      <Wifi class="w-3.5 h-3.5 {$activeMainTab === 'lan' ? 'text-cyan-400' : 'text-slate-400'}" />
+      <Wifi
+        class="w-3.5 h-3.5 {$activeMainTab === 'lan'
+          ? 'text-cyan-400'
+          : 'text-slate-400'}"
+      />
       <span>LAN Radar</span>
       {#if $lanContacts.length > 0}
-        <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-cyan-300 font-mono">
+        <span
+          class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-cyan-300 font-mono"
+        >
           {$lanContacts.length}
         </span>
       {/if}
@@ -201,15 +248,22 @@
     <!-- 4. My Devices (Inactive Tab) -->
     <button
       type="button"
-      on:click={() => activeMainTab.set('devices')}
-      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab === 'devices'
+      on:click={() => activeMainTab.set("devices")}
+      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      'devices'
         ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
     >
-      <Laptop class="w-3.5 h-3.5 {$activeMainTab === 'devices' ? 'text-cyan-400' : 'text-slate-400'}" />
+      <Laptop
+        class="w-3.5 h-3.5 {$activeMainTab === 'devices'
+          ? 'text-cyan-400'
+          : 'text-slate-400'}"
+      />
       <span>My Devices</span>
       {#if $cloudMyDevices.length > 0}
-        <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono">
+        <span
+          class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono"
+        >
           {$cloudMyDevices.length}
         </span>
       {/if}
@@ -218,15 +272,22 @@
     <!-- 5. Contacts (Inactive Tab) -->
     <button
       type="button"
-      on:click={() => activeMainTab.set('contacts')}
-      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab === 'contacts'
+      on:click={() => activeMainTab.set("contacts")}
+      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      'contacts'
         ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
     >
-      <Users class="w-3.5 h-3.5 {$activeMainTab === 'contacts' ? 'text-cyan-400' : 'text-slate-400'}" />
+      <Users
+        class="w-3.5 h-3.5 {$activeMainTab === 'contacts'
+          ? 'text-cyan-400'
+          : 'text-slate-400'}"
+      />
       <span>Contacts</span>
       {#if $cloudContacts.length > 0}
-        <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono">
+        <span
+          class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono"
+        >
           {$cloudContacts.length}
         </span>
       {/if}
@@ -242,10 +303,14 @@
         : 'bg-slate-800/70 border-slate-700/60 text-slate-400'}"
       title={$networkInfo.wanReflexiveAddr
         ? `Public NAT Endpoint: ${$networkInfo.wanReflexiveAddr}`
-        : 'WAN Signaling & STUN Server'}
+        : "WAN Signaling & STUN Server"}
     >
-      <Globe class="w-3.5 h-3.5 {$networkInfo.signalingConnected ? 'text-emerald-400' : 'text-slate-500'}" />
-      <span>{$networkInfo.signalingConnected ? 'Online' : 'Standby'}</span>
+      <Globe
+        class="w-3.5 h-3.5 {$networkInfo.signalingConnected
+          ? 'text-emerald-400'
+          : 'text-slate-500'}"
+      />
+      <span>{$networkInfo.signalingConnected ? "Online" : "Standby"}</span>
     </div>
 
     <!-- Discoverability Toggle (Compact on mobile) -->
@@ -262,7 +327,9 @@
           ? 'bg-cyan-400 animate-pulse'
           : 'bg-slate-500'}"
       ></span>
-      <span class="hidden sm:inline">{$appSettings.discoverable ? 'Visible' : 'Hidden'}</span>
+      <span class="hidden sm:inline"
+        >{$appSettings.discoverable ? "Visible" : "Hidden"}</span
+      >
     </button>
 
     <!-- Account Sign In / Out -->
@@ -292,13 +359,16 @@
       type="button"
       on:click={async () => {
         try {
-          const picked = await open({ multiple: true, title: 'Select Files to Send via Raydrop' });
+          const picked = await open({
+            multiple: true,
+            title: "Select Files to Send via Raydrop",
+          });
           if (picked) {
             const list = Array.isArray(picked) ? picked : [picked];
             cliQueuedFiles.update((prev) => [...prev, ...list]);
           }
         } catch (e) {
-          console.warn('File picker canceled or error:', e);
+          console.warn("File picker canceled or error:", e);
         }
       }}
       class="flex items-center gap-1 sm:gap-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-cyan-500/20 transition-all hover:-translate-y-0.5 active:translate-y-0"
@@ -316,13 +386,19 @@
       title="Click to set or change your profile avatar"
     >
       {#if $myAvatar}
-        <img src={$myAvatar} alt="My Avatar" class="w-full h-full object-cover" />
+        <img
+          src={$myAvatar}
+          alt="My Avatar"
+          class="w-full h-full object-cover"
+        />
       {:else}
         <span class="text-[11px] font-bold text-cyan-300">
-          {($appSettings.alias_name || 'RD').slice(0, 2).toUpperCase()}
+          {($appSettings.alias_name || "RD").slice(0, 2).toUpperCase()}
         </span>
       {/if}
-      <div class="absolute inset-0 bg-slate-950/70 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+      <div
+        class="absolute inset-0 bg-slate-950/70 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+      >
         <Camera class="w-3.5 h-3.5 text-cyan-300" />
       </div>
     </button>

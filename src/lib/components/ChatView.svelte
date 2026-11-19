@@ -38,6 +38,10 @@
     Download,
     Loader2,
     Pencil,
+    Video,
+    Music,
+    Folder,
+    File,
   } from 'lucide-svelte';
   import { peerAvatars, myAvatar, loadPeerAvatar } from '../stores/avatars';
   import { contacts, lanContacts } from '../stores/contacts';
@@ -79,6 +83,15 @@
   let previewModalImage: string | null = null;
   let isEditingPeerNickname = false;
   let editingPeerNicknameValue = '';
+
+  let showChatSearch = false;
+  let chatSearchText = '';
+  let showMediaDrawer = false;
+  let mediaDrawerFilter: 'all' | 'media' | 'files' = 'all';
+
+  function isImageFile(fileName: string): boolean {
+    return /\.(jpe?g|png|webp|gif|bmp|svg|ico|avif)$/i.test(fileName || '');
+  }
 
   async function handleSaveCustomName() {
     if (!$activeChatPeerId) return;
@@ -238,6 +251,61 @@
   $: activeMessages = ($activeChatPeerId ? $chatStore[$activeChatPeerId] : []) || [];
   $: hasMore = $activeChatPeerId ? !!$hasMoreMap[$activeChatPeerId] : false;
   $: isPeerBlocked = activePeer?.trustLevel === 'blocked';
+
+  $: displayMessages = chatSearchText.trim()
+    ? activeMessages.filter((m) =>
+        (m.content || '').toLowerCase().includes(chatSearchText.trim().toLowerCase())
+      )
+    : activeMessages;
+
+  $: conversationFiles = (() => {
+    const list: {
+      name: string;
+      path: string;
+      size?: number;
+      type: 'image' | 'video' | 'audio' | 'file';
+      date: number;
+      sender: 'me' | 'peer';
+      dataUrl?: string;
+    }[] = [];
+
+    for (const msg of activeMessages) {
+      const dataImg = extractDataImage(msg.content);
+      if (dataImg) {
+        list.push({
+          name: 'Shared Image',
+          path: '',
+          dataUrl: dataImg,
+          type: 'image',
+          date: msg.timestamp_unix_ms,
+          sender: msg.direction === 'outgoing' ? 'me' : 'peer',
+        });
+      }
+
+      const files = parseFilesJson(msg.files_json);
+      for (const f of files) {
+        const name = f.relative_path || 'Attachment';
+        const isImg = isImageFile(name);
+        const isVid = /\.(mp4|webm|mkv|mov|avi|wmv)$/i.test(name);
+        const isAud = /\.(mp3|wav|ogg|flac|aac|m4a)$/i.test(name);
+        list.push({
+          name,
+          path: f.relative_path,
+          size: f.size_bytes,
+          type: isImg ? 'image' : isVid ? 'video' : isAud ? 'audio' : 'file',
+          date: msg.timestamp_unix_ms,
+          sender: msg.direction === 'outgoing' ? 'me' : 'peer',
+        });
+      }
+    }
+    return list;
+  })();
+
+  $: filteredConversationFiles = conversationFiles.filter((item) => {
+    if (mediaDrawerFilter === 'media') return item.type === 'image' || item.type === 'video' || item.type === 'audio';
+    if (mediaDrawerFilter === 'files') return item.type === 'file';
+    return true;
+  });
 
   // Reactive Map of all transfers for 100% reactive progress updates
   $: transferMap = new Map($transfers.map((t) => [t.id, t]));
@@ -912,6 +980,38 @@
         </div>
 
         <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          <!-- Search Conversation Button -->
+          <button
+            type="button"
+            on:click={() => {
+              showChatSearch = !showChatSearch;
+              if (!showChatSearch) chatSearchText = '';
+            }}
+            class="p-1.5 rounded-xl transition cursor-pointer {showChatSearch
+              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent hover:border-slate-800'}"
+            title="Search messages in this chat"
+          >
+            <Search class="w-4 h-4" />
+          </button>
+
+          <!-- Shared Media & Files Drawer Toggle -->
+          <button
+            type="button"
+            on:click={() => (showMediaDrawer = !showMediaDrawer)}
+            class="p-1.5 rounded-xl transition cursor-pointer relative {showMediaDrawer
+              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent hover:border-slate-800'}"
+            title="View shared media, photos and attachments"
+          >
+            <Folder class="w-4 h-4" />
+            {#if conversationFiles.length > 0}
+              <span class="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-cyan-500 text-slate-950 font-bold font-mono text-[9px] flex items-center justify-center">
+                {conversationFiles.length}
+              </span>
+            {/if}
+          </button>
+
           <!-- Block / Unblock Button -->
           <button
             type="button"
@@ -942,15 +1042,53 @@
         </div>
       </header>
 
-      <!-- Message History Stream with Infinite Scroll -->
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div
-        bind:this={chatScrollContainer}
-        on:scroll={handleScroll}
-        on:click={handleMarkdownClick}
-        class="flex-1 overflow-y-auto p-4 space-y-3.5 scroll-smooth relative"
-      >
+      <!-- In-Chat Search Bar -->
+      {#if showChatSearch}
+        <div class="px-4 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center gap-2">
+          <Search class="w-4 h-4 text-cyan-400 shrink-0" />
+          <input
+            type="text"
+            bind:value={chatSearchText}
+            placeholder="Search text in this conversation..."
+            class="flex-1 bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none font-sans"
+            autofocus
+          />
+          {#if chatSearchText.trim()}
+            <span class="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/40">
+              {displayMessages.length} {displayMessages.length === 1 ? 'match' : 'matches'}
+            </span>
+            <button
+              type="button"
+              on:click={() => (chatSearchText = '')}
+              class="p-0.5 text-slate-400 hover:text-white"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
+          {/if}
+          <button
+            type="button"
+            on:click={() => {
+              showChatSearch = false;
+              chatSearchText = '';
+            }}
+            class="text-xs text-slate-400 hover:text-slate-200 ml-1 cursor-pointer"
+          >
+            Done
+          </button>
+        </div>
+      {/if}
+
+      <!-- Main Body Container: Chat Messages + Collapsible Media Drawer -->
+      <div class="flex-1 flex min-h-0 relative overflow-hidden">
+        <!-- Message History Stream with Infinite Scroll -->
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <div
+          bind:this={chatScrollContainer}
+          on:scroll={handleScroll}
+          on:click={handleMarkdownClick}
+          class="flex-1 overflow-y-auto p-4 space-y-3.5 scroll-smooth relative"
+        >
         <!-- Pagination Loading Indicator at Top -->
         {#if $isLoadingOlder}
           <div class="flex items-center justify-center py-2 text-xs text-slate-400 gap-1.5 font-mono">
@@ -979,8 +1117,14 @@
               Messages are sent directly (LAN) or via E2EE relay (WAN). Share markdown plans, code blocks, or attach files.
             </p>
           </div>
+        {:else if chatSearchText.trim() && displayMessages.length === 0}
+          <div class="h-full flex flex-col items-center justify-center text-center p-8 text-slate-400">
+            <Search class="w-8 h-8 text-slate-500 mb-2" />
+            <p class="text-sm font-semibold">No messages found</p>
+            <p class="text-xs text-slate-500 mt-1">No messages match "{chatSearchText}" in this conversation</p>
+          </div>
         {:else}
-          {#each activeMessages as msg (msg.id)}
+          {#each displayMessages as msg (msg.id)}
             {@const isOutgoing = msg.direction === 'outgoing'}
             {@const files = parseFilesJson(msg.files_json)}
             {@const linkedTransfer = msg.transfer_session_id ? $transfers.find((t) => t.id === msg.transfer_session_id) : undefined}
@@ -1245,6 +1389,139 @@
           {/each}
         {/if}
       </div>
+
+      <!-- Collapsible Shared Media & Files Drawer -->
+      {#if showMediaDrawer}
+        <aside
+          class="w-72 sm:w-80 border-l border-slate-800 bg-slate-900/95 flex flex-col z-20 shrink-0 backdrop-blur-md animate-in slide-in-from-right duration-200"
+        >
+          <!-- Drawer Header -->
+          <div class="p-3.5 border-b border-slate-800 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <Folder class="w-4 h-4 text-cyan-400" />
+              <h4 class="text-xs font-bold text-white uppercase tracking-wider">Shared Media & Files</h4>
+            </div>
+            <button
+              type="button"
+              on:click={() => (showMediaDrawer = false)}
+              class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+            >
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+
+          <!-- Drawer Filter Tabs -->
+          <div class="p-2 border-b border-slate-800 flex items-center gap-1 bg-slate-950/60">
+            <button
+              type="button"
+              on:click={() => (mediaDrawerFilter = 'all')}
+              class="flex-1 py-1 rounded-lg text-[11px] font-semibold transition {mediaDrawerFilter === 'all'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                : 'text-slate-400 hover:text-slate-200'}"
+            >
+              All ({conversationFiles.length})
+            </button>
+            <button
+              type="button"
+              on:click={() => (mediaDrawerFilter = 'media')}
+              class="flex-1 py-1 rounded-lg text-[11px] font-semibold transition {mediaDrawerFilter === 'media'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                : 'text-slate-400 hover:text-slate-200'}"
+            >
+              Media ({conversationFiles.filter((f) => f.type !== 'file').length})
+            </button>
+            <button
+              type="button"
+              on:click={() => (mediaDrawerFilter = 'files')}
+              class="flex-1 py-1 rounded-lg text-[11px] font-semibold transition {mediaDrawerFilter === 'files'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                : 'text-slate-400 hover:text-slate-200'}"
+            >
+              Files ({conversationFiles.filter((f) => f.type === 'file').length})
+            </button>
+          </div>
+
+          <!-- Drawer File List -->
+          <div class="flex-1 overflow-y-auto p-3 space-y-2">
+            {#if filteredConversationFiles.length === 0}
+              <div class="h-40 flex flex-col items-center justify-center text-center p-4 text-slate-500 text-xs">
+                <FileText class="w-8 h-8 text-slate-600 mb-2" />
+                <p>No {mediaDrawerFilter === 'all' ? 'attachments' : mediaDrawerFilter} shared yet</p>
+              </div>
+            {:else}
+              {#each filteredConversationFiles as item}
+                <div class="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition flex items-center justify-between gap-2.5 group">
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    {#if item.type === 'image'}
+                      <button
+                        type="button"
+                        on:click={() => {
+                          if (item.dataUrl) previewModalImage = item.dataUrl;
+                          else if (item.path) previewModalImage = convertFileSrc(item.path);
+                        }}
+                        class="w-9 h-9 rounded-lg bg-slate-800 border border-slate-700 overflow-hidden shrink-0 cursor-pointer"
+                      >
+                        <img
+                          src={item.dataUrl || convertFileSrc(item.path)}
+                          alt={item.name}
+                          class="w-full h-full object-cover"
+                        />
+                      </button>
+                    {:else if item.type === 'video'}
+                      <div class="w-9 h-9 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 flex items-center justify-center shrink-0">
+                        <Video class="w-4 h-4" />
+                      </div>
+                    {:else if item.type === 'audio'}
+                      <div class="w-9 h-9 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 flex items-center justify-center shrink-0">
+                        <Music class="w-4 h-4" />
+                      </div>
+                    {:else}
+                      <div class="w-9 h-9 rounded-lg bg-slate-800 border border-slate-700 text-cyan-400 flex items-center justify-center shrink-0">
+                        <FileText class="w-4 h-4" />
+                      </div>
+                    {/if}
+
+                    <div class="min-w-0">
+                      <p class="text-xs font-medium text-slate-200 truncate" title={item.name}>
+                        {item.name}
+                      </p>
+                      <div class="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono mt-0.5">
+                        {#if item.size}
+                          <span>{formatBytes(item.size)}</span>
+                          <span>•</span>
+                        {/if}
+                        <span>{item.sender === 'me' ? 'Sent' : 'Received'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {#if item.path}
+                    <div class="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        on:click={() => raydropApi.openFilePath(item.path)}
+                        class="p-1 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition cursor-pointer"
+                        title="Open file"
+                      >
+                        <ExternalLink class="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        on:click={() => raydropApi.openFolderPath(item.path)}
+                        class="p-1 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition cursor-pointer"
+                        title="Locate folder"
+                      >
+                        <FolderOpen class="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  {/if}
+                </div>
+              {/each}
+            {/if}
+          </div>
+        </aside>
+      {/if}
+    </div>
 
       <!-- Blocked Peer Warning Banner -->
       {#if isPeerBlocked}

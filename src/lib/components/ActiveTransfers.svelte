@@ -47,6 +47,10 @@
     Eye,
     Image as ImageIcon,
     X,
+    Video,
+    Music,
+    Hash,
+    Power,
   } from 'lucide-svelte';
 
   let resumingId = '';
@@ -62,13 +66,142 @@
   let showClipboardModal = false;
   let showFolderSyncModal = false;
   let showSpeedLimitMenu = false;
+  let showPowerMenu = false;
 
   let previewImage: { path: string; name: string } | null = null;
+  let previewMedia: { path: string; name: string; type: 'video' | 'audio' } | null = null;
   let zoomScale = 1;
   let zoomTranslate = { x: 0, y: 0 };
   let isPanning = false;
   let startPan = { x: 0, y: 0 };
   let transferThumbnails: Record<string, string> = {};
+
+  let showHashModal = false;
+  let hashTargetFile: { name: string; path: string } | null = null;
+  let calculatedHash = '';
+  let isCalculatingHash = false;
+  let compareHashInput = '';
+  let hashCopied = false;
+
+  let autoPowerAction: 'none' | 'sleep' | 'shutdown' | 'hibernate' = 'none';
+  let powerCountdown = 0;
+  let powerCountdownTimer: any = null;
+  let hadActiveTasks = false;
+
+  $: {
+    const activeCount =
+      $activeTransfers.length +
+      $httpTasks.filter((t) => t.status === 'downloading' || t.status === 'starting' || t.status === 'queued').length +
+      $torrentTasks.filter((t) => t.status === 'downloading').length;
+
+    if (activeCount > 0) {
+      hadActiveTasks = true;
+    } else if (hadActiveTasks && activeCount === 0 && autoPowerAction !== 'none') {
+      hadActiveTasks = false;
+      startPowerCountdown();
+    }
+  }
+
+  function startPowerCountdown() {
+    if (powerCountdownTimer) clearInterval(powerCountdownTimer);
+    powerCountdown = 30;
+    powerCountdownTimer = setInterval(async () => {
+      powerCountdown -= 1;
+      if (powerCountdown <= 0) {
+        clearInterval(powerCountdownTimer);
+        powerCountdownTimer = null;
+        const act = autoPowerAction;
+        autoPowerAction = 'none';
+        if (act !== 'none') {
+          try {
+            await raydropApi.executeSystemPowerAction(act);
+          } catch (e) {
+            console.error('Power action failed:', e);
+          }
+        }
+      }
+    }, 1000);
+  }
+
+  function cancelPowerCountdown() {
+    if (powerCountdownTimer) {
+      clearInterval(powerCountdownTimer);
+      powerCountdownTimer = null;
+    }
+    powerCountdown = 0;
+    autoPowerAction = 'none';
+  }
+
+  function executePowerNow() {
+    if (powerCountdownTimer) {
+      clearInterval(powerCountdownTimer);
+      powerCountdownTimer = null;
+    }
+    const act = autoPowerAction;
+    powerCountdown = 0;
+    autoPowerAction = 'none';
+    if (act !== 'none') {
+      raydropApi.executeSystemPowerAction(act).catch(console.error);
+    }
+  }
+
+  function selectAutoPower(val: any) {
+    autoPowerAction = val;
+    showPowerMenu = false;
+  }
+
+  function isVideoFile(fileName: string): boolean {
+    return /\.(mp4|webm|mkv|mov|avi|wmv|flv|m4v)$/i.test(fileName || '');
+  }
+
+  function isAudioFile(fileName: string): boolean {
+    return /\.(mp3|wav|ogg|flac|aac|m4a|wma|opus)$/i.test(fileName || '');
+  }
+
+  function openMediaPreview(path: string, name: string) {
+    if (isVideoFile(name)) {
+      previewMedia = { path, name, type: 'video' };
+    } else if (isAudioFile(name)) {
+      previewMedia = { path, name, type: 'audio' };
+    }
+  }
+
+  function closeMediaPreview() {
+    previewMedia = null;
+  }
+
+  async function openHashModal(name: string, path: string) {
+    hashTargetFile = { name, path };
+    calculatedHash = '';
+    compareHashInput = '';
+    hashCopied = false;
+    isCalculatingHash = true;
+    showHashModal = true;
+    try {
+      calculatedHash = await raydropApi.calculateFileHash(path);
+    } catch (err: any) {
+      calculatedHash = `Error: ${String(err)}`;
+    } finally {
+      isCalculatingHash = false;
+    }
+  }
+
+  function closeHashModal() {
+    showHashModal = false;
+    hashTargetFile = null;
+    calculatedHash = '';
+    compareHashInput = '';
+    hashCopied = false;
+  }
+
+  async function copyHashToClipboard() {
+    if (!calculatedHash || calculatedHash.startsWith('Error')) return;
+    try {
+      await navigator.clipboard.writeText(calculatedHash);
+      hashCopied = true;
+      setTimeout(() => (hashCopied = false), 2000);
+    } catch (_) {}
+  }
 
   function isImageFile(fileName: string): boolean {
     return /\.(jpe?g|png|webp|gif|bmp|svg|ico|avif)$/i.test(fileName || '');
@@ -135,6 +268,17 @@
 
   function handleMouseUp() {
     isPanning = false;
+  }
+
+  async function handleStartHttpNow(id: string) {
+    try {
+      await raydropApi.startHttpDownloadNow(id);
+      httpTasks.update((tasks) =>
+        tasks.map((t) => (t.id === id ? { ...t, status: 'downloading' } : t))
+      );
+    } catch (err: any) {
+      actionError = err?.toString() || 'Failed to start download';
+    }
   }
 
   async function handlePauseHttp(id: string) {
@@ -659,6 +803,49 @@
           </div>
         {/if}
       </div>
+
+      <!-- Auto-Power Action Pill -->
+      <div class="relative flex items-center">
+        <button
+          type="button"
+          on:click={() => (showPowerMenu = !showPowerMenu)}
+          class="flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-mono font-semibold transition-all {autoPowerAction !== 'none'
+            ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30 shadow-sm'
+            : 'bg-slate-800 text-slate-300 border border-slate-700 hover:text-white'}"
+          title="Action when all downloads & transfers finish"
+        >
+          <Power class="w-3.5 h-3.5 {autoPowerAction !== 'none' ? 'text-rose-400 animate-pulse' : 'text-slate-400'}" />
+          <span>{autoPowerAction === 'none' ? 'Auto-Power: Off' : `On Finish: ${autoPowerAction.toUpperCase()}`}</span>
+          <ChevronDown class="w-3 h-3 text-slate-400" />
+        </button>
+
+        {#if showPowerMenu}
+          <div
+            class="absolute right-0 top-full mt-2 w-52 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl p-2 z-30 flex flex-col gap-1 backdrop-blur-xl"
+          >
+            <span class="text-[10px] font-mono uppercase text-slate-400 px-2 py-0.5">When All Tasks Complete</span>
+            {#each [
+              { val: 'none', label: 'Do Nothing (Normal)' },
+              { val: 'sleep', label: 'Sleep PC' },
+              { val: 'shutdown', label: 'Shutdown PC' },
+              { val: 'hibernate', label: 'Hibernate PC' },
+            ] as opt}
+              <button
+                type="button"
+                on:click={() => selectAutoPower(opt.val)}
+                class="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono transition-colors {autoPowerAction === opt.val
+                  ? 'bg-rose-500/20 text-rose-300 font-bold'
+                  : 'text-slate-300 hover:bg-slate-800'}"
+              >
+                <span>{opt.label}</span>
+                {#if autoPowerAction === opt.val}
+                  <Check class="w-3.5 h-3.5 text-rose-400" />
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
     </div>
   </div>
 
@@ -700,7 +887,7 @@
                     </h4>
 
                     <div class="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
-                      <span class="text-[10px] font-mono uppercase px-1.5 py-0.2 rounded {task.status === 'completed' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' : task.status === 'paused' ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30' : task.status === 'error' ? 'bg-rose-500/10 text-rose-300 border border-rose-500/30' : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/30'}">
+                      <span class="text-[10px] font-mono uppercase px-1.5 py-0.2 rounded {task.status === 'completed' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' : task.status === 'paused' ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30' : task.status === 'error' ? 'bg-rose-500/10 text-rose-300 border border-rose-500/30' : task.status === 'queued' ? 'bg-purple-500/10 text-purple-300 border border-purple-500/30' : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/30'}">
                         {task.status.toUpperCase()}
                       </span>
                       <span>•</span>
@@ -725,7 +912,17 @@
 
                 <!-- Action Controls -->
                 <div class="flex items-center gap-2 shrink-0">
-                  {#if task.status === 'downloading'}
+                  {#if task.status === 'queued'}
+                    <button
+                      type="button"
+                      on:click={() => handleStartHttpNow(task.id)}
+                      class="text-xs text-purple-300 hover:text-purple-200 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 px-2.5 py-1 rounded-xl flex items-center gap-1 transition cursor-pointer"
+                      title="Force start download immediately"
+                    >
+                      <Play class="w-3.5 h-3.5" />
+                      <span>Start Now</span>
+                    </button>
+                  {:else if task.status === 'downloading'}
                     <button
                       type="button"
                       on:click={() => handlePauseHttp(task.id)}
@@ -766,6 +963,28 @@
                     >
                       <Link class="w-3.5 h-3.5" />
                       <span>Refresh Link</span>
+                    </button>
+                  {/if}
+
+                  {#if task.status === 'completed' && task.save_path}
+                    {#if isVideoFile(task.filename) || isAudioFile(task.filename)}
+                      <button
+                        type="button"
+                        on:click={() => openMediaPreview(task.save_path, task.filename)}
+                        class="px-2.5 py-1 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-xs text-cyan-300 flex items-center gap-1 transition cursor-pointer"
+                        title="Play in Raydrop Media Lightbox"
+                      >
+                        <Play class="w-3.5 h-3.5" />
+                        <span>Play</span>
+                      </button>
+                    {/if}
+                    <button
+                      type="button"
+                      on:click={() => openHashModal(task.filename, task.save_path)}
+                      class="p-1.5 text-slate-400 hover:text-cyan-300 hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                      title="Calculate & Verify SHA-256 Checksum"
+                    >
+                      <Hash class="w-4 h-4" />
                     </button>
                   {/if}
 
@@ -1299,6 +1518,25 @@
                     </span>
 
                     {#if primaryFilePath}
+                      {#if isVideoFile(primaryName) || isAudioFile(primaryName)}
+                        <button
+                          type="button"
+                          on:click={() => openMediaPreview(primaryFilePath, primaryName)}
+                          class="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-xs text-cyan-300 hover:text-white border border-cyan-500/30 transition flex items-center gap-1 cursor-pointer"
+                          title="Play in Raydrop Media Lightbox"
+                        >
+                          <Play class="w-3 h-3" />
+                          <span>Play</span>
+                        </button>
+                      {/if}
+                      <button
+                        type="button"
+                        on:click={() => openHashModal(primaryName, primaryFilePath)}
+                        class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-cyan-300 border border-slate-700 transition cursor-pointer"
+                        title="Calculate & Verify SHA-256 Checksum"
+                      >
+                        <Hash class="w-3.5 h-3.5" />
+                      </button>
                       <button
                         type="button"
                         on:click={() => handleOpenFile(primaryFilePath)}
@@ -1353,7 +1591,25 @@
                             <Eye class="w-3 h-3" />
                             <span>Preview</span>
                           </button>
+                        {:else if isVideoFile(fp) || isAudioFile(fp)}
+                          <button
+                            type="button"
+                            on:click={() => openMediaPreview(fp, getBaseName(fp))}
+                            class="text-[11px] text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <Play class="w-3 h-3" />
+                            <span>Play</span>
+                          </button>
                         {/if}
+                        <button
+                          type="button"
+                          on:click={() => openHashModal(getBaseName(fp), fp)}
+                          class="text-[11px] text-slate-400 hover:text-cyan-300 hover:underline flex items-center gap-0.5 cursor-pointer"
+                          title="Calculate SHA-256 Checksum"
+                        >
+                          <Hash class="w-3 h-3" />
+                          <span>Hash</span>
+                        </button>
                         <button
                           type="button"
                           on:click={() => handleOpenFile(fp)}
@@ -1601,6 +1857,220 @@
         <span>Drag to pan when zoomed</span>
         <span>•</span>
         <span>Press Esc to close</span>
+      </div>
+    </div>
+  {/if}
+
+  <!-- In-App Media Player Lightbox (Video & Audio) -->
+  {#if previewMedia}
+    <div
+      class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-4 select-none"
+    >
+      <div
+        class="w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+      >
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-950/60">
+          <div class="flex items-center gap-2 min-w-0">
+            {#if previewMedia.type === 'video'}
+              <Video class="w-4 h-4 text-cyan-400 shrink-0" />
+            {:else}
+              <Music class="w-4 h-4 text-cyan-400 shrink-0" />
+            {/if}
+            <span class="text-xs sm:text-sm font-semibold text-white truncate" title={previewMedia.name}>
+              {previewMedia.name}
+            </span>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              on:click={() => handleOpenFile(previewMedia?.path || '')}
+              class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 flex items-center gap-1.5 transition cursor-pointer"
+              title="Open in default system player"
+            >
+              <ExternalLink class="w-3.5 h-3.5 text-cyan-400" />
+              <span class="hidden sm:inline">System Player</span>
+            </button>
+            <button
+              type="button"
+              on:click={closeMediaPreview}
+              class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+            >
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <!-- Player Canvas Area -->
+        <div class="p-4 sm:p-6 bg-black flex items-center justify-center min-h-[220px]">
+          {#if previewMedia.type === 'video'}
+            <video
+              src={convertFileSrc(previewMedia.path)}
+              controls
+              autoplay
+              class="max-h-[60vh] max-w-full rounded-lg shadow-xl"
+            >
+              <track kind="captions" />
+            </video>
+          {:else}
+            <div class="w-full max-w-md py-6 flex flex-col items-center gap-5">
+              <div class="w-20 h-20 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-xl shadow-cyan-500/10">
+                <Music class="w-10 h-10" />
+              </div>
+              <audio
+                src={convertFileSrc(previewMedia.path)}
+                controls
+                autoplay
+                class="w-full"
+              ></audio>
+            </div>
+          {/if}
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Checksum SHA-256 Calculator & Verifier Modal -->
+  {#if showHashModal}
+    <div
+      class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 select-none"
+    >
+      <div
+        class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl flex flex-col gap-4"
+      >
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div class="flex items-center gap-2">
+            <Hash class="w-4 h-4 text-cyan-400" />
+            <h3 class="text-sm font-bold text-white">SHA-256 Checksum Verification</h3>
+          </div>
+          <button
+            type="button"
+            on:click={closeHashModal}
+            class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+
+        <div>
+          <p class="text-xs text-slate-400">Target File:</p>
+          <p class="text-xs font-semibold text-white truncate mt-0.5">{hashTargetFile?.name}</p>
+        </div>
+
+        <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <span>Calculated Hash (SHA-256):</span>
+            {#if !isCalculatingHash && calculatedHash && !calculatedHash.startsWith('Error')}
+              <button
+                type="button"
+                on:click={copyHashToClipboard}
+                class="flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 font-mono cursor-pointer"
+              >
+                {#if hashCopied}
+                  <Check class="w-3 h-3 text-emerald-400" />
+                  <span class="text-emerald-400">Copied</span>
+                {:else}
+                  <Copy class="w-3 h-3" />
+                  <span>Copy</span>
+                {/if}
+              </button>
+            {/if}
+          </div>
+          {#if isCalculatingHash}
+            <div class="flex items-center gap-2 py-2 text-xs text-cyan-400 font-mono">
+              <span class="animate-spin inline-block">⏳</span>
+              <span>Calculating SHA-256 checksum across file chunks...</span>
+            </div>
+          {:else}
+            <p class="text-xs font-mono text-cyan-300 break-all select-all font-medium">
+              {calculatedHash}
+            </p>
+          {/if}
+        </div>
+
+        <!-- Compare Hash Input -->
+        <div class="space-y-1.5">
+          <label for="hash-compare-input" class="block text-xs font-medium text-slate-300">
+            Compare against expected checksum:
+          </label>
+          <input
+            id="hash-compare-input"
+            type="text"
+            bind:value={compareHashInput}
+            placeholder="Paste SHA-256 hash from source website to compare..."
+            class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-200 focus:outline-none focus:border-cyan-500"
+          />
+
+          {#if compareHashInput.trim() && calculatedHash && !isCalculatingHash}
+            {@const matches = compareHashInput.trim().toLowerCase() === calculatedHash.trim().toLowerCase()}
+            <div class="p-2.5 rounded-xl border text-xs font-semibold flex items-center gap-2 {matches
+              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+              : 'bg-rose-500/15 border-rose-500/40 text-rose-300'}">
+              {#if matches}
+                <CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Checksum MATCHES! File integrity verified 100%.</span>
+              {:else}
+                <AlertTriangle class="w-4 h-4 text-rose-400 shrink-0" />
+                <span>Checksum DOES NOT MATCH! File may be corrupted or modified.</span>
+              {/if}
+            </div>
+          {/if}
+        </div>
+
+        <div class="flex justify-end pt-2 border-t border-slate-800">
+          <button
+            type="button"
+            on:click={closeHashModal}
+            class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Auto-Power Countdown Dialog -->
+  {#if powerCountdown > 0}
+    <div
+      class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 select-none"
+    >
+      <div
+        class="w-full max-w-md bg-slate-900 border border-rose-500/40 rounded-2xl p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-in fade-in zoom-in-95 duration-200"
+      >
+        <div class="w-16 h-16 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 animate-pulse">
+          <Power class="w-8 h-8" />
+        </div>
+
+        <div>
+          <h3 class="text-base font-bold text-white">All Tasks Completed!</h3>
+          <p class="text-xs text-slate-300 mt-1">
+            System will <span class="font-bold text-rose-400 uppercase">{autoPowerAction}</span> in
+          </p>
+          <div class="text-4xl font-extrabold font-mono text-rose-400 my-2">
+            {powerCountdown}s
+          </div>
+          <p class="text-[11px] text-slate-400">
+            Press Cancel to stay on your desktop and keep Raydrop running.
+          </p>
+        </div>
+
+        <div class="flex items-center gap-3 w-full pt-2">
+          <button
+            type="button"
+            on:click={cancelPowerCountdown}
+            class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white border border-slate-700 transition cursor-pointer"
+          >
+            Cancel Action
+          </button>
+          <button
+            type="button"
+            on:click={executePowerNow}
+            class="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white shadow-lg shadow-rose-600/30 transition cursor-pointer"
+          >
+            {autoPowerAction.toUpperCase()} Now
+          </button>
+        </div>
       </div>
     </div>
   {/if}

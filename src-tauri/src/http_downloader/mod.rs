@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     Arc,
 };
 use tokio::sync::RwLock;
@@ -18,11 +18,24 @@ pub struct HttpDownloadTaskInfo {
     pub downloaded_bytes: u64,
     pub download_speed_bps: u64,
     pub progress: f32,
-    pub status: String, // "starting", "downloading", "paused", "completed", "error", "cancelled"
+    pub status: String, // "queued", "starting", "downloading", "paused", "completed", "error", "cancelled"
     pub segments_count: u32,
     pub save_path: String,
     pub error: Option<String>,
     pub created_at: i64,
+}
+
+pub fn get_file_category(filename: &str) -> &'static str {
+    let lower = filename.to_lowercase();
+    let ext = lower.rsplit('.').next().unwrap_or("");
+    match ext {
+        "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "txt" | "epub" | "rtf" | "csv" | "odt" | "ods" => "Documents",
+        "mp4" | "mkv" | "avi" | "mov" | "wmv" | "flv" | "webm" | "m4v" | "3gp" | "ts" => "Videos",
+        "mp3" | "flac" | "wav" | "aac" | "ogg" | "m4a" | "wma" | "opus" | "mid" => "Music",
+        "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz" | "iso" | "tgz" => "Compressed",
+        "exe" | "msi" | "dmg" | "pkg" | "deb" | "rpm" | "apk" | "appimage" | "bat" | "cmd" | "sh" => "Programs",
+        _ => "General",
+    }
 }
 
 struct ActiveSegment {
@@ -51,6 +64,8 @@ struct ActiveDownload {
 pub struct HttpDownloadManager {
     tasks: Arc<RwLock<HashMap<String, Arc<ActiveDownload>>>>,
     default_save_dir: Arc<RwLock<PathBuf>>,
+    pub auto_categorize: Arc<AtomicBool>,
+    pub max_concurrent_downloads: Arc<AtomicU32>,
     client: reqwest::Client,
 }
 
@@ -86,7 +101,7 @@ fn enable_sparse_file(file: &std::fs::File) {
 }
 
 impl HttpDownloadManager {
-    pub fn new(default_dir: PathBuf) -> Self {
+    pub fn new(default_dir: PathBuf, auto_categorize: bool, max_concurrent: u32) -> Self {
         // High-performance streaming client: do NOT set an overall timeout on streaming downloads!
         let client = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(15))
@@ -97,8 +112,24 @@ impl HttpDownloadManager {
         Self {
             tasks: Arc::new(RwLock::new(HashMap::new())),
             default_save_dir: Arc::new(RwLock::new(default_dir)),
+            auto_categorize: Arc::new(AtomicBool::new(auto_categorize)),
+            max_concurrent_downloads: Arc::new(AtomicU32::new(max_concurrent)),
             client,
         }
+    }
+
+    pub fn set_auto_categorize(&self, enabled: bool) {
+        self.auto_categorize.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn set_max_concurrent_downloads(&self, limit: u32) {
+        self.max_concurrent_downloads.store(limit, Ordering::Relaxed);
+        let tasks = self.tasks.clone();
+        let max_c = self.max_concurrent_downloads.clone();
+        let client = self.client.clone();
+        tauri::async_runtime::spawn(async move {
+            Self::check_and_start_next_queued(tasks, max_c, client).await;
+        });
     }
 
     pub fn set_save_dir(&self, dir: PathBuf) {
@@ -163,34 +194,16 @@ impl HttpDownloadManager {
 
         let id = format!("{:x}", md5_or_uuid(trimmed_url));
 
-        // Determine destination directory
-        let save_dir = if let Some(csd) = custom_save_dir {
-            PathBuf::from(csd)
-        } else {
-            self.default_save_dir.read().await.clone()
-        };
-
-        if !save_dir.exists() {
-            let _ = std::fs::create_dir_all(&save_dir);
-        }
-
-        let target_file_path = save_dir.join(custom_filename.as_deref().unwrap_or(""));
-
-        // Clean up any existing tasks for this URL or target file that were cancelled or errored
+        // Clean up any existing tasks for this URL that were cancelled or errored
         {
             let mut tasks = self.tasks.write().await;
             let mut to_remove = Vec::new();
             for (tid, t) in tasks.iter() {
                 let st = t.status.read().await.clone();
                 if tid == &id {
-                    if st == "downloading" || st == "starting" {
-                        return Err("This URL is already being downloaded".to_string());
+                    if st == "downloading" || st == "starting" || st == "queued" {
+                        return Err("This URL is already in download queue".to_string());
                     }
-                    to_remove.push(tid.clone());
-                } else if !target_file_path.as_os_str().is_empty()
-                    && t.save_path == target_file_path
-                    && (st == "cancelled" || st == "error")
-                {
                     to_remove.push(tid.clone());
                 }
             }
@@ -297,7 +310,44 @@ impl HttpDownloadManager {
             }
         };
 
+        // Determine destination directory (with automatic category sub-folder sorting if enabled)
+        let save_dir = if let Some(csd) = custom_save_dir {
+            PathBuf::from(csd)
+        } else {
+            let base = self.default_save_dir.read().await.clone();
+            if self.auto_categorize.load(Ordering::Relaxed) {
+                let cat = get_file_category(&filename);
+                let cat_dir = base.join(cat);
+                let _ = std::fs::create_dir_all(&cat_dir);
+                cat_dir
+            } else {
+                base
+            }
+        };
+
+        if !save_dir.exists() {
+            let _ = std::fs::create_dir_all(&save_dir);
+        }
+
         let target_file_path = save_dir.join(&filename);
+
+        // Remove any old task targeting the exact same filepath that was cancelled/error
+        {
+            let mut tasks = self.tasks.write().await;
+            let mut to_remove = Vec::new();
+            for (tid, t) in tasks.iter() {
+                let st = t.status.read().await.clone();
+                if t.save_path == target_file_path && (st == "cancelled" || st == "error") {
+                    to_remove.push(tid.clone());
+                }
+            }
+            for old_id in to_remove {
+                if let Some(t) = tasks.remove(&old_id) {
+                    t.is_cancelled.store(true, Ordering::Relaxed);
+                    t.is_paused.store(true, Ordering::Relaxed);
+                }
+            }
+        }
 
         // Calculate size of existing file if already on disk (e.g. from an aborted/cancelled previous attempt)
         let existing_file_bytes = if target_file_path.exists() {
@@ -365,6 +415,21 @@ impl HttpDownloadManager {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
+        let active_count = {
+            let tasks = self.tasks.read().await;
+            let mut count = 0;
+            for t in tasks.values() {
+                let st = t.status.read().await;
+                if *st == "downloading" || *st == "starting" {
+                    count += 1;
+                }
+            }
+            count
+        };
+        let max_concurrent = self.max_concurrent_downloads.load(Ordering::Relaxed);
+        let should_queue = max_concurrent > 0 && active_count >= max_concurrent;
+        let initial_status = if should_queue { "queued" } else { "downloading" };
+
         let active = Arc::new(ActiveDownload {
             id: id.clone(),
             url: Arc::new(RwLock::new(trimmed_url.to_string())),
@@ -374,7 +439,7 @@ impl HttpDownloadManager {
             segments,
             is_paused: Arc::new(AtomicBool::new(false)),
             is_cancelled: Arc::new(AtomicBool::new(false)),
-            status: Arc::new(RwLock::new("downloading".to_string())),
+            status: Arc::new(RwLock::new(initial_status.to_string())),
             error_msg: Arc::new(RwLock::new(None)),
             created_at: now_ts,
             last_downloaded: Arc::new(AtomicU64::new(0)),
@@ -383,18 +448,23 @@ impl HttpDownloadManager {
 
         self.tasks.write().await.insert(id.clone(), active.clone());
 
-        // Spawn background downloader execution
-        let active_clone = active.clone();
-        let client_clone = self.client.clone();
-        tauri::async_runtime::spawn(async move {
-            Self::execute_download(active_clone, client_clone, segments_count).await;
-        });
+        if !should_queue {
+            // Spawn background downloader execution
+            let active_clone = active.clone();
+            let client_clone = self.client.clone();
+            let tasks_clone = self.tasks.clone();
+            let max_c = self.max_concurrent_downloads.clone();
+            tauri::async_runtime::spawn(async move {
+                Self::execute_download(active_clone, client_clone.clone(), segments_count, tasks_clone.clone(), max_c.clone()).await;
+                Self::check_and_start_next_queued(tasks_clone, max_c, client_clone).await;
+            });
 
-        // Spawn speed calculation background ticker for this task
-        let active_speed = active.clone();
-        tauri::async_runtime::spawn(async move {
-            Self::track_speed(active_speed).await;
-        });
+            // Spawn speed calculation background ticker for this task
+            let active_speed = active.clone();
+            tauri::async_runtime::spawn(async move {
+                Self::track_speed(active_speed).await;
+            });
+        }
 
         Ok(HttpDownloadTaskInfo {
             id,
@@ -404,7 +474,7 @@ impl HttpDownloadManager {
             downloaded_bytes: 0,
             download_speed_bps: 0,
             progress: 0.0,
-            status: "downloading".to_string(),
+            status: initial_status.to_string(),
             segments_count,
             save_path: target_file_path.to_string_lossy().to_string(),
             error: None,
@@ -417,6 +487,8 @@ impl HttpDownloadManager {
         task: Arc<ActiveDownload>,
         client: reqwest::Client,
         segments_count: u32,
+        tasks_map: Arc<RwLock<HashMap<String, Arc<ActiveDownload>>>>,
+        max_concurrent: Arc<AtomicU32>,
     ) {
         // Prepare target file: If fresh download, recreate/truncate sparse file cleanly without zero-filling lag
         let is_resuming = task.segments.iter().any(|s| s.current.load(Ordering::Relaxed) > s.start);
@@ -496,8 +568,12 @@ impl HttpDownloadManager {
             }
         } else {
             // Single-stream download with resume support
-            Self::download_single_stream(task, client).await;
+            Self::download_single_stream(task, client.clone()).await;
         }
+
+        tauri::async_runtime::spawn(async move {
+            Self::check_and_start_next_queued(tasks_map, max_concurrent, client).await;
+        });
     }
 
     /// Worker to download a specific byte range and write directly to disk offset
@@ -755,6 +831,60 @@ impl HttpDownloadManager {
         result
     }
 
+    /// Check if queue has waiting tasks and start them if active download slots are available
+    fn check_and_start_next_queued(
+        tasks: Arc<RwLock<HashMap<String, Arc<ActiveDownload>>>>,
+        max_concurrent_downloads: Arc<AtomicU32>,
+        client: reqwest::Client,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+        Box::pin(async move {
+            let max_concurrent = max_concurrent_downloads.load(Ordering::Relaxed);
+            if max_concurrent == 0 {
+                return;
+            }
+
+            let mut active_count = 0;
+            let mut queued_tasks: Vec<(i64, Arc<ActiveDownload>)> = Vec::new();
+
+            {
+                let t_map = tasks.read().await;
+                for t in t_map.values() {
+                    let st = t.status.read().await.clone();
+                    if st == "downloading" || st == "starting" {
+                        active_count += 1;
+                    } else if st == "queued" {
+                        queued_tasks.push((t.created_at, t.clone()));
+                    }
+                }
+            }
+
+            if active_count < max_concurrent {
+                queued_tasks.sort_by_key(|(ts, _)| *ts);
+                let slots = (max_concurrent - active_count) as usize;
+                for (_, next_t) in queued_tasks.into_iter().take(slots) {
+                    *next_t.status.write().await = "downloading".to_string();
+                    next_t.is_paused.store(false, Ordering::Relaxed);
+                    next_t.is_cancelled.store(false, Ordering::Relaxed);
+                    let segs = next_t.segments.len() as u32;
+
+                    let t_exec = next_t.clone();
+                    let c_exec = client.clone();
+                    let tasks_c = tasks.clone();
+                    let max_c = max_concurrent_downloads.clone();
+
+                    tauri::async_runtime::spawn(async move {
+                        Self::execute_download(t_exec, c_exec, segs, tasks_c, max_c).await;
+                    });
+
+                    let t_spd = next_t.clone();
+                    tauri::async_runtime::spawn(async move {
+                        Self::track_speed(t_spd).await;
+                    });
+                }
+            }
+        })
+    }
+
     /// Pause an active download task
     pub async fn pause_task(&self, id: &str) -> Result<(), String> {
         let tasks = self.tasks.read().await;
@@ -765,6 +895,47 @@ impl HttpDownloadManager {
         t.is_paused.store(true, Ordering::Relaxed);
         *t.status.write().await = "paused".to_string();
         t.speed_bps.store(0, Ordering::Relaxed);
+        drop(tasks);
+
+        let tasks_clone = self.tasks.clone();
+        let max_c = self.max_concurrent_downloads.clone();
+        let client_clone = self.client.clone();
+        tauri::async_runtime::spawn(async move {
+            Self::check_and_start_next_queued(tasks_clone, max_c, client_clone).await;
+        });
+
+        Ok(())
+    }
+
+    /// Force start a queued download task immediately without waiting in queue
+    pub async fn start_task_now(&self, id: &str) -> Result<(), String> {
+        let tasks = self.tasks.read().await;
+        let t = tasks
+            .get(id)
+            .ok_or_else(|| format!("Task {id} not found"))?
+            .clone();
+        drop(tasks);
+
+        *t.error_msg.write().await = None;
+        t.is_paused.store(false, Ordering::Relaxed);
+        t.is_cancelled.store(false, Ordering::Relaxed);
+        *t.status.write().await = "downloading".to_string();
+
+        let t_clone = t.clone();
+        let client_clone = self.client.clone();
+        let seg_len = t.segments.len() as u32;
+        let tasks_clone = self.tasks.clone();
+        let max_c = self.max_concurrent_downloads.clone();
+
+        tauri::async_runtime::spawn(async move {
+            Self::execute_download(t_clone, client_clone, seg_len, tasks_clone, max_c).await;
+        });
+
+        let t_speed = t.clone();
+        tauri::async_runtime::spawn(async move {
+            Self::track_speed(t_speed).await;
+        });
+
         Ok(())
     }
 
@@ -780,17 +951,39 @@ impl HttpDownloadManager {
             return Ok(());
         }
 
-        // Reset error message and paused flag
+        // Reset error message and paused/cancelled flags
         *t.error_msg.write().await = None;
         t.is_paused.store(false, Ordering::Relaxed);
+        t.is_cancelled.store(false, Ordering::Relaxed);
+
+        let active_count = {
+            let mut count = 0;
+            for (tid, other) in tasks.iter() {
+                if tid != id {
+                    let st = other.status.read().await.clone();
+                    if st == "downloading" || st == "starting" {
+                        count += 1;
+                    }
+                }
+            }
+            count
+        };
+        let max_concurrent = self.max_concurrent_downloads.load(Ordering::Relaxed);
+        if max_concurrent > 0 && active_count >= max_concurrent {
+            *t.status.write().await = "queued".to_string();
+            return Ok(());
+        }
+
         *t.status.write().await = "downloading".to_string();
 
         let t_clone = t.clone();
         let client_clone = self.client.clone();
         let seg_len = t.segments.len() as u32;
+        let tasks_clone = self.tasks.clone();
+        let max_c = self.max_concurrent_downloads.clone();
 
         tauri::async_runtime::spawn(async move {
-            Self::execute_download(t_clone, client_clone, seg_len).await;
+            Self::execute_download(t_clone, client_clone, seg_len, tasks_clone, max_c).await;
         });
 
         let t_speed = t.clone();
@@ -861,6 +1054,15 @@ impl HttpDownloadManager {
             t.is_cancelled.store(true, Ordering::Relaxed);
             t.is_paused.store(true, Ordering::Relaxed);
             t.speed_bps.store(0, Ordering::Relaxed);
+            drop(tasks);
+
+            let tasks_clone = self.tasks.clone();
+            let max_c = self.max_concurrent_downloads.clone();
+            let client_clone = self.client.clone();
+            tauri::async_runtime::spawn(async move {
+                Self::check_and_start_next_queued(tasks_clone, max_c, client_clone).await;
+            });
+
             if delete_file && t.save_path.exists() {
                 let save_path = t.save_path.clone();
                 if std::fs::remove_file(&save_path).is_err() {

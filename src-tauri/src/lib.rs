@@ -83,6 +83,8 @@ pub fn run() {
 
     let http_mgr = Arc::new(crate::http_downloader::HttpDownloadManager::new(
         std::path::PathBuf::from(&settings.download_dir),
+        settings.auto_categorize,
+        settings.max_concurrent_downloads,
     ));
 
     let app_state = Arc::new(AppState {
@@ -414,6 +416,11 @@ pub fn run() {
             commands::get_my_avatar,
             commands::get_peer_avatar,
             commands::set_contact_custom_name,
+            commands::start_http_download_now,
+            commands::execute_system_power_action,
+            commands::calculate_file_hash,
+            commands::get_direct_listen_address,
+            commands::connect_peer_by_ip,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Raydrop Tauri application");

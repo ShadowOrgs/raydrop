@@ -365,7 +365,7 @@ pub fn get_unique_destination_path(
     }
 }
 
-async fn write_json_packet<W: AsyncWrite + Unpin>(writer: &mut W, value: &impl Serialize) -> Result<(), String> {
+pub(crate) async fn write_json_packet<W: AsyncWrite + Unpin>(writer: &mut W, value: &impl Serialize) -> Result<(), String> {
     let bytes = serde_json::to_vec(value).map_err(|e| e.to_string())?;
     let len = bytes.len() as u32;
     writer
@@ -377,7 +377,7 @@ async fn write_json_packet<W: AsyncWrite + Unpin>(writer: &mut W, value: &impl S
     Ok(())
 }
 
-async fn read_json_packet<R: AsyncRead + Unpin, T: for<'de> Deserialize<'de>>(
+pub(crate) async fn read_json_packet<R: AsyncRead + Unpin, T: for<'de> Deserialize<'de>>(
     reader: &mut R,
 ) -> Result<T, String> {
     let mut len_buf = [0u8; 4];
@@ -657,9 +657,55 @@ where
         return Ok(());
     }
 
-    // Step 1: Read & verify HELLO or direct CHAT frame
+    // Step 1: Read & verify HELLO, direct CHAT, or DIRECT_PING frame
     let raw_val: serde_json::Value = read_json_packet(&mut reader).await?;
     let frame_type = raw_val.get("type").and_then(|v| v.as_str()).unwrap_or_default();
+
+    if frame_type == "DIRECT_PING" {
+        let from_dev_id = raw_val.get("device_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let from_alias = raw_val.get("alias_name").and_then(|v| v.as_str()).unwrap_or("Raydrop").to_string();
+        let from_os = raw_val.get("os_type").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let from_listen_port = raw_val.get("listen_port").and_then(|v| v.as_u64()).map(|p| p as u16);
+        let from_avatar_hash = raw_val.get("avatar_hash").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+        if !from_dev_id.is_empty() {
+            let existing = state.db.get_contact(&from_dev_id).ok().flatten();
+            let c = Contact {
+                device_id: from_dev_id.clone(),
+                alias_name: from_alias,
+                custom_name: existing.as_ref().and_then(|e| e.custom_name.clone()),
+                user_email: existing.as_ref().and_then(|e| e.user_email.clone()),
+                user_name: existing.as_ref().and_then(|e| e.user_name.clone()),
+                os_type: from_os,
+                is_own_device: false,
+                ed25519_pubkey: None,
+                network_type: "lan".to_string(),
+                last_known_ip: Some(peer_addr.ip().to_string()),
+                last_known_port: from_listen_port,
+                trust_level: existing.as_ref().map(|e| e.trust_level.clone()).unwrap_or_else(|| "ask".to_string()),
+                is_online: true,
+                last_seen_at: crate::db::storage::now_unix_secs(),
+                created_at: crate::db::storage::now_unix_secs(),
+                avatar_hash: from_avatar_hash.or_else(|| existing.as_ref().and_then(|e| e.avatar_hash.clone())),
+            };
+            let _ = state.db.upsert_contact(&c);
+            let _ = app.emit("contacts_updated", ());
+            let _ = app.emit("lan_contacts_updated", ());
+        }
+
+        let my_avatar_hash = crate::commands::get_my_avatar_internal();
+        let my_alias = state.settings.lock().map(|s| s.alias_name.clone()).unwrap_or_else(|_| "Raydrop".to_string());
+        let pong = serde_json::json!({
+            "type": "DIRECT_PONG",
+            "device_id": state.identity.device_id,
+            "alias_name": my_alias,
+            "os_type": std::env::consts::OS,
+            "listen_port": state.listen_port,
+            "avatar_hash": my_avatar_hash,
+        });
+        write_json_packet(&mut writer, &pong).await?;
+        return Ok(());
+    }
 
     if frame_type == "CHAT" {
         let from_device_id = raw_val

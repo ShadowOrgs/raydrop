@@ -14,6 +14,8 @@ export interface AppSettings {
   download_dir: string;
   signaling_url: string;
   stun_addr: string;
+  auto_categorize?: boolean;
+  max_concurrent_downloads?: number;
 }
 
 export interface AppStateSnapshot {
@@ -270,6 +272,8 @@ export const raydropApi = {
     stunAddr: string;
     autostart?: boolean;
     speedLimitMbps?: number;
+    autoCategorize?: boolean;
+    maxConcurrentDownloads?: number;
   }) => invoke<AppSettings>('update_settings', params),
   getContacts: () => invoke<Contact[]>('get_contacts'),
   addWanContact: (params: {
@@ -400,6 +404,16 @@ export const raydropApi = {
     invoke<HttpDownloadTaskInfo>('update_http_download_url', { id, newUrl }),
   deleteHttpDownload: (id: string, deleteFile: boolean) =>
     invoke<void>('delete_http_download', { id, deleteFile }),
+  startHttpDownloadNow: (id: string) =>
+    invoke<void>('start_http_download_now', { id }),
+  executeSystemPowerAction: (action: 'shutdown' | 'sleep' | 'hibernate') =>
+    invoke<void>('execute_system_power_action', { action }),
+  calculateFileHash: (path: string) =>
+    invoke<string>('calculate_file_hash', { path }),
+  getDirectListenAddress: () =>
+    invoke<{ ip: string; port: number }>('get_direct_listen_address'),
+  connectPeerByIp: (ip: string, port?: number | null) =>
+    invoke<Contact>('connect_peer_by_ip', { ip, port: port ?? null }),
   openBrowserExtensionDir: () =>
     invoke<string>('open_browser_extension_dir'),
   openBrowserExtensionUrl: (browser: string) =>
