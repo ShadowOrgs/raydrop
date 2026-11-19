@@ -67,6 +67,15 @@ pub struct FolderSyncTask {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SharedFolder {
+    pub id: String,
+    pub name: String,
+    pub local_path: String,
+    pub is_active: bool,
+    pub created_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     pub device_id: String,
     pub alias_name: String,
@@ -218,6 +227,14 @@ impl Database {
                 target_alias TEXT NOT NULL,
                 is_auto_sync INTEGER DEFAULT 0,
                 last_sync_at INTEGER,
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS shared_folders (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                local_path TEXT NOT NULL,
+                is_active INTEGER DEFAULT 1,
                 created_at INTEGER NOT NULL
             );
             ",
@@ -924,6 +941,82 @@ impl Database {
     pub fn delete_folder_sync_task(&self, id: &str) -> Result<(), String> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM folder_sync_tasks WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn insert_shared_folder(&self, folder: &SharedFolder) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO shared_folders (id, name, local_path, is_active, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                folder.id,
+                folder.name,
+                folder.local_path,
+                if folder.is_active { 1 } else { 0 },
+                folder.created_at
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn list_shared_folders(&self) -> Result<Vec<SharedFolder>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, local_path, is_active, created_at
+                 FROM shared_folders
+                 ORDER BY created_at DESC",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let active: i64 = row.get(3)?;
+                Ok(SharedFolder {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    local_path: row.get(2)?,
+                    is_active: active != 0,
+                    created_at: row.get(4)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(list)
+    }
+
+    pub fn get_shared_folder(&self, id: &str) -> Result<Option<SharedFolder>, String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT id, name, local_path, is_active, created_at
+             FROM shared_folders
+             WHERE id = ?1",
+            params![id],
+            |row| {
+                let active: i64 = row.get(3)?;
+                Ok(SharedFolder {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    local_path: row.get(2)?,
+                    is_active: active != 0,
+                    created_at: row.get(4)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| e.to_string())
+    }
+
+    pub fn delete_shared_folder(&self, id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM shared_folders WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
         Ok(())
     }

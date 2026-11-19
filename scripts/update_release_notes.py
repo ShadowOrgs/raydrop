@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.16"
+    tag = clean_args[0] if clean_args else "v1.2.17"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Smart Auto-Sort, Download Queue, Auto-Power, In-App Media Player & Direct IP"
+    title = f"Raydrop {tag}: Quick Voice Notes, Continuous Real-Time Folder Mirroring & Remote Folder Browser"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Smart Auto-Sort, Download Queue, Auto-Power, In-App Media Player, SHA-256 Checksum, Direct IP & Chat Media Drawer</h2>
+<h2 align="center">Raydrop {tag}: Quick Voice Notes, Continuous Real-Time Folder Mirroring & Remote Folder Browser</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,33 +126,20 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 📁 IDM-Style Smart Auto-Sort Subfolders
-- **Automatic Organization by Extension:** HTTP Accelerator downloads are now intelligently sorted into clean subfolders (`Documents/`, `Videos/`, `Music/`, `Compressed/`, `Programs/`, `General/`) based on their file extension.
-- **Configurable in Settings:** Toggle on or off anytime inside Raydrop Tray Settings.
+#### 🎙️ Quick Voice Notes (Perekam Suara Cepat di Chat)
+- **Instant Audio Recording:** Tap the microphone icon in the chat input bar to record voice notes on the fly with live timer and visual pulse indicators.
+- **Embedded Audio Player:** Play, pause, seek, and download voice notes directly inside the conversation stream with formatted timestamps and track duration.
+- **Media Drawer Integration:** Audio messages are automatically cataloged into the conversation Media drawer for easy review.
 
-#### 🚦 Concurrency Limiter & Queue Manager
-- **Limit Active Simultaneous Downloads:** Configure maximum concurrent downloads (`1`, `2`, `3`, `5`, or `Unlimited`) to prevent bandwidth exhaustion.
-- **Automatic Queue Progression:** Extra tasks are marked as `QUEUED` and automatically start downloading as active tasks finish or pause.
-- **Force Start:** Click "Start Now" on any queued download to override the queue and start immediately.
+#### 🔄 Continuous Real-Time Folder Mirroring (Background Sync)
+- **Automatic Filesystem Watching:** Powered by Rust's `notify` subsystem, Raydrop continuously watches your configured local directories for any created, modified, or deleted files.
+- **Smart Debounced Mirroring:** Intelligently debounces rapid file operations before triggering accelerated P2P transfers to your trusted target device.
+- **Live Status Streaming:** Real-time visual status badges ("Real-Time Mirror Active", "Mirroring changes...") in the Folder Mirror & Sync manager.
 
-#### 🔌 Auto-Power (Sleep / Shutdown / Hibernate) on Task Completion
-- **Automate After Long Downloads & Transfers:** Configure Raydrop to automatically Put PC to Sleep, Shut Down, or Hibernate once all active transfers and downloads complete.
-- **Safety 30-Second Countdown:** Includes a 30-second warning countdown dialog with sound/visual alert, enabling user cancellation before any OS command executes.
-
-#### 🎬 In-App Media Player Lightbox (Video & Audio)
-- **Direct Preview Inside Raydrop:** Click "Play" on completed videos (`.mp4`, `.webm`, `.mkv`, etc.) or audio tracks (`.mp3`, `.flac`, `.wav`, etc.) in transfer history or download list to launch an in-app media player with playback and seeking controls.
-- **System Player Shortcut:** Option to jump straight to the default desktop media player.
-
-#### 🛡️ SHA-256 Checksum / Hash Calculator & Verifier
-- **Verify File Integrity:** Click "Hash" on any completed file to compute high-performance streaming SHA-256 checksums with one-click copy.
-- **Dynamic Checksum Matcher:** Paste expected hashes from source websites (ISO distributors, driver portals) to instantly verify 100% integrity match.
-
-#### 🌐 Direct LAN / IP Connect (Bypass Wi-Fi AP Isolation)
-- **Bypass Client Isolation & Guest Networks:** Direct IP:Port probing exchanges a TCP ping-pong handshake to connect peers directly without depending on mDNS multicast packets.
-- **Direct LAN Address Display:** Convenient banner in the LAN Radar tab shows your exact IP:Port address with one-click copy.
-
-#### 🔍 Chat Message Search & Shared Media / Files Drawer
-- **In-Chat Keyword Search:** Filter conversation history in real-time with highlighted match counters and quick reset.
-- **Shared Media & Files Drawer:** Collapsible sidebar organizing all shared images, videos, audio, and documents across the conversation with quick view, open, and folder locate buttons.
+#### 📂 Remote Folder Browser (On-Demand File Pulling)
+- **Browse Remote Directories:** Directly explore folders and directory trees exposed by your trusted remote peers and own devices.
+- **On-Demand File Pull:** Select and pull specific files across LAN or WAN with end-to-end encryption.
+- **Path-Traversal Protected:** Strict server-side verification ensures remote peers can never access files outside designated shared paths.
+- **Shared Folders Manager:** Configure custom shared directories easily in Raydrop Settings with one-click folder sharing.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

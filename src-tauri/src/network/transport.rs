@@ -707,6 +707,12 @@ where
         return Ok(());
     }
 
+    if frame_type == "FS_REQUEST" {
+        let resp = crate::remote_fs::handle_host_fs_request(&app, &state, raw_val).await;
+        write_json_packet(&mut writer, &resp).await?;
+        return Ok(());
+    }
+
     if frame_type == "CHAT" {
         let from_device_id = raw_val
             .get("from_device_id")

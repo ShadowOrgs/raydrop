@@ -2,9 +2,11 @@ pub mod browser_bridge;
 pub mod commands;
 pub mod crypto;
 pub mod db;
+pub mod folder_sync;
 pub mod http_downloader;
 pub mod network;
 pub mod os;
+pub mod remote_fs;
 pub mod state;
 pub mod torrent;
 pub mod tray_badge;
@@ -87,6 +89,8 @@ pub fn run() {
         settings.max_concurrent_downloads,
     ));
 
+    let folder_sync_mgr = Arc::new(crate::folder_sync::FolderSyncManager::new());
+
     let app_state = Arc::new(AppState {
         db: Arc::new(db),
         identity,
@@ -106,6 +110,8 @@ pub fn run() {
         torrent_manager: torrent_mgr,
         pending_magnet_link: Mutex::new(initial_magnet.clone()),
         http_downloader: http_mgr,
+        folder_sync_watcher: folder_sync_mgr.clone(),
+        pending_fs_requests: Mutex::new(HashMap::new()),
     });
 
     #[cfg(desktop)]
@@ -348,6 +354,9 @@ pub fn run() {
             start_mdns_daemon(handle.clone(), state_for_setup.clone());
             start_signaling_daemon(handle.clone(), state_for_setup.clone());
 
+            // Initialize Continuous Real-Time Folder Mirroring (Background Sync)
+            folder_sync_mgr.init_all_auto_tasks(handle.clone(), state_for_setup.clone());
+
             // Start Local Loopback Server for Chrome/Edge Browser Extension (IDM mode)
             browser_bridge::start_browser_bridge_daemon(handle, state_for_setup);
 
@@ -421,6 +430,12 @@ pub fn run() {
             commands::calculate_file_hash,
             commands::get_direct_listen_address,
             commands::connect_peer_by_ip,
+            commands::list_shared_folders,
+            commands::add_shared_folder,
+            commands::delete_shared_folder,
+            commands::browse_remote_shares,
+            commands::browse_remote_dir,
+            commands::pull_remote_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Raydrop Tauri application");

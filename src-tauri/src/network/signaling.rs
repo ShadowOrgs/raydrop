@@ -412,6 +412,50 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 return;
             }
 
+            // Remote Folder Browser WAN Relay Handler (Request from client)
+            if session_id.starts_with("fs:") {
+                let req_id = session_id.trim_start_matches("fs:").to_string();
+                if let Ok(bytes) = hex::decode(payload_json) {
+                    if let Ok(req_val) = serde_json::from_slice::<Value>(&bytes) {
+                        let app_c = app.clone();
+                        let state_c = state.clone();
+                        let from_dev = from_device_id.clone();
+                        let rid = req_id.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let resp = crate::remote_fs::handle_host_fs_request(&app_c, &state_c, req_val).await;
+                            let resp_str = resp.to_string();
+                            let hex_resp = hex::encode(resp_str.as_bytes());
+                            if let Some(sig_tx) = state_c.signaling_tx.lock().unwrap().as_ref() {
+                                let packet = serde_json::json!({
+                                    "type": "RELAY_CONTROL",
+                                    "session_id": format!("fs_resp:{}", rid),
+                                    "from_device_id": state_c.identity.device_id,
+                                    "target_device_id": from_dev,
+                                    "payload_json": hex_resp
+                                })
+                                .to_string();
+                                let _ = sig_tx.send(packet);
+                            }
+                        });
+                    }
+                }
+                return;
+            }
+
+            // Remote Folder Browser WAN Relay Handler (Response to client)
+            if session_id.starts_with("fs_resp:") {
+                let req_id = session_id.trim_start_matches("fs_resp:").to_string();
+                if let Ok(bytes) = hex::decode(payload_json) {
+                    if let Ok(resp_val) = serde_json::from_slice::<Value>(&bytes) {
+                        let mut map = state.pending_fs_requests.lock().unwrap();
+                        if let Some(tx) = map.remove(&req_id) {
+                            let _ = tx.send(resp_val);
+                        }
+                    }
+                }
+                return;
+            }
+
             let existing_tx = state
                 .relay_streams
                 .lock()

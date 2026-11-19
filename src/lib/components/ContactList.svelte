@@ -37,8 +37,11 @@
     MessageSquare,
     Network,
     Copy,
+    HardDrive,
   } from "lucide-svelte";
+  import RemoteExplorerModal from "./RemoteExplorerModal.svelte";
 
+  let remoteBrowserTarget: { deviceId: string; alias: string } | null = null;
   let myDirectAddr: { ip: string; port: number } | null = null;
   let directAddrCopied = false;
   let showConnectIpModal = false;
@@ -570,6 +573,17 @@
                   <FolderUp class="w-4 h-4" />
                 </button>
                 <button
+                  on:click={() =>
+                    (remoteBrowserTarget = {
+                      deviceId: dev.device_id,
+                      alias: dev.device_name,
+                    })}
+                  class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-indigo-200 border border-indigo-500/30"
+                  title="Browse Remote Files"
+                >
+                  <HardDrive class="w-4 h-4" />
+                </button>
+                <button
                   on:click={() => handleRemoveDevice(dev.device_id)}
                   class="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20"
                   title="Remove Device from Account"
@@ -857,6 +871,17 @@
                         >
                           <FolderUp class="w-3.5 h-3.5" />
                         </button>
+                        <button
+                          on:click={() =>
+                            (remoteBrowserTarget = {
+                              deviceId: cdev.device_id,
+                              alias: `${group.name} - ${customNick || cdev.device_name}`,
+                            })}
+                          class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-indigo-200 border border-indigo-500/30"
+                          title="Browse Remote Files"
+                        >
+                          <HardDrive class="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
                   {/each}
@@ -1009,6 +1034,17 @@
                       title="Send Folder"
                     >
                       <FolderUp class="w-4 h-4" />
+                    </button>
+                    <button
+                      on:click={() =>
+                        (remoteBrowserTarget = {
+                          deviceId: peer.device_id,
+                          alias: peer.custom_name || peer.alias_name,
+                        })}
+                      class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-indigo-200 border border-indigo-500/30"
+                      title="Browse Remote Files"
+                    >
+                      <HardDrive class="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -1194,6 +1230,17 @@
               >
                 <FolderUp class="w-4 h-4" />
               </button>
+              <button
+                on:click={() =>
+                  (remoteBrowserTarget = {
+                    deviceId: peer.device_id,
+                    alias: peer.alias_name,
+                  })}
+                class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-indigo-200 border border-indigo-500/30"
+                title="Browse Remote Files"
+              >
+                <HardDrive class="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>
@@ -1358,4 +1405,12 @@
       </div>
     </div>
   </div>
+{/if}
+
+{#if remoteBrowserTarget}
+  <RemoteExplorerModal
+    peerDeviceId={remoteBrowserTarget.deviceId}
+    peerAlias={remoteBrowserTarget.alias}
+    onClose={() => (remoteBrowserTarget = null)}
+  />
 {/if}

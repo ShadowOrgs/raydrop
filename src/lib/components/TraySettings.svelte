@@ -26,6 +26,9 @@
     Upload,
     Folders,
     Layers,
+    Plus,
+    Trash2,
+    HardDrive,
   } from "lucide-svelte";
 
   let aliasName = "";
@@ -38,6 +41,7 @@
   let maxConcurrentDownloads = 3;
   let win11DirectMenu = false;
   let statusBanner = "";
+  let sharedFolders: Array<{ id: string; name: string; local_path: string; is_active: boolean }> = [];
 
   $: if ($settingsModalOpen) {
     aliasName = $appSettings.alias_name;
@@ -52,6 +56,44 @@
       .getWin11DirectMenu()
       .then((res) => (win11DirectMenu = res))
       .catch(() => {});
+    loadSharedFolders();
+  }
+
+  async function loadSharedFolders() {
+    try {
+      sharedFolders = await raydropApi.listSharedFolders();
+    } catch (err) {
+      console.warn("Failed to list shared folders:", err);
+    }
+  }
+
+  async function handleAddSharedFolder() {
+    try {
+      const picked = await open({
+        directory: true,
+        multiple: false,
+        title: "Select Local Folder to Share for Remote Browsing",
+      });
+      if (typeof picked === "string") {
+        const parts = picked.split(/[/\\]/);
+        const defaultName = parts[parts.length - 1] || parts[parts.length - 2] || "Shared Folder";
+        await raydropApi.addSharedFolder(defaultName, picked);
+        await loadSharedFolders();
+        statusBanner = "Shared folder added successfully!";
+        setTimeout(() => (statusBanner = ""), 3000);
+      }
+    } catch (err) {
+      console.warn("Failed to add shared folder:", err);
+    }
+  }
+
+  async function handleDeleteSharedFolder(id: string) {
+    try {
+      await raydropApi.deleteSharedFolder(id);
+      await loadSharedFolders();
+    } catch (err) {
+      console.warn("Failed to delete shared folder:", err);
+    }
   }
 
   async function handleUploadAvatar() {
@@ -242,6 +284,54 @@
               <span>Browse</span>
             </button>
           </div>
+        </div>
+
+        <!-- Shared Folders (Remote Browser / On-Demand Pulling) -->
+        <div class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col gap-2.5">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <HardDrive class="w-3.5 h-3.5 text-cyan-400" />
+                <span>Shared Folders (Remote On-Demand Browser)</span>
+              </p>
+              <p class="text-[11px] text-slate-400 mt-0.5">
+                Folders configured here can be browsed and pulled on-demand by your connected devices and trusted peers.
+              </p>
+            </div>
+            <button
+              type="button"
+              on:click={handleAddSharedFolder}
+              class="px-2.5 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 text-xs font-semibold flex items-center gap-1 shrink-0 transition"
+            >
+              <Plus class="w-3.5 h-3.5" />
+              <span>+ Share Folder</span>
+            </button>
+          </div>
+
+          {#if sharedFolders.length > 0}
+            <div class="space-y-1.5 pt-1">
+              {#each sharedFolders as sf (sf.id)}
+                <div class="p-2 rounded-lg bg-slate-900 border border-slate-800/80 flex items-center justify-between gap-2">
+                  <div class="min-w-0">
+                    <span class="text-xs font-medium text-slate-200 block truncate">{sf.name}</span>
+                    <span class="text-[10px] font-mono text-slate-500 block truncate">{sf.local_path}</span>
+                  </div>
+                  <button
+                    type="button"
+                    on:click={() => handleDeleteSharedFolder(sf.id)}
+                    class="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition shrink-0"
+                    title="Remove shared folder"
+                  >
+                    <Trash2 class="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <div class="text-[11px] text-slate-500 italic pt-0.5">
+              Raydrop Downloads folder is shared by default. Click "+ Share Folder" to share additional directories.
+            </div>
+          {/if}
         </div>
 
         <!-- IDM-style Auto-Categorize Subfolders -->
@@ -506,7 +596,7 @@
               <span
                 class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700"
               >
-                Current: v1.2.16
+                Current: v1.2.17
               </span>
             </div>
             <p class="text-[11px] text-slate-400 mt-0.5">

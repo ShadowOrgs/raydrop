@@ -171,6 +171,28 @@ export interface FolderSyncTask {
   created_at: number;
 }
 
+export interface SharedFolder {
+  id: string;
+  name: string;
+  local_path: string;
+  is_active: boolean;
+  created_at: number;
+}
+
+export interface RemoteShareEntry {
+  id: string;
+  name: string;
+  is_default: boolean;
+}
+
+export interface RemoteFileItem {
+  name: string;
+  relative_path: string;
+  is_dir: boolean;
+  size_bytes: number;
+  modified_unix_ms: number;
+}
+
 export interface TorrentTaskInfo {
   id: string;
   name: string;
@@ -426,6 +448,18 @@ export const raydropApi = {
     invoke<string | null>('get_peer_avatar', { peerDeviceId }),
   setContactCustomName: (deviceId: string, customName: string) =>
     invoke<Contact>('set_contact_custom_name', { deviceId, customName }),
+  listSharedFolders: () =>
+    invoke<SharedFolder[]>('list_shared_folders'),
+  addSharedFolder: (name: string, localPath: string) =>
+    invoke<SharedFolder>('add_shared_folder', { name, localPath }),
+  deleteSharedFolder: (folderId: string) =>
+    invoke<void>('delete_shared_folder', { folderId }),
+  browseRemoteShares: (peerDeviceId: string) =>
+    invoke<RemoteShareEntry[]>('browse_remote_shares', { peerDeviceId }),
+  browseRemoteDir: (peerDeviceId: string, shareId: string, subpath: string) =>
+    invoke<RemoteFileItem[]>('browse_remote_dir', { peerDeviceId, shareId, subpath }),
+  pullRemoteFile: (peerDeviceId: string, shareId: string, relativePath: string) =>
+    invoke<string>('pull_remote_file', { peerDeviceId, shareId, relativePath }),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>
     listen<T>(event, (e) => handler(e.payload)),
 };

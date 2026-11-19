@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { listen } from '@tauri-apps/api/event';
   import { open } from '@tauri-apps/plugin-dialog';
   import { contacts } from '../stores/contacts';
   import { raydropApi, type FolderSyncTask } from '../utils/tauri-ipc';
@@ -26,6 +27,7 @@
   let syncingTaskId = '';
   let statusBanner = '';
   let statusType: 'success' | 'error' | '' = '';
+  let mirrorStatuses: Record<string, { status: string; message: string }> = {};
 
   // Form states for adding new task
   let showAddForm = false;
@@ -38,8 +40,37 @@
     (c) => c.is_own_device || c.trust_level === 'trusted_auto_accept'
   );
 
-  onMount(async () => {
-    await loadTasks();
+  onMount(() => {
+    let unlistenMirror: (() => void) | undefined;
+    let unlistenUpdated: (() => void) | undefined;
+
+    loadTasks();
+
+    listen<{ task_id: string; status: string; message: string }>(
+      'folder_sync_mirror_event',
+      (e) => {
+        if (e.payload?.task_id) {
+          mirrorStatuses[e.payload.task_id] = {
+            status: e.payload.status,
+            message: e.payload.message,
+          };
+          mirrorStatuses = { ...mirrorStatuses };
+        }
+      }
+    ).then((un) => {
+      unlistenMirror = un;
+    });
+
+    listen('folder_sync_updated', () => {
+      loadTasks();
+    }).then((un) => {
+      unlistenUpdated = un;
+    });
+
+    return () => {
+      if (unlistenMirror) unlistenMirror();
+      if (unlistenUpdated) unlistenUpdated();
+    };
   });
 
   async function loadTasks() {
@@ -328,11 +359,24 @@
                 <p class="text-[11px] font-mono text-slate-400 truncate mt-0.5" title={task.local_path}>
                   {task.local_path}
                 </p>
-                <div class="flex items-center gap-2 mt-1 text-[10px] font-mono text-slate-500">
+                <div class="flex flex-wrap items-center gap-2 mt-1.5 text-[10px] font-mono text-slate-500">
                   <span class="flex items-center gap-1">
                     <Clock class="w-3 h-3 text-slate-500" />
                     Last sync: {formatTime(task.last_sync_at)}
                   </span>
+                  {#if task.is_auto_sync}
+                    {#if mirrorStatuses[task.id]?.status === 'mirroring'}
+                      <span class="flex items-center gap-1 text-amber-400 font-semibold px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 animate-pulse">
+                        <RefreshCw class="w-2.5 h-2.5 animate-spin" />
+                        <span>Mirroring changes...</span>
+                      </span>
+                    {:else}
+                      <span class="flex items-center gap-1 text-emerald-400 font-medium px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
+                        <span>Real-Time Mirror Active</span>
+                      </span>
+                    {/if}
+                  {/if}
                 </div>
               </div>
             </div>

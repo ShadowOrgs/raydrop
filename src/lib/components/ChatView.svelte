@@ -42,7 +42,11 @@
     Music,
     Folder,
     File,
+    Mic,
+    HardDrive,
   } from 'lucide-svelte';
+  import VoiceNotePlayer from './VoiceNotePlayer.svelte';
+  import RemoteExplorerModal from './RemoteExplorerModal.svelte';
   import { peerAvatars, myAvatar, loadPeerAvatar } from '../stores/avatars';
   import { contacts, lanContacts } from '../stores/contacts';
   import { cloudContacts, cloudMyDevices, activeChatPeerId, appSettings, incomingRequestQueue, activeMainTab } from '../stores/state';
@@ -78,6 +82,7 @@
   let downloadSuccessId = '';
   let attachingFiles: string[] = [];
   let showEmojiPicker = false;
+  let showRemoteExplorer = false;
   let relativeTimeTicker = 0;
   let localThumbnails: Record<string, string> = {};
   let previewModalImage: string | null = null;
@@ -91,6 +96,101 @@
 
   function isImageFile(fileName: string): boolean {
     return /\.(jpe?g|png|webp|gif|bmp|svg|ico|avif)$/i.test(fileName || '');
+  }
+
+  let isRecordingVoice = false;
+  let recordingDuration = 0;
+  let recordingTimer: any = null;
+  let mediaRecorder: MediaRecorder | null = null;
+  let audioStream: MediaStream | null = null;
+  let audioChunks: Blob[] = [];
+
+  function formatVoiceDuration(sec: number): string {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  async function startVoiceRecording() {
+    try {
+      audioChunks = [];
+      audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(audioStream);
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) audioChunks.push(e.data);
+      };
+      mediaRecorder.start(200);
+      isRecordingVoice = true;
+      recordingDuration = 0;
+      recordingTimer = setInterval(() => {
+        recordingDuration += 1;
+      }, 1000);
+    } catch (err: any) {
+      console.error('Microphone error:', err);
+      alert('Could not access microphone: ' + (err?.message || String(err)));
+    }
+  }
+
+  function cancelVoiceRecording() {
+    if (recordingTimer) clearInterval(recordingTimer);
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+    if (audioStream) {
+      audioStream.getTracks().forEach((t) => t.stop());
+    }
+    audioStream = null;
+    mediaRecorder = null;
+    audioChunks = [];
+    isRecordingVoice = false;
+    recordingDuration = 0;
+  }
+
+  function sendVoiceRecording() {
+    if (!mediaRecorder || !audioStream) return;
+    if (recordingTimer) clearInterval(recordingTimer);
+
+    mediaRecorder.onstop = async () => {
+      const blob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+      if (blob.size > 0) {
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64Audio = reader.result as string;
+          if (base64Audio) {
+            await handleSendVoiceNote(base64Audio);
+          }
+        };
+        reader.readAsDataURL(blob);
+      }
+      if (audioStream) {
+        audioStream.getTracks().forEach((t) => t.stop());
+      }
+      audioStream = null;
+      mediaRecorder = null;
+      audioChunks = [];
+      isRecordingVoice = false;
+      recordingDuration = 0;
+    };
+
+    mediaRecorder.stop();
+  }
+
+  async function handleSendVoiceNote(audioDataUrl: string) {
+    if (!$activeChatPeerId) return;
+    try {
+      await raydropApi.sendChatMessage(
+        $activeChatPeerId,
+        audioDataUrl,
+        'audio',
+        null,
+        null
+      );
+      await loadChatHistory($activeChatPeerId);
+      await tick();
+      scrollToBottom();
+    } catch (err) {
+      console.error('Failed to send voice note:', err);
+    }
   }
 
   async function handleSaveCustomName() {
@@ -125,6 +225,7 @@
 
   onDestroy(() => {
     clearInterval(tickerInterval);
+    cancelVoiceRecording();
   });
 
   // Emojis for picker
@@ -277,7 +378,16 @@
           path: '',
           dataUrl: dataImg,
           type: 'image',
-          date: msg.timestamp_unix_ms,
+          date: msg.created_at * 1000,
+          sender: msg.direction === 'outgoing' ? 'me' : 'peer',
+        });
+      } else if (msg.msg_type === 'audio' || (msg.content && msg.content.startsWith('data:audio/'))) {
+        list.push({
+          name: 'Voice Note',
+          path: '',
+          dataUrl: msg.content,
+          type: 'audio',
+          date: msg.created_at * 1000,
           sender: msg.direction === 'outgoing' ? 'me' : 'peer',
         });
       }
@@ -293,7 +403,7 @@
           path: f.relative_path,
           size: f.size_bytes,
           type: isImg ? 'image' : isVid ? 'video' : isAud ? 'audio' : 'file',
-          date: msg.timestamp_unix_ms,
+          date: msg.created_at * 1000,
           sender: msg.direction === 'outgoing' ? 'me' : 'peer',
         });
       }
@@ -1012,6 +1122,16 @@
             {/if}
           </button>
 
+          <!-- Browse Remote Shared Folders Button -->
+          <button
+            type="button"
+            on:click={() => (showRemoteExplorer = true)}
+            class="p-1.5 rounded-xl transition cursor-pointer text-slate-400 hover:text-indigo-300 hover:bg-indigo-500/15 border border-transparent hover:border-indigo-500/30"
+            title="Browse & Pull files from this remote device"
+          >
+            <HardDrive class="w-4 h-4" />
+          </button>
+
           <!-- Block / Unblock Button -->
           <button
             type="button"
@@ -1211,6 +1331,11 @@
                         </button>
                       </div>
                     </div>
+                  </div>
+                {:else if msg.msg_type === 'audio' || (msg.content && msg.content.startsWith('data:audio/'))}
+                  <!-- Voice Note Audio Player -->
+                  <div class="mt-1">
+                    <VoiceNotePlayer src={msg.content} {isOutgoing} />
                   </div>
                 {:else if hasContent}
                   <!-- Markdown Content -->
@@ -1584,69 +1709,119 @@
 
       <!-- Chat Input Area -->
       <footer class="p-2 sm:p-3.5 border-t border-slate-800/80 bg-slate-950/80 shrink-0">
-        <form
-          on:submit|preventDefault={handleSendMessage}
-          class="flex items-end gap-1.5 sm:gap-2"
-        >
-          <!-- Attachment Dropdown & Emoji Picker -->
-          <div class="flex items-center gap-0.5 sm:gap-1 shrink-0 pb-1">
-            <button
-              type="button"
-              disabled={isPeerBlocked}
-              on:click={() => (showEmojiPicker = !showEmojiPicker)}
-              class="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-amber-300 hover:bg-slate-900 border border-transparent hover:border-slate-800 transition disabled:opacity-40"
-              title="Add Emoji"
-            >
-              <Smile class="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              disabled={isPeerBlocked}
-              on:click={handlePickFiles}
-              class="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-cyan-300 hover:bg-slate-900 border border-transparent hover:border-slate-800 transition disabled:opacity-40"
-              title="Attach Multiple Files (Images, Videos, Code, PDFs, Docs, etc.)"
-            >
-              <Paperclip class="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              disabled={isPeerBlocked}
-              on:click={handlePickFolder}
-              class="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-cyan-300 hover:bg-slate-900 border border-transparent hover:border-slate-800 transition disabled:opacity-40"
-              title="Attach Entire Folder"
-            >
-              <FolderUp class="w-4 h-4" />
-            </button>
-          </div>
+        {#if isRecordingVoice}
+          <!-- Voice Recording Active Bar -->
+          <div class="flex items-center justify-between gap-3 p-2.5 sm:p-3 bg-slate-900 border border-rose-500/40 rounded-2xl shadow-xl shadow-rose-950/20">
+            <div class="flex items-center gap-3">
+              <span class="relative flex h-3 w-3">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+              </span>
+              <span class="text-xs font-mono font-bold text-rose-400">
+                REC {formatVoiceDuration(recordingDuration)}
+              </span>
+              <span class="text-[11px] text-slate-400 hidden sm:inline">Recording Quick Voice Note...</span>
+            </div>
 
-          <!-- Auto-expanding Input Textarea -->
-          <div class="flex-1 relative min-w-0">
-            <textarea
-              bind:this={textareaEl}
-              bind:value={messageInput}
-              on:input={autoResizeTextarea}
-              on:keydown={handleKeyDown}
-              disabled={isPeerBlocked}
-              rows="1"
-              placeholder={isPeerBlocked ? "This contact is blocked" : "Type a message..."}
-              class="w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 resize-none max-h-36 transition font-sans disabled:opacity-40"
-            ></textarea>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                on:click={cancelVoiceRecording}
+                class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-rose-400 text-xs transition flex items-center gap-1.5 cursor-pointer border border-slate-700"
+                title="Discard voice note"
+              >
+                <Trash2 class="w-3.5 h-3.5" />
+                <span>Discard</span>
+              </button>
+              <button
+                type="button"
+                on:click={sendVoiceRecording}
+                class="px-4 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white font-bold text-xs shadow-md shadow-rose-600/30 transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                title="Send voice note"
+              >
+                <Send class="w-3.5 h-3.5" />
+                <span>Send Note</span>
+              </button>
+            </div>
           </div>
-
-          <!-- Send Button -->
-          <button
-            type="submit"
-            disabled={isSending || isPeerBlocked || (!messageInput.trim() && attachingFiles.length === 0)}
-            class="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs shadow-lg shadow-cyan-500/20 transition-all flex items-center gap-1.5 shrink-0"
+        {:else}
+          <form
+            on:submit|preventDefault={handleSendMessage}
+            class="flex items-end gap-1.5 sm:gap-2"
           >
-            {#if isSending}
-              <RefreshCw class="w-3.5 h-3.5 animate-spin" />
+            <!-- Attachment Dropdown & Emoji Picker -->
+            <div class="flex items-center gap-0.5 sm:gap-1 shrink-0 pb-1">
+              <button
+                type="button"
+                disabled={isPeerBlocked}
+                on:click={() => (showEmojiPicker = !showEmojiPicker)}
+                class="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-amber-300 hover:bg-slate-900 border border-transparent hover:border-slate-800 transition disabled:opacity-40"
+                title="Add Emoji"
+              >
+                <Smile class="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                disabled={isPeerBlocked}
+                on:click={handlePickFiles}
+                class="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-cyan-300 hover:bg-slate-900 border border-transparent hover:border-slate-800 transition disabled:opacity-40"
+                title="Attach Multiple Files (Images, Videos, Code, PDFs, Docs, etc.)"
+              >
+                <Paperclip class="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                disabled={isPeerBlocked}
+                on:click={handlePickFolder}
+                class="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-cyan-300 hover:bg-slate-900 border border-transparent hover:border-slate-800 transition disabled:opacity-40"
+                title="Attach Entire Folder"
+              >
+                <FolderUp class="w-4 h-4" />
+              </button>
+            </div>
+
+            <!-- Auto-expanding Input Textarea -->
+            <div class="flex-1 relative min-w-0">
+              <textarea
+                bind:this={textareaEl}
+                bind:value={messageInput}
+                on:input={autoResizeTextarea}
+                on:keydown={handleKeyDown}
+                disabled={isPeerBlocked}
+                rows="1"
+                placeholder={isPeerBlocked ? "This contact is blocked" : "Type a message..."}
+                class="w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 resize-none max-h-36 transition font-sans disabled:opacity-40"
+              ></textarea>
+            </div>
+
+            <!-- Voice Note Mic Button / Send Button -->
+            {#if !messageInput.trim() && attachingFiles.length === 0}
+              <button
+                type="button"
+                disabled={isPeerBlocked}
+                on:click={startVoiceRecording}
+                class="p-2 sm:px-3 sm:py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-400 hover:text-cyan-300 border border-slate-700 transition flex items-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-40 shadow-sm"
+                title="Record Quick Voice Note"
+              >
+                <Mic class="w-4 h-4" />
+                <span class="hidden sm:inline text-xs font-semibold">Voice</span>
+              </button>
             {:else}
-              <Send class="w-3.5 h-3.5" />
+              <button
+                type="submit"
+                disabled={isSending || isPeerBlocked}
+                class="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs shadow-lg shadow-cyan-500/20 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                {#if isSending}
+                  <RefreshCw class="w-3.5 h-3.5 animate-spin" />
+                {:else}
+                  <Send class="w-3.5 h-3.5" />
+                {/if}
+                <span class="hidden sm:inline">Send</span>
+              </button>
             {/if}
-            <span class="hidden sm:inline">Send</span>
-          </button>
-        </form>
+          </form>
+        {/if}
 
         <div class="hidden sm:flex items-center justify-between text-[10px] text-slate-500 font-mono mt-2 px-1">
           <div class="flex items-center gap-2">
@@ -1737,6 +1912,14 @@
       </div>
     </div>
   </div>
+{/if}
+
+{#if showRemoteExplorer && activePeer}
+  <RemoteExplorerModal
+    peerDeviceId={activePeer.id}
+    peerAlias={activePeer.customName || activePeer.name}
+    onClose={() => (showRemoteExplorer = false)}
+  />
 {/if}
 
 <style>

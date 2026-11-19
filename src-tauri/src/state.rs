@@ -48,6 +48,8 @@ pub struct AppState {
     pub torrent_manager: Arc<crate::torrent::TorrentManager>,
     pub pending_magnet_link: Mutex<Option<String>>,
     pub http_downloader: Arc<crate::http_downloader::HttpDownloadManager>,
+    pub folder_sync_watcher: Arc<crate::folder_sync::FolderSyncManager>,
+    pub pending_fs_requests: Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>,
 }
 
 impl AppState {

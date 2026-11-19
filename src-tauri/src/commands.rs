@@ -1850,6 +1850,7 @@ pub fn list_folder_sync_tasks(
 
 #[tauri::command]
 pub fn add_folder_sync_task(
+    app: AppHandle,
     state: State<'_, Arc<AppState>>,
     local_path: String,
     target_device_id: String,
@@ -1876,16 +1877,42 @@ pub fn add_folder_sync_task(
     };
 
     state.db.insert_folder_sync_task(&task)?;
+
+    if is_auto_sync {
+        let _ = state.folder_sync_watcher.start_watching(
+            task.id.clone(),
+            task.local_path.clone(),
+            task.target_device_id.clone(),
+            app,
+            state.inner().clone(),
+        );
+    }
+
     Ok(task)
 }
 
 #[tauri::command]
 pub fn toggle_folder_sync_auto(
+    app: AppHandle,
     state: State<'_, Arc<AppState>>,
     task_id: String,
     is_auto: bool,
 ) -> Result<(), String> {
-    state.db.update_folder_sync_auto_flag(&task_id, is_auto)
+    state.db.update_folder_sync_auto_flag(&task_id, is_auto)?;
+    if is_auto {
+        if let Ok(Some(task)) = state.db.get_folder_sync_task(&task_id) {
+            let _ = state.folder_sync_watcher.start_watching(
+                task.id,
+                task.local_path,
+                task.target_device_id,
+                app,
+                state.inner().clone(),
+            );
+        }
+    } else {
+        state.folder_sync_watcher.stop_watching(&task_id);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1893,6 +1920,7 @@ pub fn delete_folder_sync_task(
     state: State<'_, Arc<AppState>>,
     task_id: String,
 ) -> Result<(), String> {
+    state.folder_sync_watcher.stop_watching(&task_id);
     state.db.delete_folder_sync_task(&task_id)
 }
 
@@ -1922,6 +1950,115 @@ pub async fn trigger_folder_sync(
 
     let _ = state.db.update_folder_sync_last_time(&task_id, now_unix_secs());
     Ok(session_id)
+}
+
+#[tauri::command]
+pub fn list_shared_folders(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::storage::SharedFolder>, String> {
+    state.db.list_shared_folders()
+}
+
+#[tauri::command]
+pub fn add_shared_folder(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+    local_path: String,
+) -> Result<crate::db::storage::SharedFolder, String> {
+    let p = std::path::Path::new(&local_path);
+    if !p.exists() || !p.is_dir() {
+        return Err("Selected path does not exist or is not a directory".to_string());
+    }
+
+    let folder = crate::db::storage::SharedFolder {
+        id: uuid::Uuid::new_v4().to_string(),
+        name,
+        local_path,
+        is_active: true,
+        created_at: now_unix_secs(),
+    };
+
+    state.db.insert_shared_folder(&folder)?;
+    Ok(folder)
+}
+
+#[tauri::command]
+pub fn delete_shared_folder(
+    state: State<'_, Arc<AppState>>,
+    folder_id: String,
+) -> Result<(), String> {
+    state.db.delete_shared_folder(&folder_id)
+}
+
+#[tauri::command]
+pub async fn browse_remote_shares(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    peer_device_id: String,
+) -> Result<Vec<crate::remote_fs::RemoteShareEntry>, String> {
+    let req = serde_json::json!({
+        "action": "list_shares"
+    });
+    let resp = crate::remote_fs::send_remote_fs_request(&app, &state, &peer_device_id, req).await?;
+    if !resp.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        let err = resp.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to list remote shared folders");
+        return Err(err.to_string());
+    }
+
+    let shares = serde_json::from_value::<Vec<crate::remote_fs::RemoteShareEntry>>(
+        resp.get("shares").cloned().unwrap_or(serde_json::json!([]))
+    ).map_err(|e| format!("Failed to parse shares: {e}"))?;
+
+    Ok(shares)
+}
+
+#[tauri::command]
+pub async fn browse_remote_dir(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    peer_device_id: String,
+    share_id: String,
+    subpath: String,
+) -> Result<Vec<crate::remote_fs::RemoteFileItem>, String> {
+    let req = serde_json::json!({
+        "action": "list_dir",
+        "share_id": share_id,
+        "subpath": subpath
+    });
+    let resp = crate::remote_fs::send_remote_fs_request(&app, &state, &peer_device_id, req).await?;
+    if !resp.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        let err = resp.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to list remote directory");
+        return Err(err.to_string());
+    }
+
+    let entries = serde_json::from_value::<Vec<crate::remote_fs::RemoteFileItem>>(
+        resp.get("entries").cloned().unwrap_or(serde_json::json!([]))
+    ).map_err(|e| format!("Failed to parse directory entries: {e}"))?;
+
+    Ok(entries)
+}
+
+#[tauri::command]
+pub async fn pull_remote_file(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    peer_device_id: String,
+    share_id: String,
+    relative_path: String,
+) -> Result<String, String> {
+    let req = serde_json::json!({
+        "action": "pull_file",
+        "share_id": share_id,
+        "relative_path": relative_path
+    });
+    let resp = crate::remote_fs::send_remote_fs_request(&app, &state, &peer_device_id, req).await?;
+    if !resp.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        let err = resp.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to pull remote file");
+        return Err(err.to_string());
+    }
+
+    let msg = resp.get("message").and_then(|v| v.as_str()).unwrap_or("Transfer initiated");
+    Ok(msg.to_string())
 }
 
 #[tauri::command]
