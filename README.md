@@ -5,8 +5,8 @@
 <h1 align="center">Raydrop</h1>
 
 <p align="center">
-  <strong>Universal P2P File Transfer (LAN + Direct WAN)</strong><br />
-  Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage.
+  <strong>Universal P2P Collaboration & High-Speed File Transfer Suite (LAN + Direct WAN)</strong><br />
+  Fast, Resumable, End-to-End Encrypted File Sharing, Real-Time Folder Sync, Voice Notes & Zero-Cloud Online Meetings.
 </p>
 
 <p align="center">
@@ -30,15 +30,50 @@
 
 ## 🌟 Overview
 
-**Raydrop** is an open-source, privacy-first peer-to-peer (P2P) file transfer application built with **Tauri v2 (Rust + Svelte 5 + Tailwind CSS)**. 
+**Raydrop** is an open-source, privacy-first peer-to-peer (P2P) collaboration and file transfer suite built with **Tauri v2 (Rust + Svelte 5 + Tailwind CSS)**. 
 
-Unlike traditional file-sharing services that upload your files to third-party cloud servers, Raydrop establishes **direct, encrypted point-to-point connections** between sender and receiver devices across local Wi-Fi/LAN or over the public internet. 
+Unlike traditional file-sharing or cloud meeting services that upload your personal data to third-party servers, Raydrop establishes **direct, encrypted point-to-point connections** between devices across local Wi-Fi/LAN or over the public internet. 
 
-**Your files and file metadata NEVER touch the cloud.**
+**Your files, voice data, screen streams, and metadata NEVER touch the cloud.**
+
+### 🌟 What Makes Raydrop Unique?
+- 🚀 **Parallel P2P Transfer Engine:** Multi-segment streaming with auto-resume (`.raypart`) and BLAKE3 integrity verification.
+- 🔄 **Continuous Real-Time Folder Mirroring:** Automated background folder sync that monitors filesystem changes and mirrors files without manual intervention.
+- 📂 **Remote Folder Browser:** Securely explore authorized folder structures on paired peer devices and pull files on demand.
+- 🎧 **Zero-Cloud Online Meetings & Voice Rooms:** Host Discord & Zoom-like encrypted meetings with 1080p 60fps screen sharing, voice activity detection, and in-meeting file drop.
+- 🎙️ **Quick Voice Notes:** Record and send crisp audio notes directly in chat with in-app audio waveform players.
+- 💬 **P2P Encrypted Chat & Clipboard Sync:** Rich Markdown messaging, media sharing, and instant cross-device clipboard sync.
+- ⚡ **IDM-Style Download Accelerator & BitTorrent:** Accelerated web downloads (4–8 segments) with official Chrome/Edge extension and embedded BitTorrent engine.
+- 👤 **Persistent Multi-Device Avatar Sync:** Upload personalized profile pictures with automatic real-time synchronization across all your linked devices.
 
 ---
 
 ## ✨ Key Features
+
+### 🎧 P2P Online Meeting & Crystal-Clear Voice Rooms (New in v1.2.20 - v1.2.21)
+- **Discord & Zoom-Style P2P Room:** Host or join private encrypted meeting rooms directly between peers using WebRTC mesh with zero central audio/video relay servers.
+- **1080p 60fps Screen Sharing:** Share entire monitors or specific application windows with pre-negotiated video transceivers (`replaceTrack`) for instant, flicker-free, and disconnection-proof screen sharing.
+- **Person-Based Multi-Device Invites:** Group contacts by individual identity rather than cryptic device IDs. Inviting a user broadcasts the invite simultaneously to all of their active online devices, allowing them to choose which device to join from.
+- **Voice Activity Detection & Glowing Halo:** Real-time microphone audio level monitoring with dynamic emerald speaker indicators (`isSpeaking`).
+- **Interactive In-Room Collaboration:** Built-in meeting chat, instant participant roster, camera/mic controls, and direct file dropping into the room.
+
+### 🔄 Continuous Real-Time Folder Mirroring (Background Sync) (New in v1.2.18)
+- **Automated Directory Synchronization:** Native OS filesystem watcher monitors source folders for file creations, modifications, and deletions.
+- **Seamless Background Mirroring:** Changes are automatically queued, packaged, and transmitted to paired remote machines in real time without manual re-selection.
+- **Conflict & Interruption Resilient:** Automatically handles Wi-Fi disconnections, laptop sleep states, and resumes transfers without duplicating files.
+
+### 🔍 Remote Folder Browser (On-Demand File Pulling) (New in v1.2.18)
+- **Direct Remote Exploration:** Securely browse approved remote folder directories on your paired devices (e.g., browse office PC from home laptop).
+- **1-Click File Pull:** Download specific files or folder trees on demand directly to your local computer without requiring the remote user to manually attach or send them.
+
+### 🎙️ Quick Voice Note (Perekam Suara Cepat) (New in v1.2.19)
+- **One-Click Audio Recording:** Fast in-chat voice recorder with live recording timer, animated waveform visualizer, and discard/send actions.
+- **Compact Audio Messaging:** Encoded and delivered via P2P encrypted channels; playable directly inside chat bubbles with custom seekable audio players.
+
+### 🖼️ Transfer History Preloaded Thumbnails & Asset Lightbox (New in v1.2.22)
+- **Native Rust High-Speed Thumbnails:** Native image decoding crate generates 320x240 compressed JPEG base64 thumbnails for both incoming and outgoing image transfers.
+- **Tauri v2 Asset Protocol & Zoom Lightbox:** Configured `protocol-asset` and asset security scopes enable full-resolution image zoom/pan lightboxes and in-app video/audio players.
+- **Clean Fallback Engine:** Gracefully falls back to clean file extension badges (`JPG`, `PNG`, `WEBP`, etc.) when files are moved or deleted, preventing broken browser image icons.
 
 ### 🚀 High-Speed & Resumable Transfer Engine
 - **Parallel Multi-Segment Streaming (IDM-Style):** Uses up to 6 concurrent parallel chunk streams for large files to maximize bandwidth utilization across local networks and WAN connections.
@@ -128,6 +163,8 @@ Raydrop is engineered specifically for users and organizations who require absol
 | **File Sizes & Hashes** | ❌ **Never logged or tracked** | ✅ Stored locally in device transfer history |
 | **Transfer Logs & History** | ❌ **Zero server logs** | ✅ Kept 100% offline on the user's computer |
 | **P2P Chat Messages & Media** | ❌ **Zero server DB (0 bytes stored)** | ✅ Stored 100% locally in client SQLite database |
+| **Voice & Video Meeting Streams** | ❌ **Never (0 bytes relayed/stored)** | ❌ Real-time direct P2P WebRTC only (not recorded) |
+| **Voice Notes & Audio Clips** | ❌ **Zero server storage** | ✅ Stored locally in recipient's private SQLite |
 | **User Account & Password** | ✅ Securely hashed (Argon2id / Salted SHA-256) | ✅ Cached auth token for sign-in |
 | **Registered Devices** | ✅ Device ID, name, OS, Ed25519 public key | ✅ Stored in local settings |
 | **Contacts & Trust Level** | ✅ Approved contact relationships | ✅ Synchronized contact list |
@@ -150,11 +187,11 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.15/Raydrop_1.2.15_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.15/Raydrop_1.2.15_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.15/Raydrop_1.2.15_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.15/Raydrop_1.2.15_amd64.AppImage) |
-| **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.15/Raydrop-arm64-v8a.apk) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.22/Raydrop_1.2.22_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.22/Raydrop_1.2.22_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.22/Raydrop_1.2.22_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.22/Raydrop_1.2.22_amd64.AppImage) |
+| **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.22/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**
 
