@@ -79,8 +79,20 @@
   let copiedRoomCode = false;
   let chatScrollContainer: HTMLDivElement;
 
-  // Local Video Element binding
-  let localVideoEl: HTMLVideoElement;
+  // Svelte action to reliably attach MediaStream to video/audio DOM elements
+  function attachStream(node: HTMLMediaElement, stream: MediaStream | null) {
+    node.srcObject = stream;
+    return {
+      update(newStream: MediaStream | null) {
+        if (node.srcObject !== newStream) {
+          node.srcObject = newStream;
+        }
+      },
+      destroy() {
+        node.srcObject = null;
+      },
+    };
+  }
 
   $: activeParticipantList = Object.values($participants);
   $: screenSharingPeer = activeParticipantList.find((p) => p.isScreenSharing) || ($isScreenSharing ? { deviceId: 'local', alias: 'You', stream: $localVideoStream } : null);
@@ -109,11 +121,6 @@
     }
   }
 
-  // Handle local video playback attachment
-  $: if (localVideoEl && $localVideoStream) {
-    localVideoEl.srcObject = $localVideoStream;
-  }
-
   // Auto-scroll meeting chat
   $: if (chatScrollContainer && $meetingChatMessages.length) {
     setTimeout(() => {
@@ -129,15 +136,25 @@
   async function handleJoinRoom() {
     const raw = inputRoomCode.trim();
     if (!raw) return;
-    // Extract room id from potential raydrop://room/xxx link or plain code
-    const cleanId = raw.replace(/^raydrop:\/\/room\//, '').trim();
-    await joinMeetingRoom(cleanId, 'Online Meeting');
+    // Support raydrop://room/xxx?host=yyy or room_xxx?host=yyy or plain code
+    let cleanId = raw.replace(/^raydrop:\/\/room\//, '').trim();
+    let hostDeviceId: string | undefined = undefined;
+
+    if (cleanId.includes('?')) {
+      const [rId, query] = cleanId.split('?');
+      cleanId = rId;
+      const params = new URLSearchParams(query);
+      hostDeviceId = params.get('host') || undefined;
+    }
+
+    await joinMeetingRoom(cleanId, 'Online Meeting', hostDeviceId);
     inputRoomCode = '';
   }
 
   async function copyRoomLink() {
     const code = $currentRoomId;
-    await navigator.clipboard.writeText(`raydrop://room/${code}`);
+    const myId = $appSettings.device_id;
+    await navigator.clipboard.writeText(`raydrop://room/${code}?host=${myId}`);
     copiedRoomCode = true;
     setTimeout(() => (copiedRoomCode = false), 2000);
   }
@@ -154,22 +171,27 @@
   }
 
   async function handleFileDropToMeeting() {
+    const currentParticipants = Object.keys($participants);
+    if (currentParticipants.length === 0) {
+      alert('Tidak ada peserta lain di room meeting saat ini. Silakan undang kontak terlebih dahulu!');
+      return;
+    }
+
     try {
       const selected = await open({
         multiple: true,
         directory: false,
-        title: 'Select Files to Share with Meeting Participants',
+        title: 'Pilih File untuk Dibagikan ke Peserta Meeting',
       });
       if (!selected) return;
       const paths = Array.isArray(selected) ? selected : [selected];
       if (paths.length === 0) return;
 
       // Transfer to all active participants in room
-      const currentParticipants = Object.keys($participants);
       for (const peerId of currentParticipants) {
         await raydropApi.initiateTransfer(peerId, paths);
       }
-      sendMeetingChat(`📎 Shared ${paths.length} file(s) via direct P2P transfer!`);
+      sendMeetingChat(`📎 Berhasil mengirim ${paths.length} file ke ${currentParticipants.length} peserta meeting!`);
     } catch (err) {
       console.warn('Failed to share files to meeting:', err);
     }
@@ -451,11 +473,11 @@
             <div class="flex-1 rounded-2xl bg-black border border-indigo-500/40 relative overflow-hidden flex items-center justify-center">
               {#if screenSharingPeer.deviceId === 'local'}
                 <video
-                  bind:this={localVideoEl}
                   autoplay
                   playsinline
                   muted
                   class="w-full h-full object-contain"
+                  use:attachStream={$localVideoStream}
                 ></video>
               {:else if screenSharingPeer.stream}
                 <!-- Remote Peer Video -->
@@ -463,7 +485,7 @@
                   autoplay
                   playsinline
                   class="w-full h-full object-contain"
-                  srcObject={screenSharingPeer.stream}
+                  use:attachStream={screenSharingPeer.stream}
                 ></video>
               {/if}
               <div class="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur-md px-3 py-1 rounded-xl text-xs font-mono border border-slate-700 text-slate-200">
@@ -490,7 +512,7 @@
                   {/if}
                   {#if peer.stream}
                     <!-- Hidden audio element auto-playing remote participant's voice -->
-                    <audio autoplay playsinline srcObject={peer.stream}></audio>
+                    <audio autoplay playsinline use:attachStream={peer.stream}></audio>
                   {/if}
                 </div>
               {/each}
@@ -503,11 +525,11 @@
             <div class="rounded-2xl bg-slate-900 border-2 {$isMicMuted ? 'border-slate-800' : 'border-emerald-500/40'} shadow-lg relative flex flex-col items-center justify-center overflow-hidden transition-all group">
               {#if $isCameraOn && $localVideoStream}
                 <video
-                  bind:this={localVideoEl}
                   autoplay
                   playsinline
                   muted
                   class="w-full h-full object-cover transform -scale-x-100"
+                  use:attachStream={$localVideoStream}
                 ></video>
               {:else}
                 <!-- Avatar / Initials Tile -->
@@ -543,7 +565,7 @@
                     autoplay
                     playsinline
                     class="w-full h-full object-cover"
-                    srcObject={peer.stream}
+                    use:attachStream={peer.stream}
                   ></video>
                 {:else}
                   <!-- Remote Avatar -->
@@ -558,7 +580,7 @@
 
                 <!-- Audio Playback -->
                 {#if peer.stream}
-                  <audio autoplay playsinline srcObject={peer.stream}></audio>
+                  <audio autoplay playsinline use:attachStream={peer.stream}></audio>
                 {/if}
 
                 <!-- Peer Badges -->

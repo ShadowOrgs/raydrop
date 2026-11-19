@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.18"
+    tag = clean_args[0] if clean_args else "v1.2.19"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: P2P Online Meeting, Discord-Style Voice Rooms & HD Screen Sharing"
+    title = f"Raydrop {tag}: P2P Online Meeting Handshake Fix, Mesh Sync & HD Screen Sharing"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: P2P Online Meeting, Discord-Style Voice Rooms & HD Screen Sharing</h2>
+<h2 align="center">Raydrop {tag}: P2P Online Meeting Handshake Fix, Mesh Sync & HD Screen Sharing</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,32 +126,19 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🎙️ Discord-Style P2P Voice Rooms & Speaking Detection
-- **Full-Mesh WebRTC Audio:** Ultra-low latency (<50ms) direct device-to-device audio stream with zero server recording or hosting fees.
-- **Active Speaking Indicator:** Web Audio `AnalyserNode` monitoring highlights speakers with glowing emerald borders in real-time.
-- **Persistent Voice Channels:** Jump into preset team lounges (*Lounge Room*, *Dev Standup*, *Gaming Channel*) or spin up custom rooms instantly.
-- **Audio Processing & Shortcuts:** Built-in echo cancellation, noise suppression, and auto gain control with keyboard shortcut `M` for instant mute/unmute.
+#### 🛠️ P2P Meeting Handshake & Mesh Synchronization Fix
+- **Direct Host & Guest Handshake:** Fixed room join signaling protocol so host and invited guests instantly discover each other and populate the participant grid.
+- **Full Mesh Room Discovery:** Guests now receive existing room participant rosters upon joining (`room_welcome`), automatically establishing WebRTC connections with all members.
+- **WebRTC Candidate Queueing:** Early ICE candidates arriving before `remoteDescription` is set are now queued and flushed safely, preventing connection timeouts.
+- **Native MediaStream DOM Binding:** Added dedicated Svelte action `use:attachStream` for direct `.srcObject` assignment, guaranteeing live video and audio play smoothly without freezing.
 
-#### 🖥️ Zoom-Style Video Grid & 1080p Screen Sharing
-- **Dynamic Video Grid:** Fluid multi-participant layout supporting 1 to 8 peers with automatic scaling.
-- **Spotlight Screen Share:** Stream desktop, application windows, or browser tabs in crystal-clear 1080p 60fps directly P2P without compression throttling.
-- **Webcam Cam Toggle:** Toggle your video feed on/off with shortcut `V`.
+#### 🖥️ Seamless HD Screen Sharing & Webcam Renegotiation
+- **Dynamic Track Replacement:** Switching between camera and 1080p 60fps screen share now uses `replaceTrack` with renegotiation fallback, keeping the call alive and uninterrupted.
+- **Spotlight Mode Auto-Switch:** When any participant starts presenting their screen, the UI automatically transitions to spotlight view with a mini-participant filmstrip below.
 
-#### 🚀 In-Meeting P2P File Drop (*Raydrop Exclusive*)
-- **Unlimited File Sharing Inside Calls:** Drag and drop or browse files of any size (even 10GB+ ISOs/videos) directly inside the meeting.
-- **Simultaneous Peer Transfer:** All room participants receive the file instantly via Raydrop's high-speed P2P transport engine.
-
-#### ✋ Raise Hand, Floating Reactions & Meeting Chat
-- **Raise Hand (Shortcut `H`):** Queue speaking turns cleanly with hand indicators.
-- **Floating Live Reactions:** Send floating emoji reactions (👍, ❤️, 👏, 😂, 🎉, 🔥) drifting across everyone's screens.
-- **In-Meeting Chat Drawer:** Collapsible sidebar for real-time messaging during presentations.
-
-#### ⏺️ Local Meeting Recording (Free & Zero-Cloud)
-- **Local Screen & Audio Recording:** Record meeting video and mixed audio directly to disk via `MediaRecorder` with live REC timer.
-- **Zero Cloud Costs:** Files save directly to your Raydrop download folder without limits or watermarks.
-
-#### 👥 Direct Contact Ring & Room Invite Links
-- **One-Click Ring / Invite:** Ring online contacts directly from chat header or contact list with accept/decline popup dialog.
-- **Shareable Links:** Copy `raydrop://room/<id>` links to invite external peers in one click.
+#### 📎 In-Meeting P2P File Drop Verified
+- **Multi-Peer Direct Transfer:** Files dropped or selected inside the meeting room are transferred in parallel to all active participants in the call via high-speed P2P transport.
+- **Real-Time Notification Banner:** Participants receive instant chat feedback showing the number of files shared across the room.
 """
+    update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store';
 import { raydropApi } from '../utils/tauri-ipc';
 import { appSettings, activeMainTab } from './state';
 import { myAvatar } from './avatars';
+import { contacts } from './contacts';
 
 export interface MeetingParticipant {
   deviceId: string;
@@ -57,15 +58,23 @@ let recordingTimer: any = null;
 let mediaRecorder: MediaRecorder | null = null;
 let recordedChunks: Blob[] = [];
 
+// Known peers in room or invited to room
+const knownRoomPeers: Set<string> = new Set();
+
 // WebRTC peer connections keyed by remote deviceId
 const peerConnections: Map<string, RTCPeerConnection> = new Map();
 const remoteStreams: Map<string, MediaStream> = new Map();
+// Queue for ICE candidates that arrive before setRemoteDescription
+const pendingCandidates: Map<string, RTCIceCandidateInit[]> = new Map();
 
-const ICE_SERVERS = {
+const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.raydrop.web.id:3478' },
     { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
   ],
+  iceCandidatePoolSize: 10,
 };
 
 function getMyInfo() {
@@ -140,7 +149,7 @@ export async function createMeetingRoom(title = 'Online Meeting'): Promise<strin
   return roomId;
 }
 
-export async function joinMeetingRoom(roomId: string, title = 'Online Meeting') {
+export async function joinMeetingRoom(roomId: string, title = 'Online Meeting', hostDeviceId?: string) {
   leaveMeetingRoom();
 
   currentRoomId.set(roomId);
@@ -148,18 +157,33 @@ export async function joinMeetingRoom(roomId: string, title = 'Online Meeting') 
   isInMeeting.set(true);
   participants.set({});
   meetingChatMessages.set([]);
+  pendingCandidates.clear();
 
   await initLocalAudio();
 
-  // Announce presence to any peers that might be in the room
-  // (Or wait for peers to be invited)
-  broadcastRoomSignal({
+  const joinPayload = {
     type: 'room_join',
+    roomId,
     user: getMyInfo(),
     isMuted: get(isMicMuted),
     isCameraOn: get(isCameraOn),
     isScreenSharing: get(isScreenSharing),
-  });
+  };
+
+  if (hostDeviceId) {
+    knownRoomPeers.add(hostDeviceId);
+    sendDirectSignal(hostDeviceId, joinPayload);
+  } else {
+    // Announce to all contacts and known peers
+    const allContacts = get(contacts);
+    const targetIds = new Set<string>(knownRoomPeers);
+    allContacts.forEach((c) => targetIds.add(c.device_id));
+    targetIds.forEach((tid) => {
+      if (tid && tid !== getMyInfo().deviceId) {
+        sendDirectSignal(tid, joinPayload);
+      }
+    });
+  }
 }
 
 export function leaveMeetingRoom() {
@@ -179,6 +203,8 @@ export function leaveMeetingRoom() {
   });
   peerConnections.clear();
   remoteStreams.clear();
+  pendingCandidates.clear();
+  knownRoomPeers.clear();
 
   // Stop local tracks
   const aStream = get(localAudioStream);
@@ -209,12 +235,16 @@ export function leaveMeetingRoom() {
   participants.set({});
   isScreenSharing.set(false);
   isCameraOn.set(false);
+  isMicMuted.set(false);
+  isHandRaised.set(false);
 }
 
 export async function inviteContactToMeeting(targetDeviceId: string) {
   const roomId = get(currentRoomId);
   const title = get(currentRoomTitle);
   const me = getMyInfo();
+
+  knownRoomPeers.add(targetDeviceId);
 
   await raydropApi.sendMeetingSignal(
     targetDeviceId,
@@ -409,22 +439,36 @@ export function stopRecording() {
 
 // ----------------- WebRTC Peer Handshake & Signaling -----------------
 
-function addTrackToPeers(track: MediaStreamTrack) {
-  peerConnections.forEach((pc) => {
+async function addTrackToPeers(track: MediaStreamTrack) {
+  for (const [peerId, pc] of peerConnections.entries()) {
     try {
-      pc.addTrack(track);
-    } catch (_) {}
-  });
+      const senders = pc.getSenders();
+      const existingSender = senders.find((s) => s.track && s.track.kind === track.kind);
+      if (existingSender) {
+        await existingSender.replaceTrack(track);
+      } else {
+        const stream = get(localVideoStream) || new MediaStream([track]);
+        pc.addTrack(track, stream);
+        await createAndSendOffer(peerId);
+      }
+    } catch (err) {
+      console.warn(`Failed to add track to peer ${peerId}:`, err);
+    }
+  }
 }
 
-function removeTrackFromPeers(kind: 'audio' | 'video') {
-  peerConnections.forEach((pc) => {
+async function removeTrackFromPeers(kind: 'audio' | 'video') {
+  for (const [peerId, pc] of peerConnections.entries()) {
     try {
       const senders = pc.getSenders();
       const sender = senders.find((s) => s.track && s.track.kind === kind);
-      if (sender) pc.removeTrack(sender);
-    } catch (_) {}
-  });
+      if (sender) {
+        await sender.replaceTrack(null);
+      }
+    } catch (err) {
+      console.warn(`Failed to remove track from peer ${peerId}:`, err);
+    }
+  }
 }
 
 function getOrCreatePeerConnection(peerDeviceId: string): RTCPeerConnection {
@@ -458,10 +502,12 @@ function getOrCreatePeerConnection(peerDeviceId: string): RTCPeerConnection {
   pc.ontrack = (event) => {
     let stream = remoteStreams.get(peerDeviceId);
     if (!stream) {
-      stream = new MediaStream();
+      stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream();
       remoteStreams.set(peerDeviceId, stream);
     }
-    stream.addTrack(event.track);
+    if (!stream.getTracks().includes(event.track)) {
+      stream.addTrack(event.track);
+    }
 
     participants.update((map) => {
       if (map[peerDeviceId]) {
@@ -486,6 +532,10 @@ function getOrCreatePeerConnection(peerDeviceId: string): RTCPeerConnection {
 
 async function createAndSendOffer(peerDeviceId: string) {
   const pc = getOrCreatePeerConnection(peerDeviceId);
+  if (pc.signalingState !== 'stable') {
+    await new Promise((r) => setTimeout(r, 150));
+    if (pc.signalingState !== 'stable') return;
+  }
   try {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -498,10 +548,33 @@ async function createAndSendOffer(peerDeviceId: string) {
   }
 }
 
+async function flushPendingCandidates(peerDeviceId: string, pc: RTCPeerConnection) {
+  const queue = pendingCandidates.get(peerDeviceId);
+  if (!queue || queue.length === 0) return;
+  for (const cand of queue) {
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(cand));
+    } catch (err) {
+      console.warn(`Failed to add queued candidate for ${peerDeviceId}:`, err);
+    }
+  }
+  pendingCandidates.delete(peerDeviceId);
+}
+
 async function handleReceivedOffer(peerDeviceId: string, sdp: RTCSessionDescriptionInit) {
   const pc = getOrCreatePeerConnection(peerDeviceId);
   try {
-    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    if (pc.signalingState !== 'stable') {
+      await Promise.all([
+        pc.setLocalDescription({ type: 'rollback' } as any),
+        pc.setRemoteDescription(new RTCSessionDescription(sdp)),
+      ]).catch(async () => {
+        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      });
+    } else {
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    }
+    await flushPendingCandidates(peerDeviceId, pc);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     sendDirectSignal(peerDeviceId, {
@@ -518,6 +591,7 @@ async function handleReceivedAnswer(peerDeviceId: string, sdp: RTCSessionDescrip
   if (!pc) return;
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    await flushPendingCandidates(peerDeviceId, pc);
   } catch (err) {
     console.warn(`Failed to set remote answer for ${peerDeviceId}:`, err);
   }
@@ -525,7 +599,12 @@ async function handleReceivedAnswer(peerDeviceId: string, sdp: RTCSessionDescrip
 
 async function handleReceivedCandidate(peerDeviceId: string, candidate: RTCIceCandidateInit) {
   const pc = peerConnections.get(peerDeviceId);
-  if (!pc) return;
+  if (!pc || !pc.remoteDescription) {
+    const queue = pendingCandidates.get(peerDeviceId) || [];
+    queue.push(candidate);
+    pendingCandidates.set(peerDeviceId, queue);
+    return;
+  }
   try {
     await pc.addIceCandidate(new RTCIceCandidate(candidate));
   } catch (err) {
@@ -547,8 +626,15 @@ function broadcastRoomSignal(payload: any) {
   const roomId = get(currentRoomId);
   if (!roomId) return;
 
-  Object.keys(parts).forEach((targetId) => {
-    sendDirectSignal(targetId, payload);
+  const targetIds = new Set<string>([
+    ...Object.keys(parts),
+    ...Array.from(knownRoomPeers),
+  ]);
+
+  targetIds.forEach((targetId) => {
+    if (targetId && targetId !== getMyInfo().deviceId) {
+      sendDirectSignal(targetId, payload);
+    }
   });
 }
 
@@ -560,7 +646,9 @@ function sendDirectSignal(targetDeviceId: string, payload: any) {
     targetDeviceId,
     `meeting:${roomId}`,
     payload
-  ).catch(() => {});
+  ).catch((err) => {
+    console.warn(`Failed to send meeting signal to ${targetDeviceId}:`, err);
+  });
 }
 
 // ----------------- Global Meeting Signal Listener -----------------
@@ -580,7 +668,7 @@ export function setupMeetingSignalListener() {
       incomingInvite.set({
         roomId: data.roomId,
         roomTitle: data.roomTitle || 'Online Meeting',
-        fromDeviceId: data.fromDeviceId,
+        fromDeviceId: data.fromDeviceId || fromId,
         fromAlias: data.fromAlias || 'Contact',
         fromAvatar: data.fromAvatar || null,
       });
@@ -592,12 +680,16 @@ export function setupMeetingSignalListener() {
 
     // 2. Peer Joining Room
     if (data.type === 'room_join') {
+      if (data.roomId && data.roomId !== myRoomId) return;
+
       const u = data.user;
+      knownRoomPeers.add(fromId);
+
       participants.update((map) => {
         map[fromId] = {
           deviceId: fromId,
-          alias: u.alias || 'Peer',
-          avatar: u.avatar || null,
+          alias: u?.alias || 'Peer',
+          avatar: u?.avatar || null,
           isMuted: data.isMuted ?? false,
           isCameraOn: data.isCameraOn ?? false,
           isScreenSharing: data.isScreenSharing ?? false,
@@ -608,27 +700,46 @@ export function setupMeetingSignalListener() {
         return { ...map };
       });
 
-      // Reply with our info and initiate WebRTC offer
+      // Existing participants excluding new joiner
+      const currentParts = Object.values(get(participants))
+        .filter((p) => p.deviceId !== fromId)
+        .map((p) => ({
+          deviceId: p.deviceId,
+          alias: p.alias,
+          avatar: p.avatar,
+          isMuted: p.isMuted,
+          isCameraOn: p.isCameraOn,
+          isScreenSharing: p.isScreenSharing,
+        }));
+
+      // Reply with our info and existing room participants
       sendDirectSignal(fromId, {
         type: 'room_welcome',
+        roomId: myRoomId,
         user: getMyInfo(),
         isMuted: get(isMicMuted),
         isCameraOn: get(isCameraOn),
         isScreenSharing: get(isScreenSharing),
+        existingParticipants: currentParts,
       });
 
+      // Initiate WebRTC offer to new joiner
       await createAndSendOffer(fromId);
       return;
     }
 
     // 3. Room Welcome (response to join)
     if (data.type === 'room_welcome') {
+      if (data.roomId && data.roomId !== myRoomId) return;
+
       const u = data.user;
+      knownRoomPeers.add(fromId);
+
       participants.update((map) => {
         map[fromId] = {
           deviceId: fromId,
-          alias: u.alias || 'Peer',
-          avatar: u.avatar || null,
+          alias: u?.alias || 'Host',
+          avatar: u?.avatar || null,
           isMuted: data.isMuted ?? false,
           isCameraOn: data.isCameraOn ?? false,
           isScreenSharing: data.isScreenSharing ?? false,
@@ -638,6 +749,37 @@ export function setupMeetingSignalListener() {
         };
         return { ...map };
       });
+
+      // Also mesh with other participants in the room
+      if (Array.isArray(data.existingParticipants)) {
+        for (const peer of data.existingParticipants) {
+          if (peer.deviceId && peer.deviceId !== getMyInfo().deviceId && !get(participants)[peer.deviceId]) {
+            knownRoomPeers.add(peer.deviceId);
+            participants.update((map) => {
+              map[peer.deviceId] = {
+                deviceId: peer.deviceId,
+                alias: peer.alias || 'Peer',
+                avatar: peer.avatar || null,
+                isMuted: peer.isMuted ?? false,
+                isCameraOn: peer.isCameraOn ?? false,
+                isScreenSharing: peer.isScreenSharing ?? false,
+                isSpeaking: false,
+                isHandRaised: false,
+                stream: remoteStreams.get(peer.deviceId) || null,
+              };
+              return { ...map };
+            });
+            sendDirectSignal(peer.deviceId, {
+              type: 'room_join',
+              roomId: myRoomId,
+              user: getMyInfo(),
+              isMuted: get(isMicMuted),
+              isCameraOn: get(isCameraOn),
+              isScreenSharing: get(isScreenSharing),
+            });
+          }
+        }
+      }
       return;
     }
 
@@ -696,6 +838,7 @@ export function setupMeetingSignalListener() {
         peerConnections.delete(fromId);
       }
       remoteStreams.delete(fromId);
+      knownRoomPeers.delete(fromId);
       participants.update((map) => {
         delete map[fromId];
         return { ...map };

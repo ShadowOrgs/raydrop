@@ -11,7 +11,7 @@
     const inv = $incomingInvite;
     incomingInvite.set(null);
     activeMainTab.set('meeting');
-    joinMeetingRoom(inv.roomId, inv.roomTitle);
+    joinMeetingRoom(inv.roomId, inv.roomTitle, inv.fromDeviceId);
   }
 
   function handleDecline() {
