@@ -862,105 +862,163 @@ pub async fn check_app_update(app: AppHandle) -> Result<UpdateCheckResult, Strin
     let current_version = app.package_info().version.to_string();
 
     let client = reqwest::Client::builder()
-        .user_agent("Raydrop-Desktop-App")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .timeout(std::time::Duration::from_secs(12))
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
 
-    let res = client
+    // Strategy 1: Attempt standard GitHub API call
+    let api_res = client
         .get("https://api.github.com/repos/asepindrak/raydrop/releases/latest")
         .send()
-        .await
-        .map_err(|e| format!("Unable to reach GitHub update server: {e}"))?;
+        .await;
 
-    if !res.status().is_success() {
-        return Err(format!("Update check returned HTTP {}", res.status()));
+    let mut parsed_release: Option<(String, String, String, String, String, Option<String>, Option<String>, Option<u64>)> = None;
+
+    if let Ok(res) = api_res {
+        if res.status().is_success() {
+            if let Ok(release_val) = res.json::<serde_json::Value>().await {
+                let tag_name = release_val["tag_name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+                let release_title = release_val["name"]
+                    .as_str()
+                    .unwrap_or(&tag_name)
+                    .to_string();
+                let release_notes = release_val["body"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+                let release_date = release_val["published_at"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+                let html_url = release_val["html_url"]
+                    .as_str()
+                    .unwrap_or("https://github.com/asepindrak/raydrop/releases")
+                    .to_string();
+
+                let mut download_url = None;
+                let mut asset_name = None;
+                let mut asset_size = None;
+
+                if let Some(assets) = release_val["assets"].as_array() {
+                    #[cfg(target_os = "android")]
+                    let target_asset = assets.iter().find(|a| {
+                        let name = a["name"].as_str().unwrap_or("").to_lowercase();
+                        name.ends_with(".apk")
+                    });
+
+                    #[cfg(target_os = "windows")]
+                    let target_asset = assets.iter().find(|a| {
+                        let name = a["name"].as_str().unwrap_or("").to_lowercase();
+                        name.ends_with(".msi")
+                    }).or_else(|| {
+                        assets.iter().find(|a| {
+                            let name = a["name"].as_str().unwrap_or("").to_lowercase();
+                            name.ends_with(".exe")
+                        })
+                    });
+
+                    #[cfg(target_os = "macos")]
+                    let target_asset = assets.iter().find(|a| {
+                        let name = a["name"].as_str().unwrap_or("").to_lowercase();
+                        name.ends_with(".dmg")
+                    });
+
+                    #[cfg(target_os = "linux")]
+                    let target_asset = assets.iter().find(|a| {
+                        let name = a["name"].as_str().unwrap_or("").to_lowercase();
+                        name.ends_with(".appimage")
+                    }).or_else(|| {
+                        assets.iter().find(|a| {
+                            let name = a["name"].as_str().unwrap_or("").to_lowercase();
+                            name.ends_with(".deb")
+                        })
+                    });
+
+                    #[cfg(not(any(target_os = "android", target_os = "windows", target_os = "macos", target_os = "linux")))]
+                    let target_asset = assets.iter().find(|a| {
+                        let name = a["name"].as_str().unwrap_or("").to_lowercase();
+                        name.ends_with(".msi") || name.ends_with(".apk") || name.ends_with(".dmg") || name.ends_with(".appimage")
+                    });
+
+                    if let Some(a) = target_asset {
+                        download_url = a["browser_download_url"].as_str().map(String::from);
+                        asset_name = a["name"].as_str().map(String::from);
+                        asset_size = a["size"].as_u64();
+                    }
+                }
+
+                parsed_release = Some((tag_name, release_title, release_notes, release_date, html_url, download_url, asset_name, asset_size));
+            }
+        }
     }
 
-    let release_val: serde_json::Value = res
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse release response: {e}"))?;
+    // Strategy 2: If API was rate-limited (HTTP 403) or unreachable, fallback to direct GitHub web redirect
+    if parsed_release.is_none() {
+        let web_res = client
+            .get("https://github.com/asepindrak/raydrop/releases/latest")
+            .send()
+            .await
+            .map_err(|e| format!("Unable to reach GitHub update server: {e}"))?;
 
-    let tag_name = release_val["tag_name"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-    let release_title = release_val["name"]
-        .as_str()
-        .unwrap_or(&tag_name)
-        .to_string();
-    let release_notes = release_val["body"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-    let release_date = release_val["published_at"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-    let html_url = release_val["html_url"]
-        .as_str()
-        .unwrap_or("https://github.com/asepindrak/raydrop/releases")
-        .to_string();
+        let final_url = web_res.url().to_string();
+        // Expected redirect format: https://github.com/asepindrak/raydrop/releases/tag/vX.X.X
+        let tag_name = final_url
+            .split("/tag/")
+            .nth(1)
+            .map(|s| s.trim_matches('/').to_string())
+            .unwrap_or_default();
+
+        if tag_name.is_empty() {
+            return Err("Unable to determine latest release tag from GitHub".to_string());
+        }
+
+        let clean_latest = tag_name.trim_start_matches('v').trim_start_matches('V').to_string();
+        let release_title = format!("Raydrop {tag_name}");
+        let html_url = format!("https://github.com/asepindrak/raydrop/releases/tag/{tag_name}");
+        let release_notes = "Latest Raydrop Release. Visit GitHub Releases for full changelog.".to_string();
+        let release_date = "".to_string();
+
+        let mut download_url = None;
+        let mut asset_name = None;
+        let mut asset_size = None;
+
+        #[cfg(target_os = "windows")]
+        let candidate_filename = format!("Raydrop_{clean_latest}_x64_en-US.msi");
+        #[cfg(target_os = "android")]
+        let candidate_filename = "Raydrop-arm64-v8a.apk".to_string();
+        #[cfg(target_os = "macos")]
+        let candidate_filename = format!("Raydrop_{clean_latest}_universal.dmg");
+        #[cfg(target_os = "linux")]
+        let candidate_filename = format!("Raydrop_{clean_latest}_amd64.AppImage");
+        #[cfg(not(any(target_os = "android", target_os = "windows", target_os = "macos", target_os = "linux")))]
+        let candidate_filename = format!("Raydrop_{clean_latest}_x64_en-US.msi");
+
+        let candidate_url = format!(
+            "https://github.com/asepindrak/raydrop/releases/download/{tag_name}/{candidate_filename}"
+        );
+
+        // Check if candidate asset is available on GitHub release assets CDN
+        if let Ok(head_res) = client.head(&candidate_url).send().await {
+            if head_res.status().is_success() || head_res.status().is_redirection() {
+                asset_size = head_res.content_length();
+                download_url = Some(candidate_url);
+                asset_name = Some(candidate_filename);
+            }
+        }
+
+        parsed_release = Some((tag_name, release_title, release_notes, release_date, html_url, download_url, asset_name, asset_size));
+    }
+
+    let (tag_name, release_title, release_notes, release_date, html_url, download_url, asset_name, asset_size) =
+        parsed_release.ok_or_else(|| "Failed to resolve release details".to_string())?;
 
     let clean_latest = tag_name.trim_start_matches('v').trim_start_matches('V').to_string();
     let is_newer = is_newer_version(&clean_latest, &current_version);
 
-    let mut download_url = None;
-    let mut asset_name = None;
-    let mut asset_size = None;
-
-    if let Some(assets) = release_val["assets"].as_array() {
-        #[cfg(target_os = "android")]
-        let target_asset = assets.iter().find(|a| {
-            let name = a["name"].as_str().unwrap_or("").to_lowercase();
-            name.ends_with(".apk")
-        });
-
-        #[cfg(target_os = "windows")]
-        let target_asset = assets.iter().find(|a| {
-            let name = a["name"].as_str().unwrap_or("").to_lowercase();
-            name.ends_with(".msi")
-        }).or_else(|| {
-            assets.iter().find(|a| {
-                let name = a["name"].as_str().unwrap_or("").to_lowercase();
-                name.ends_with(".exe")
-            })
-        });
-
-        #[cfg(target_os = "macos")]
-        let target_asset = assets.iter().find(|a| {
-            let name = a["name"].as_str().unwrap_or("").to_lowercase();
-            name.ends_with(".dmg")
-        });
-
-        #[cfg(target_os = "linux")]
-        let target_asset = assets.iter().find(|a| {
-            let name = a["name"].as_str().unwrap_or("").to_lowercase();
-            name.ends_with(".appimage")
-        }).or_else(|| {
-            assets.iter().find(|a| {
-                let name = a["name"].as_str().unwrap_or("").to_lowercase();
-                name.ends_with(".deb")
-            })
-        });
-
-        #[cfg(not(any(target_os = "android", target_os = "windows", target_os = "macos", target_os = "linux")))]
-        let target_asset = assets.iter().find(|a| {
-            let name = a["name"].as_str().unwrap_or("").to_lowercase();
-            name.ends_with(".msi") || name.ends_with(".apk") || name.ends_with(".dmg") || name.ends_with(".appimage")
-        });
-
-        if let Some(a) = target_asset {
-            download_url = a["browser_download_url"].as_str().map(String::from);
-            asset_name = a["name"].as_str().map(String::from);
-            asset_size = a["size"].as_u64();
-        }
-    }
-
-    // A real, actionable update ONLY exists if:
-    // 1. The remote version is strictly newer than current_version
-    // 2. AND the installer binary for the user's OS has completed compilation and is uploaded to GitHub release assets!
     let has_update = is_newer && download_url.is_some();
     let is_building = is_newer && download_url.is_none();
 

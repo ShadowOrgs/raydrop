@@ -42,15 +42,8 @@ export async function checkForUpdates(manual: boolean = false): Promise<boolean>
       return true;
     } else {
       if (manual) {
-        if (res.is_building) {
-          updateStatusMessage.set(
-            `Raydrop ${res.latest_version} has been published and installers are currently compiling on GitHub Actions. Please check back shortly!`
-          );
-          setTimeout(() => updateStatusMessage.set(''), 6000);
-        } else {
-          updateStatusMessage.set(`Raydrop v${res.current_version} is up to date!`);
-          setTimeout(() => updateStatusMessage.set(''), 4000);
-        }
+        // Always open modal on manual check so user sees exact status (Up to Date or Compiling)
+        updateModalOpen.set(true);
       }
       return false;
     }
@@ -59,7 +52,7 @@ export async function checkForUpdates(manual: boolean = false): Promise<boolean>
     if (manual) {
       const msg = typeof err === 'string' ? err : err?.message || 'Failed to check for updates';
       updateErrorMessage.set(msg);
-      setTimeout(() => updateErrorMessage.set(''), 4000);
+      updateModalOpen.set(true);
     }
     return false;
   } finally {
