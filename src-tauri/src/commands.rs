@@ -1,4 +1,4 @@
-use crate::db::storage::{now_unix_secs, AppSettings, ChatMessage, Contact, TransferRecord};
+use crate::db::storage::{now_unix_secs, AppSettings, ChatGroup, ChatMessage, Contact, GroupMember, TransferRecord};
 use crate::network::transport::{initiate_peer_transfer, resume_peer_transfer};
 use crate::os::{register_context_menu, set_autostart};
 use crate::state::{AppState, IncomingRequestDecision};
@@ -1634,6 +1634,9 @@ pub fn send_chat_message(
         None
     };
 
+    let my_id = state.identity.device_id.clone();
+    let my_alias = state.settings.lock().unwrap().alias_name.clone();
+
     let chat_msg = ChatMessage {
         id: msg_id.clone(),
         peer_device_id: peer_device_id.clone(),
@@ -1644,6 +1647,8 @@ pub fn send_chat_message(
         files_json: enriched_files_json.clone(),
         is_read: true,
         created_at: now,
+        sender_device_id: Some(my_id.clone()),
+        sender_alias: Some(my_alias.clone()),
     };
 
     state.db.insert_chat_message(&chat_msg)?;
@@ -1769,6 +1774,587 @@ pub fn get_unread_chat_counts(
     state: State<'_, Arc<AppState>>,
 ) -> Result<std::collections::HashMap<String, u32>, String> {
     state.db.get_unread_chat_counts()
+}
+
+pub fn send_raw_packet_to_device(
+    state: &Arc<AppState>,
+    target_device_id: &str,
+    session_id: &str,
+    payload_json: &str,
+) {
+    let hex_payload = hex::encode(payload_json.as_bytes());
+
+    // 1. Send via WAN signaling relay
+    if let Some(tx) = state.signaling_tx.lock().unwrap().as_ref() {
+        let packet = json!({
+            "type": "RELAY_CONTROL",
+            "session_id": session_id,
+            "from_device_id": state.identity.device_id,
+            "target_device_id": target_device_id,
+            "payload_json": hex_payload
+        })
+        .to_string();
+        let _ = tx.send(packet);
+    }
+
+    // 2. Also send via direct LAN TCP if IP/port are known
+    if let Ok(Some(contact)) = state.db.get_contact(target_device_id) {
+        if let (Some(ip), Some(port)) = (contact.last_known_ip, contact.last_known_port) {
+            let target_addr = format!("{}:{}", ip, port);
+            let hex_p = hex_payload.clone();
+            let my_dev_id = state.identity.device_id.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(Ok(mut stream)) = tokio::time::timeout(
+                    std::time::Duration::from_millis(1500),
+                    tokio::net::TcpStream::connect(&target_addr),
+                )
+                .await
+                {
+                    let packet_val = json!({
+                        "type": "CHAT",
+                        "from_device_id": my_dev_id,
+                        "payload_json": hex_p
+                    });
+                    if let Ok(data) = serde_json::to_vec(&packet_val) {
+                        let len_prefix = (data.len() as u32).to_be_bytes();
+                        use tokio::io::AsyncWriteExt;
+                        let _ = stream.write_all(&len_prefix).await;
+                        let _ = stream.write_all(&data).await;
+                        let _ = stream.flush().await;
+                    }
+                }
+            });
+        }
+    }
+}
+
+#[tauri::command]
+pub fn create_chat_group(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    name: String,
+    description: Option<String>,
+    avatar: Option<String>,
+    member_device_ids: Vec<String>,
+) -> Result<ChatGroup, String> {
+    let now = now_unix_secs();
+    let group_id = format!("group_{}_{}", now, &uuid::Uuid::new_v4().to_string()[..8]);
+    let my_id = state.identity.device_id.clone();
+    let my_alias = state.settings.lock().unwrap().alias_name.clone();
+    let my_avatar = get_my_avatar_internal();
+
+    let mut members = Vec::new();
+    // 1. Add creator as Owner (Admin Utama)
+    members.push(GroupMember {
+        device_id: my_id.clone(),
+        alias: if my_alias.trim().is_empty() { "You".to_string() } else { my_alias.clone() },
+        avatar: my_avatar,
+        role: "owner".to_string(),
+        joined_at: now,
+    });
+
+    // 2. Add invited members
+    for dev_id in &member_device_ids {
+        if dev_id == &my_id {
+            continue;
+        }
+        let alias = state
+            .db
+            .get_contact(dev_id)
+            .ok()
+            .flatten()
+            .and_then(|c| c.custom_name.or(Some(c.alias_name)))
+            .unwrap_or_else(|| format!("Member ({})", &dev_id[..6.min(dev_id.len())]));
+
+        members.push(GroupMember {
+            device_id: dev_id.clone(),
+            alias,
+            avatar: None,
+            role: "member".to_string(),
+            joined_at: now,
+        });
+    }
+
+    let group = ChatGroup {
+        id: group_id.clone(),
+        name: name.trim().to_string(),
+        description: description.map(|d| d.trim().to_string()).filter(|d| !d.is_empty()),
+        avatar,
+        owner_id: my_id.clone(),
+        send_permission: "all".to_string(),
+        allowed_senders: Vec::new(),
+        members,
+        created_at: now,
+        updated_at: now,
+    };
+
+    state.db.upsert_chat_group(&group)?;
+
+    // Broadcast GROUP_INVITE to all invited members
+    let invite_payload = json!({
+        "control_type": "GROUP_INVITE",
+        "group": &group,
+        "invited_by": my_id,
+        "invited_by_alias": my_alias,
+    })
+    .to_string();
+
+    let state_arc = state.inner().clone();
+    for dev_id in &member_device_ids {
+        if dev_id != &my_id {
+            send_raw_packet_to_device(&state_arc, dev_id, &format!("grp_ctl:{group_id}"), &invite_payload);
+        }
+    }
+
+    let _ = app.emit("chat_group_updated", &group);
+    Ok(group)
+}
+
+#[tauri::command]
+pub fn get_chat_groups(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<ChatGroup>, String> {
+    state.db.list_chat_groups()
+}
+
+#[tauri::command]
+pub fn get_chat_group(
+    state: State<'_, Arc<AppState>>,
+    group_id: String,
+) -> Result<Option<ChatGroup>, String> {
+    state.db.get_chat_group(&group_id)
+}
+
+#[tauri::command]
+pub fn update_chat_group_details(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    group_id: String,
+    name: String,
+    description: Option<String>,
+    avatar: Option<String>,
+) -> Result<ChatGroup, String> {
+    let mut group = state
+        .db
+        .get_chat_group(&group_id)?
+        .ok_or_else(|| format!("Group not found: {group_id}"))?;
+
+    let my_id = &state.identity.device_id;
+    let is_admin = group.owner_id == *my_id || group.members.iter().any(|m| m.device_id == *my_id && m.role == "admin");
+    if !is_admin {
+        return Err("Hanya admin yang dapat mengubah info grup".to_string());
+    }
+
+    group.name = name.trim().to_string();
+    group.description = description.map(|d| d.trim().to_string()).filter(|d| !d.is_empty());
+    if avatar.is_some() {
+        group.avatar = avatar;
+    }
+    group.updated_at = now_unix_secs();
+
+    state.db.upsert_chat_group(&group)?;
+
+    let update_payload = json!({
+        "control_type": "GROUP_UPDATE",
+        "group": &group,
+    })
+    .to_string();
+
+    let state_arc = state.inner().clone();
+    for m in &group.members {
+        if &m.device_id != my_id {
+            send_raw_packet_to_device(&state_arc, &m.device_id, &format!("grp_ctl:{group_id}"), &update_payload);
+        }
+    }
+
+    let _ = app.emit("chat_group_updated", &group);
+    Ok(group)
+}
+
+#[tauri::command]
+pub fn invite_group_members(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    group_id: String,
+    new_device_ids: Vec<String>,
+) -> Result<ChatGroup, String> {
+    let mut group = state
+        .db
+        .get_chat_group(&group_id)?
+        .ok_or_else(|| format!("Group not found: {group_id}"))?;
+
+    let my_id = &state.identity.device_id;
+    let my_alias = state.settings.lock().unwrap().alias_name.clone();
+
+    // Requirement: Hanya admin yang bisa invite user
+    let is_admin = group.owner_id == *my_id || group.members.iter().any(|m| m.device_id == *my_id && m.role == "admin");
+    if !is_admin {
+        return Err("Hanya admin yang dapat mengundang anggota ke grup ini".to_string());
+    }
+
+    let now = now_unix_secs();
+    let mut added_ids = Vec::new();
+
+    for dev_id in new_device_ids {
+        if !group.members.iter().any(|m| m.device_id == dev_id) {
+            let alias = state
+                .db
+                .get_contact(&dev_id)
+                .ok()
+                .flatten()
+                .and_then(|c| c.custom_name.or(Some(c.alias_name)))
+                .unwrap_or_else(|| format!("Member ({})", &dev_id[..6.min(dev_id.len())]));
+
+            group.members.push(GroupMember {
+                device_id: dev_id.clone(),
+                alias,
+                avatar: None,
+                role: "member".to_string(),
+                joined_at: now,
+            });
+            added_ids.push(dev_id);
+        }
+    }
+
+    group.updated_at = now;
+    state.db.upsert_chat_group(&group)?;
+
+    let invite_payload = json!({
+        "control_type": "GROUP_INVITE",
+        "group": &group,
+        "invited_by": my_id,
+        "invited_by_alias": my_alias,
+    })
+    .to_string();
+
+    let update_payload = json!({
+        "control_type": "GROUP_UPDATE",
+        "group": &group,
+    })
+    .to_string();
+
+    let state_arc = state.inner().clone();
+    for m in &group.members {
+        if &m.device_id != my_id {
+            if added_ids.contains(&m.device_id) {
+                send_raw_packet_to_device(&state_arc, &m.device_id, &format!("grp_ctl:{group_id}"), &invite_payload);
+            } else {
+                send_raw_packet_to_device(&state_arc, &m.device_id, &format!("grp_ctl:{group_id}"), &update_payload);
+            }
+        }
+    }
+
+    let _ = app.emit("chat_group_updated", &group);
+    Ok(group)
+}
+
+#[tauri::command]
+pub fn remove_group_member(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    group_id: String,
+    target_device_id: String,
+) -> Result<ChatGroup, String> {
+    let mut group = state
+        .db
+        .get_chat_group(&group_id)?
+        .ok_or_else(|| format!("Group not found: {group_id}"))?;
+
+    let my_id = &state.identity.device_id;
+    let is_owner = group.owner_id == *my_id;
+    let is_admin = is_owner || group.members.iter().any(|m| m.device_id == *my_id && m.role == "admin");
+
+    if !is_admin {
+        return Err("Hanya admin yang dapat mengeluarkan anggota".to_string());
+    }
+
+    if target_device_id == group.owner_id {
+        return Err("Admin Utama tidak dapat dikeluarkan dari grup".to_string());
+    }
+
+    if !is_owner {
+        let target_role = group.members.iter().find(|m| m.device_id == target_device_id).map(|m| &m.role);
+        if target_role == Some(&"admin".to_string()) {
+            return Err("Hanya Admin Utama yang dapat mengeluarkan sesama admin".to_string());
+        }
+    }
+
+    group.members.retain(|m| m.device_id != target_device_id);
+    group.allowed_senders.retain(|id| id != &target_device_id);
+    group.updated_at = now_unix_secs();
+    state.db.upsert_chat_group(&group)?;
+
+    let removed_payload = json!({
+        "control_type": "GROUP_MEMBER_REMOVED",
+        "group_id": group_id,
+        "target_device_id": target_device_id,
+    })
+    .to_string();
+
+    let update_payload = json!({
+        "control_type": "GROUP_UPDATE",
+        "group": &group,
+    })
+    .to_string();
+
+    let state_arc = state.inner().clone();
+    send_raw_packet_to_device(&state_arc, &target_device_id, &format!("grp_ctl:{group_id}"), &removed_payload);
+
+    for m in &group.members {
+        if &m.device_id != my_id {
+            send_raw_packet_to_device(&state_arc, &m.device_id, &format!("grp_ctl:{group_id}"), &update_payload);
+        }
+    }
+
+    let _ = app.emit("chat_group_updated", &group);
+    Ok(group)
+}
+
+#[tauri::command]
+pub fn set_member_role(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    group_id: String,
+    target_device_id: String,
+    new_role: String,
+) -> Result<ChatGroup, String> {
+    let mut group = state
+        .db
+        .get_chat_group(&group_id)?
+        .ok_or_else(|| format!("Group not found: {group_id}"))?;
+
+    let my_id = &state.identity.device_id;
+
+    // Requirement: Admin utama bisa menentukan siapa aja yang mau dijadikan admin
+    if group.owner_id != *my_id {
+        return Err("Hanya Admin Utama yang dapat mengangkat atau menurunkan admin".to_string());
+    }
+
+    if target_device_id == group.owner_id {
+        return Err("Peran Admin Utama tidak dapat diubah".to_string());
+    }
+
+    if new_role != "admin" && new_role != "member" {
+        return Err("Peran tidak valid. Pilihan: 'admin' atau 'member'".to_string());
+    }
+
+    let mut found = false;
+    for m in &mut group.members {
+        if m.device_id == target_device_id {
+            m.role = new_role.clone();
+            found = true;
+            break;
+        }
+    }
+
+    if !found {
+        return Err("Anggota tidak ditemukan dalam grup".to_string());
+    }
+
+    group.updated_at = now_unix_secs();
+    state.db.upsert_chat_group(&group)?;
+
+    let update_payload = json!({
+        "control_type": "GROUP_UPDATE",
+        "group": &group,
+    })
+    .to_string();
+
+    let state_arc = state.inner().clone();
+    for m in &group.members {
+        if &m.device_id != my_id {
+            send_raw_packet_to_device(&state_arc, &m.device_id, &format!("grp_ctl:{group_id}"), &update_payload);
+        }
+    }
+
+    let _ = app.emit("chat_group_updated", &group);
+    Ok(group)
+}
+
+#[tauri::command]
+pub fn set_group_send_permission(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    group_id: String,
+    send_permission: String,
+    allowed_senders: Option<Vec<String>>,
+) -> Result<ChatGroup, String> {
+    let mut group = state
+        .db
+        .get_chat_group(&group_id)?
+        .ok_or_else(|| format!("Group not found: {group_id}"))?;
+
+    let my_id = &state.identity.device_id;
+    let is_admin = group.owner_id == *my_id || group.members.iter().any(|m| m.device_id == *my_id && m.role == "admin");
+    if !is_admin {
+        return Err("Hanya admin yang dapat mengatur izin kirim pesan grup".to_string());
+    }
+
+    // Requirement: kirim chat (hanya admin, all member atau custom)
+    match send_permission.as_str() {
+        "all" | "admins_only" | "custom" => {}
+        _ => return Err("Izin kirim pesan tidak valid. Pilihan: 'all', 'admins_only', atau 'custom'".to_string()),
+    }
+
+    group.send_permission = send_permission;
+    if let Some(list) = allowed_senders {
+        group.allowed_senders = list;
+    }
+    group.updated_at = now_unix_secs();
+    state.db.upsert_chat_group(&group)?;
+
+    let update_payload = json!({
+        "control_type": "GROUP_UPDATE",
+        "group": &group,
+    })
+    .to_string();
+
+    let state_arc = state.inner().clone();
+    for m in &group.members {
+        if &m.device_id != my_id {
+            send_raw_packet_to_device(&state_arc, &m.device_id, &format!("grp_ctl:{group_id}"), &update_payload);
+        }
+    }
+
+    let _ = app.emit("chat_group_updated", &group);
+    Ok(group)
+}
+
+#[tauri::command]
+pub fn leave_chat_group(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    group_id: String,
+) -> Result<(), String> {
+    let mut group = match state.db.get_chat_group(&group_id)? {
+        Some(g) => g,
+        None => return Ok(()),
+    };
+
+    let my_id = state.identity.device_id.clone();
+    let was_owner = group.owner_id == my_id;
+
+    group.members.retain(|m| m.device_id != my_id);
+    group.allowed_senders.retain(|id| id != &my_id);
+
+    if group.members.is_empty() {
+        state.db.delete_chat_group(&group_id)?;
+    } else {
+        if was_owner {
+            if let Some(admin) = group.members.iter_mut().find(|m| m.role == "admin") {
+                admin.role = "owner".to_string();
+                group.owner_id = admin.device_id.clone();
+            } else if let Some(first_member) = group.members.first_mut() {
+                first_member.role = "owner".to_string();
+                group.owner_id = first_member.device_id.clone();
+            }
+        }
+        group.updated_at = now_unix_secs();
+        state.db.upsert_chat_group(&group)?;
+
+        let left_payload = json!({
+            "control_type": "GROUP_MEMBER_LEFT",
+            "group_id": &group_id,
+            "member_id": &my_id,
+            "group": &group,
+        })
+        .to_string();
+
+        let state_arc = state.inner().clone();
+        for m in &group.members {
+            send_raw_packet_to_device(&state_arc, &m.device_id, &format!("grp_ctl:{group_id}"), &left_payload);
+        }
+    }
+
+    let _ = state.db.delete_chat_group(&group_id);
+    let _ = app.emit("chat_group_removed", &group_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn send_group_chat_message(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    group_id: String,
+    content: String,
+    msg_type: Option<String>,
+    files_json: Option<String>,
+) -> Result<ChatMessage, String> {
+    let group = state
+        .db
+        .get_chat_group(&group_id)?
+        .ok_or_else(|| format!("Group not found: {group_id}"))?;
+
+    let my_id = state.identity.device_id.clone();
+    let my_alias = state.settings.lock().unwrap().alias_name.clone();
+
+    // Check membership
+    let my_member = group.members.iter().find(|m| m.device_id == my_id);
+    if my_member.is_none() {
+        return Err("Anda bukan anggota grup ini".to_string());
+    }
+    let role = &my_member.unwrap().role;
+    let is_admin = role == "owner" || role == "admin";
+
+    // Permission enforcement: all, admins_only, custom
+    if group.send_permission == "admins_only" && !is_admin {
+        return Err("Pengiriman pesan dibatasi: Hanya admin yang dapat mengirim pesan di grup ini".to_string());
+    }
+    if group.send_permission == "custom" && !is_admin && !group.allowed_senders.contains(&my_id) {
+        return Err("Pengiriman pesan dibatasi: Anda tidak memiliki izin mengirim pesan di grup ini".to_string());
+    }
+
+    let now = now_unix_secs();
+    let msg_id = uuid::Uuid::new_v4().to_string();
+    let effective_type = msg_type.unwrap_or_else(|| "text".to_string());
+
+    let my_avatar_hash = state.db.get_setting("avatar_hash").ok().flatten();
+    let my_avatar_b64 = if my_avatar_hash.is_some() {
+        get_my_avatar_internal()
+    } else {
+        None
+    };
+
+    let chat_msg = ChatMessage {
+        id: msg_id.clone(),
+        peer_device_id: group_id.clone(),
+        direction: "outgoing".to_string(),
+        content: content.clone(),
+        msg_type: effective_type.clone(),
+        transfer_session_id: None,
+        files_json: files_json.clone(),
+        is_read: true,
+        created_at: now,
+        sender_device_id: Some(my_id.clone()),
+        sender_alias: Some(my_alias.clone()),
+    };
+
+    state.db.insert_chat_message(&chat_msg)?;
+
+    let payload_obj = json!({
+        "id": msg_id,
+        "group_id": group_id,
+        "group_name": group.name,
+        "from_device_id": my_id,
+        "from_alias": my_alias,
+        "from_avatar_hash": my_avatar_hash,
+        "from_avatar_data": my_avatar_b64,
+        "content": content,
+        "msg_type": effective_type,
+        "files_json": files_json,
+        "created_at": now
+    })
+    .to_string();
+
+    let state_arc = state.inner().clone();
+    for m in &group.members {
+        if m.device_id != my_id {
+            send_raw_packet_to_device(&state_arc, &m.device_id, &format!("chat:{msg_id}"), &payload_obj);
+        }
+    }
+
+    let _ = app.emit("chat_message_sent", &chat_msg);
+    Ok(chat_msg)
 }
 
 #[tauri::command]

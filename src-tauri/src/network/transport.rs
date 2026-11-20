@@ -791,6 +791,27 @@ where
             if let Ok(bytes) = hex::decode(payload_json) {
                 if let Ok(payload_str) = String::from_utf8(bytes) {
                     if let Ok(chat_val) = serde_json::from_str::<serde_json::Value>(&payload_str) {
+                        let ctl_type = chat_val.get("control_type").and_then(|v| v.as_str()).unwrap_or("");
+                        if ctl_type == "GROUP_INVITE" || ctl_type == "GROUP_UPDATE" || ctl_type == "GROUP_MEMBER_LEFT" {
+                            if let Some(group_val) = chat_val.get("group") {
+                                if let Ok(group) = serde_json::from_value::<crate::db::storage::ChatGroup>(group_val.clone()) {
+                                    let _ = state.db.upsert_chat_group(&group);
+                                    let _ = app.emit("chat_group_updated", &group);
+                                    let _ = writer.write_all(b"OK").await;
+                                    return Ok(());
+                                }
+                            }
+                        } else if ctl_type == "GROUP_MEMBER_REMOVED" {
+                            let gid = chat_val.get("group_id").and_then(|v| v.as_str()).unwrap_or("");
+                            let target = chat_val.get("target_device_id").and_then(|v| v.as_str()).unwrap_or("");
+                            if target == state.identity.device_id {
+                                let _ = state.db.delete_chat_group(gid);
+                                let _ = app.emit("chat_group_removed", gid);
+                                let _ = writer.write_all(b"OK").await;
+                                return Ok(());
+                            }
+                        }
+
                         let msg_id = chat_val
                             .get("id")
                             .and_then(|v| v.as_str())
@@ -819,9 +840,21 @@ where
                             .and_then(|v| v.as_u64())
                             .unwrap_or_else(crate::db::storage::now_unix_secs);
 
+                        let from_alias = chat_val
+                            .get("from_alias")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+
+                        let maybe_group_id = chat_val.get("group_id").and_then(|v| v.as_str());
+                        let peer_id = if let Some(gid) = maybe_group_id {
+                            gid.to_string()
+                        } else {
+                            from_device_id.clone()
+                        };
+
                         let chat_msg = crate::db::storage::ChatMessage {
                             id: msg_id,
-                            peer_device_id: from_device_id.clone(),
+                            peer_device_id: peer_id,
                             direction: "incoming".to_string(),
                             content,
                             msg_type,
@@ -829,6 +862,8 @@ where
                             files_json,
                             is_read: false,
                             created_at,
+                            sender_device_id: Some(from_device_id.clone()),
+                            sender_alias: Some(from_alias.to_string()),
                         };
 
                         let from_alias = chat_val

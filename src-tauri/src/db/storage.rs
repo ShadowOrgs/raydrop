@@ -53,6 +53,31 @@ pub struct ChatMessage {
     pub files_json: Option<String>,
     pub is_read: bool,
     pub created_at: u64,
+    pub sender_device_id: Option<String>,
+    pub sender_alias: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupMember {
+    pub device_id: String,
+    pub alias: String,
+    pub avatar: Option<String>,
+    pub role: String, // "owner", "admin", "member"
+    pub joined_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatGroup {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub avatar: Option<String>,
+    pub owner_id: String,
+    pub send_permission: String, // "all", "admins_only", "custom"
+    pub allowed_senders: Vec<String>,
+    pub members: Vec<GroupMember>,
+    pub created_at: u64,
+    pub updated_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -237,6 +262,19 @@ impl Database {
                 is_active INTEGER DEFAULT 1,
                 created_at INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS chat_groups (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                avatar TEXT,
+                owner_id TEXT NOT NULL,
+                send_permission TEXT NOT NULL DEFAULT 'all',
+                allowed_senders_json TEXT,
+                members_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
             ",
         )
         .map_err(|e| e.to_string())?;
@@ -252,6 +290,8 @@ impl Database {
         let _ = conn.execute("ALTER TABLE contacts ADD COLUMN custom_name TEXT", []);
         let _ = conn.execute("ALTER TABLE contacts ADD COLUMN avatar_hash TEXT", []);
         let _ = conn.execute("ALTER TABLE transfer_history ADD COLUMN source_paths TEXT", []);
+        let _ = conn.execute("ALTER TABLE chat_messages ADD COLUMN sender_device_id TEXT", []);
+        let _ = conn.execute("ALTER TABLE chat_messages ADD COLUMN sender_alias TEXT", []);
         // Any transfer left in 'in_progress' from a previous PC shutdown/crash becomes 'paused' (resumable)
         let _ = conn.execute(
             "UPDATE transfer_history SET status = 'paused' WHERE status = 'in_progress'",
@@ -733,8 +773,8 @@ impl Database {
     pub fn insert_chat_message(&self, msg: &ChatMessage) -> Result<(), String> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT OR REPLACE INTO chat_messages (id, peer_device_id, direction, content, msg_type, transfer_session_id, files_json, is_read, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT OR REPLACE INTO chat_messages (id, peer_device_id, direction, content, msg_type, transfer_session_id, files_json, is_read, created_at, sender_device_id, sender_alias)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 msg.id,
                 msg.peer_device_id,
@@ -744,7 +784,9 @@ impl Database {
                 msg.transfer_session_id,
                 msg.files_json,
                 if msg.is_read { 1 } else { 0 },
-                msg.created_at as i64
+                msg.created_at as i64,
+                msg.sender_device_id,
+                msg.sender_alias,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -760,9 +802,9 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT id, peer_device_id, direction, content, msg_type, transfer_session_id, files_json, is_read, created_at
+                "SELECT id, peer_device_id, direction, content, msg_type, transfer_session_id, files_json, is_read, created_at, sender_device_id, sender_alias
                  FROM (
-                     SELECT id, peer_device_id, direction, content, msg_type, transfer_session_id, files_json, is_read, created_at
+                     SELECT id, peer_device_id, direction, content, msg_type, transfer_session_id, files_json, is_read, created_at, sender_device_id, sender_alias
                      FROM chat_messages
                      WHERE peer_device_id = ?1
                      ORDER BY created_at DESC
@@ -784,6 +826,8 @@ impl Database {
                     files_json: row.get(6)?,
                     is_read: row.get::<_, i64>(7)? != 0,
                     created_at: row.get::<_, i64>(8)? as u64,
+                    sender_device_id: row.get(9)?,
+                    sender_alias: row.get(10)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -793,6 +837,114 @@ impl Database {
             list.push(r.map_err(|e| e.to_string())?);
         }
         Ok(list)
+    }
+
+    // ----------------------------------------------------
+    // Chat Groups Operations
+    // ----------------------------------------------------
+    pub fn upsert_chat_group(&self, group: &ChatGroup) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        let allowed_senders_json = serde_json::to_string(&group.allowed_senders).unwrap_or_else(|_| "[]".to_string());
+        let members_json = serde_json::to_string(&group.members).unwrap_or_else(|_| "[]".to_string());
+        conn.execute(
+            "INSERT OR REPLACE INTO chat_groups (id, name, description, avatar, owner_id, send_permission, allowed_senders_json, members_json, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                group.id,
+                group.name,
+                group.description,
+                group.avatar,
+                group.owner_id,
+                group.send_permission,
+                allowed_senders_json,
+                members_json,
+                group.created_at as i64,
+                group.updated_at as i64,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn get_chat_group(&self, id: &str) -> Result<Option<ChatGroup>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, description, avatar, owner_id, send_permission, allowed_senders_json, members_json, created_at, updated_at
+                 FROM chat_groups WHERE id = ?1",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let mut rows = stmt
+            .query_map(params![id], |row| {
+                let allowed_raw: String = row.get(6)?;
+                let members_raw: String = row.get(7)?;
+                let allowed_senders: Vec<String> = serde_json::from_str(&allowed_raw).unwrap_or_default();
+                let members: Vec<GroupMember> = serde_json::from_str(&members_raw).unwrap_or_default();
+                Ok(ChatGroup {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    avatar: row.get(3)?,
+                    owner_id: row.get(4)?,
+                    send_permission: row.get(5)?,
+                    allowed_senders,
+                    members,
+                    created_at: row.get::<_, i64>(8)? as u64,
+                    updated_at: row.get::<_, i64>(9)? as u64,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+
+        if let Some(r) = rows.next() {
+            Ok(Some(r.map_err(|e| e.to_string())?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn list_chat_groups(&self) -> Result<Vec<ChatGroup>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, description, avatar, owner_id, send_permission, allowed_senders_json, members_json, created_at, updated_at
+                 FROM chat_groups ORDER BY updated_at DESC",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let allowed_raw: String = row.get(6)?;
+                let members_raw: String = row.get(7)?;
+                let allowed_senders: Vec<String> = serde_json::from_str(&allowed_raw).unwrap_or_default();
+                let members: Vec<GroupMember> = serde_json::from_str(&members_raw).unwrap_or_default();
+                Ok(ChatGroup {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    avatar: row.get(3)?,
+                    owner_id: row.get(4)?,
+                    send_permission: row.get(5)?,
+                    allowed_senders,
+                    members,
+                    created_at: row.get::<_, i64>(8)? as u64,
+                    updated_at: row.get::<_, i64>(9)? as u64,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(list)
+    }
+
+    pub fn delete_chat_group(&self, id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM chat_groups WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     pub fn mark_chat_read(&self, peer_device_id: &str) -> Result<(), String> {

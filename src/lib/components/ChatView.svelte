@@ -44,6 +44,16 @@
     File,
     Mic,
     HardDrive,
+    Users,
+    UserPlus,
+    UserMinus,
+    Crown,
+    Lock,
+    Plus,
+    Settings,
+    LogOut,
+    CheckSquare,
+    Square,
   } from 'lucide-svelte';
   import VoiceNotePlayer from './VoiceNotePlayer.svelte';
   import RemoteExplorerModal from './RemoteExplorerModal.svelte';
@@ -53,6 +63,8 @@
   import { cloudContacts, cloudMyDevices, activeChatPeerId, appSettings, incomingRequestQueue, activeMainTab } from '../stores/state';
   import {
     chatStore,
+    chatGroups,
+    fetchChatGroups,
     unreadCounts,
     hasMoreMap,
     isLoadingOlder,
@@ -69,7 +81,9 @@
     formatBytes,
     type ChatMessage,
     type ChatFileItem,
-    type TransferRecord
+    type TransferRecord,
+    type ChatGroup,
+    type GroupMember
   } from '../utils/tauri-ipc';
   import { renderMarkdown } from '../utils/markdown';
 
@@ -98,6 +112,53 @@
   function isImageFile(fileName: string): boolean {
     return /\.(jpe?g|png|webp|gif|bmp|svg|ico|avif)$/i.test(fileName || '');
   }
+
+  // Clipboard Image Paste
+  let pastedImagePreview: string | null = null;
+
+  function handlePaste(e: ClipboardEvent) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            pastedImagePreview = evt.target?.result as string;
+          };
+          reader.readAsDataURL(file);
+          return;
+        }
+      }
+    }
+  }
+
+  function handleGlobalPaste(e: ClipboardEvent) {
+    if (!$activeChatPeerId) return;
+    const target = e.target as HTMLElement;
+    if (target && (target.tagName === 'INPUT' || target.isContentEditable)) return;
+    handlePaste(e);
+  }
+
+  // Group Chat States & Filtering
+  let chatFilterTab: 'all' | 'direct' | 'groups' = 'all';
+  let showCreateGroupModal = false;
+  let newGroupName = '';
+  let newGroupDesc = '';
+  let newGroupSendPermission: 'all' | 'admins_only' | 'custom' = 'all';
+  let selectedGroupMemberIds: Set<string> = new Set();
+  let groupMemberSearchQuery = '';
+
+  let showGroupInfoModal = false;
+  let showInviteMemberDropdown = false;
+  let selectedNewMemberIds: Set<string> = new Set();
+  let editingSendPermission: 'all' | 'admins_only' | 'custom' = 'all';
+  let editingAllowedSenders: Set<string> = new Set();
+  let isSavingGroupSettings = false;
 
   let isRecordingVoice = false;
   let recordingDuration = 0;
@@ -178,14 +239,27 @@
 
   async function handleSendVoiceNote(audioDataUrl: string) {
     if (!$activeChatPeerId) return;
+    if (isGroupChat && !canSendInGroup) {
+      alert('Anda tidak memiliki izin mengirim pesan di grup ini.');
+      return;
+    }
     try {
-      await raydropApi.sendChatMessage(
-        $activeChatPeerId,
-        audioDataUrl,
-        'audio',
-        null,
-        null
-      );
+      if (isGroupChat) {
+        const sent = await raydropApi.sendGroupChatMessage(
+          $activeChatPeerId,
+          audioDataUrl,
+          'audio'
+        );
+        handleOutgoingChatMessage(sent);
+      } else {
+        await raydropApi.sendChatMessage(
+          $activeChatPeerId,
+          audioDataUrl,
+          'audio',
+          null,
+          null
+        );
+      }
       await loadChatHistory($activeChatPeerId);
       await tick();
       scrollToBottom();
@@ -227,6 +301,7 @@
   onDestroy(() => {
     clearInterval(tickerInterval);
     cancelVoiceRecording();
+    window.removeEventListener('paste', handleGlobalPaste);
   });
 
   // Emojis for picker
@@ -246,6 +321,8 @@
   ];
 
   onMount(async () => {
+    window.addEventListener('paste', handleGlobalPaste);
+    await fetchChatGroups();
     try {
       const loaded = await raydropApi.getContacts();
       if (loaded && loaded.length > 0) {
@@ -334,21 +411,162 @@
     return p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q);
   });
 
+  $: isGroupChat = !!$activeChatPeerId?.startsWith('group_');
+  $: activeGroup = isGroupChat ? $chatGroups.find((g) => g.id === $activeChatPeerId) || null : null;
+  $: myDeviceId = $appSettings.device_id;
+  $: myGroupMember = activeGroup?.members.find((m) => m.device_id === myDeviceId);
+  $: isGroupOwner = activeGroup?.owner_id === myDeviceId;
+  $: isGroupAdmin = isGroupOwner || myGroupMember?.role === 'admin';
+  $: canSendInGroup = (() => {
+    if (!isGroupChat) return true;
+    if (!activeGroup) return false;
+    if (isGroupAdmin) return true;
+    if (activeGroup.send_permission === 'all') return true;
+    if (activeGroup.send_permission === 'admins_only') return false;
+    if (activeGroup.send_permission === 'custom') {
+      return activeGroup.allowed_senders.includes(myDeviceId);
+    }
+    return true;
+  })();
+
+  $: filteredGroups = $chatGroups.filter((g) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return g.name.toLowerCase().includes(q) || (g.description || '').toLowerCase().includes(q);
+  });
+
+  async function handleCreateGroup() {
+    if (!newGroupName.trim()) {
+      alert('Nama grup tidak boleh kosong');
+      return;
+    }
+    try {
+      const memberIds = Array.from(selectedGroupMemberIds);
+      const group = await raydropApi.createChatGroup(
+        newGroupName.trim(),
+        newGroupDesc.trim() || null,
+        null,
+        memberIds
+      );
+      if (newGroupSendPermission !== 'all') {
+        await raydropApi.setGroupSendPermission(group.id, newGroupSendPermission, []);
+      }
+      await fetchChatGroups();
+      activeChatPeerId.set(group.id);
+      showCreateGroupModal = false;
+      newGroupName = '';
+      newGroupDesc = '';
+      selectedGroupMemberIds = new Set();
+    } catch (err: any) {
+      alert(`Gagal membuat grup: ${err?.message || err}`);
+    }
+  }
+
+  async function handleSaveGroupPermission() {
+    if (!activeGroup) return;
+    try {
+      isSavingGroupSettings = true;
+      const allowed = Array.from(editingAllowedSenders);
+      await raydropApi.setGroupSendPermission(
+        activeGroup.id,
+        editingSendPermission,
+        allowed
+      );
+      await fetchChatGroups();
+      alert('Pengaturan izin kirim berhasil disimpan!');
+    } catch (err: any) {
+      alert(`Gagal menyimpan izin: ${err?.message || err}`);
+    } finally {
+      isSavingGroupSettings = false;
+    }
+  }
+
+  async function handleToggleAdminRole(member: GroupMember) {
+    if (!activeGroup || !isGroupOwner) return;
+    const newRole = member.role === 'admin' ? 'member' : 'admin';
+    const actionText = newRole === 'admin' ? `menjadikan ${member.alias} sebagai Admin` : `menurunkan ${member.alias} dari Admin`;
+    if (!confirm(`Apakah Anda yakin ingin ${actionText}?`)) return;
+    try {
+      await raydropApi.setMemberRole(activeGroup.id, member.device_id, newRole);
+      await fetchChatGroups();
+    } catch (err: any) {
+      alert(`Gagal mengubah peran: ${err?.message || err}`);
+    }
+  }
+
+  async function handleRemoveMember(member: GroupMember) {
+    if (!activeGroup || !isGroupAdmin) return;
+    if (!confirm(`Keluarkan ${member.alias} dari grup?`)) return;
+    try {
+      await raydropApi.removeGroupMember(activeGroup.id, member.device_id);
+      await fetchChatGroups();
+    } catch (err: any) {
+      alert(`Gagal mengeluarkan anggota: ${err?.message || err}`);
+    }
+  }
+
+  async function handleInviteMembersToGroup() {
+    if (!activeGroup || !isGroupAdmin || selectedNewMemberIds.size === 0) return;
+    try {
+      const ids = Array.from(selectedNewMemberIds);
+      await raydropApi.inviteGroupMembers(activeGroup.id, ids);
+      await fetchChatGroups();
+      selectedNewMemberIds = new Set();
+      showInviteMemberDropdown = false;
+    } catch (err: any) {
+      alert(`Gagal mengundang anggota: ${err?.message || err}`);
+    }
+  }
+
+  async function handleLeaveGroup() {
+    if (!activeGroup) return;
+    if (!confirm(`Apakah Anda yakin ingin keluar dari grup "${activeGroup.name}"?`)) return;
+    try {
+      await raydropApi.leaveChatGroup(activeGroup.id);
+      await fetchChatGroups();
+      activeChatPeerId.set(null);
+      showGroupInfoModal = false;
+    } catch (err: any) {
+      alert(`Gagal keluar dari grup: ${err?.message || err}`);
+    }
+  }
+
+  function openGroupInfoModal() {
+    if (!activeGroup) return;
+    editingSendPermission = activeGroup.send_permission;
+    editingAllowedSenders = new Set(activeGroup.allowed_senders);
+    selectedNewMemberIds = new Set();
+    showInviteMemberDropdown = false;
+    showGroupInfoModal = true;
+  }
+
   // Always resolve a valid activePeer if activeChatPeerId is selected to prevent blank screens
-  $: activePeer =
-    allPeers.find((p) => p.id === $activeChatPeerId) ||
-    ($activeChatPeerId
-      ? {
-          id: $activeChatPeerId,
-          name: `Peer (${$activeChatPeerId.slice(0, 10)}...)`,
-          email: '',
-          osType: 'windows',
-          isOnline: false,
-          networkType: 'wan',
-          isOwnDevice: false,
-          trustLevel: 'ask',
-        }
-      : filteredPeers[0] || null);
+  $: activePeer = isGroupChat && activeGroup
+    ? {
+        id: activeGroup.id,
+        name: activeGroup.name,
+        customName: '',
+        avatarHash: '',
+        email: `${activeGroup.members.length} members`,
+        osType: 'windows',
+        isOnline: true,
+        networkType: 'group',
+        isOwnDevice: false,
+        trustLevel: 'trusted',
+      }
+    : (allPeers.find((p) => p.id === $activeChatPeerId) ||
+      ($activeChatPeerId
+        ? {
+            id: $activeChatPeerId,
+            name: `Peer (${$activeChatPeerId.slice(0, 10)}...)`,
+            email: '',
+            osType: 'windows',
+            isOnline: false,
+            networkType: 'wan',
+            isOwnDevice: false,
+            trustLevel: 'ask',
+          }
+        : filteredPeers[0] || null));
 
   $: activeMessages = ($activeChatPeerId ? $chatStore[$activeChatPeerId] : []) || [];
   $: hasMore = $activeChatPeerId ? !!$hasMoreMap[$activeChatPeerId] : false;
@@ -647,8 +865,13 @@
 
   async function handleSendMessage() {
     if (!$activeChatPeerId || isPeerBlocked || isSending) return;
+    if (isGroupChat && !canSendInGroup) {
+      alert('Anda tidak memiliki izin mengirim pesan di grup ini.');
+      return;
+    }
     const text = (messageInput || '').trim();
-    if (!text && attachingFiles.length === 0) return;
+    const hasImage = !!pastedImagePreview;
+    if (!text && attachingFiles.length === 0 && !hasImage) return;
 
     isSending = true;
     showEmojiPicker = false;
@@ -656,6 +879,10 @@
       let transferSessionId: string | null = null;
       let filesJson: string | null = null;
       let msgType = 'text';
+
+      if (hasImage) {
+        msgType = 'image';
+      }
 
       const filesToAttach = [...attachingFiles];
 
@@ -675,24 +902,40 @@
         filesJson = JSON.stringify(filesMeta);
       }
 
-      const sentMsg = await raydropApi.sendChatMessage(
-        $activeChatPeerId,
-        text,
-        msgType,
-        transferSessionId,
-        filesJson
-      );
+      let contentToSend = text;
+      if (hasImage && pastedImagePreview) {
+        contentToSend = text ? `${text}\n\n${pastedImagePreview}` : pastedImagePreview;
+      }
 
-      handleOutgoingChatMessage(sentMsg);
+      if (isGroupChat) {
+        const sentMsg = await raydropApi.sendGroupChatMessage(
+          $activeChatPeerId,
+          contentToSend,
+          msgType
+        );
+        handleOutgoingChatMessage(sentMsg);
+      } else {
+        const sentMsg = await raydropApi.sendChatMessage(
+          $activeChatPeerId,
+          contentToSend,
+          msgType,
+          transferSessionId,
+          filesJson
+        );
+        handleOutgoingChatMessage(sentMsg);
+      }
+
       messageInput = '';
+      pastedImagePreview = null;
       attachingFiles = [];
       if (textareaEl) {
         textareaEl.style.height = 'auto';
       }
       await tick();
       scrollToBottom();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to send message:', err);
+      alert(`Gagal mengirim pesan: ${err?.message || err}`);
     } finally {
       isSending = false;
     }
@@ -892,21 +1135,139 @@
         <input
           type="text"
           bind:value={searchQuery}
-          placeholder="Search contacts..."
+          placeholder="Search contacts or groups..."
           class="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 transition"
         />
       </div>
     </div>
 
-    <!-- Peer List -->
+    <!-- Filter Pills + New Group Button -->
+    <div class="px-3 py-2 border-b border-slate-800/60 flex items-center justify-between gap-1.5 bg-slate-950/40">
+      <div class="flex items-center gap-1 bg-slate-900/80 p-0.5 rounded-lg border border-slate-800 text-[11px]">
+        <button
+          type="button"
+          on:click={() => (chatFilterTab = 'all')}
+          class="px-2 py-0.5 rounded-md font-medium transition cursor-pointer {chatFilterTab === 'all'
+            ? 'bg-cyan-500/20 text-cyan-300 font-bold'
+            : 'text-slate-400 hover:text-white'}"
+        >
+          All
+        </button>
+        <button
+          type="button"
+          on:click={() => (chatFilterTab = 'direct')}
+          class="px-2 py-0.5 rounded-md font-medium transition cursor-pointer {chatFilterTab === 'direct'
+            ? 'bg-cyan-500/20 text-cyan-300 font-bold'
+            : 'text-slate-400 hover:text-white'}"
+        >
+          Direct
+        </button>
+        <button
+          type="button"
+          on:click={() => (chatFilterTab = 'groups')}
+          class="px-2 py-0.5 rounded-md font-medium transition cursor-pointer {chatFilterTab === 'groups'
+            ? 'bg-cyan-500/20 text-cyan-300 font-bold'
+            : 'text-slate-400 hover:text-white'}"
+        >
+          Groups
+        </button>
+      </div>
+
+      <button
+        type="button"
+        on:click={() => {
+          newGroupName = '';
+          newGroupDesc = '';
+          selectedGroupMemberIds = new Set();
+          showCreateGroupModal = true;
+        }}
+        class="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-semibold flex items-center gap-1 transition cursor-pointer active:scale-95 shadow-sm"
+        title="Buat Grup Chat Baru"
+      >
+        <Plus class="w-3.5 h-3.5" />
+        <span>Grup</span>
+      </button>
+    </div>
+
+    <!-- Peer & Group List -->
     <div class="flex-1 overflow-y-auto p-2 space-y-1">
-      {#if filteredPeers.length === 0}
-        <div class="p-6 text-center text-xs text-slate-500">
-          <User class="w-8 h-8 mx-auto mb-2 text-slate-600 stroke-[1.5]" />
-          <p>No contacts found.</p>
-          <p class="text-[11px] text-slate-600 mt-1">Connect peers via LAN Radar or add contacts by email.</p>
-        </div>
-      {:else}
+      <!-- Groups Section -->
+      {#if chatFilterTab === 'all' || chatFilterTab === 'groups'}
+        {#if filteredGroups.length > 0}
+          <div class="px-2 pt-1 pb-1">
+            <span class="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">Grup ({filteredGroups.length})</span>
+          </div>
+          {#each filteredGroups as grp (grp.id)}
+            {@const isSelected = $activeChatPeerId === grp.id}
+            {@const unread = $unreadCounts[grp.id] || 0}
+            {@const isOwner = grp.owner_id === myDeviceId}
+
+            <button
+              type="button"
+              on:click={() => {
+                activeChatPeerId.set(grp.id);
+              }}
+              class="w-full text-left p-2.5 rounded-xl transition-all flex items-center justify-between gap-2.5 {isSelected
+                ? 'bg-gradient-to-r from-purple-500/20 to-indigo-500/20 border border-purple-500/40 shadow-sm shadow-purple-500/10'
+                : 'hover:bg-slate-900/80 border border-transparent'}"
+            >
+              <div class="flex items-center gap-2.5 min-w-0">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 border border-indigo-400/30 flex items-center justify-center font-bold text-xs text-white shadow-sm shrink-0">
+                  <Users class="w-4 h-4" />
+                </div>
+
+                <div class="min-w-0">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-xs font-bold text-white truncate max-w-[130px]" title={grp.name}>
+                      {grp.name}
+                    </span>
+                    {#if isOwner}
+                      <span class="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300 font-mono">Owner</span>
+                    {/if}
+                  </div>
+                  <div class="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5">
+                    <span>{grp.members.length} anggota</span>
+                    <span>•</span>
+                    {#if grp.send_permission === 'admins_only'}
+                      <span class="text-amber-400 flex items-center gap-0.5 text-[10px]">
+                        <Lock class="w-2.5 h-2.5" /> Admin
+                      </span>
+                    {:else if grp.send_permission === 'custom'}
+                      <span class="text-indigo-400 flex items-center gap-0.5 text-[10px]">
+                        <Shield class="w-2.5 h-2.5" /> Custom
+                      </span>
+                    {:else}
+                      <span class="text-emerald-400 text-[10px]">Semua</span>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+
+              {#if unread > 0}
+                <span class="px-2 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-bold text-[10px] font-mono shadow-md shadow-cyan-400/30 shrink-0 animate-pulse">
+                  {unread}
+                </span>
+              {/if}
+            </button>
+          {/each}
+        {/if}
+      {/if}
+
+      <!-- Direct Contacts Section -->
+      {#if chatFilterTab === 'all' || chatFilterTab === 'direct'}
+        {#if chatFilterTab === 'all' && filteredGroups.length > 0}
+          <div class="px-2 pt-2 pb-1">
+            <span class="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">Kontak ({filteredPeers.length})</span>
+          </div>
+        {/if}
+
+        {#if filteredPeers.length === 0 && (chatFilterTab === 'direct' || filteredGroups.length === 0)}
+          <div class="p-6 text-center text-xs text-slate-500">
+            <User class="w-8 h-8 mx-auto mb-2 text-slate-600 stroke-[1.5]" />
+            <p>No contacts found.</p>
+            <p class="text-[11px] text-slate-600 mt-1">Connect peers via LAN Radar or add contacts by email.</p>
+          </div>
+        {:else}
         {#each filteredPeers as peer (peer.id)}
           {@const isSelected = $activeChatPeerId === peer.id}
           {@const unread = $unreadCounts[peer.id] || 0}
@@ -988,6 +1349,7 @@
             {/if}
           </button>
         {/each}
+        {/if}
       {/if}
     </div>
   </aside>
@@ -1019,78 +1381,129 @@
             <ArrowLeft class="w-5 h-5" />
           </button>
 
-          <div class="relative shrink-0">
-            {#if $peerAvatars[activePeer.id]}
-              <img
-                src={$peerAvatars[activePeer.id]}
-                alt={activePeer.customName || activePeer.name}
-                class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover border border-slate-700 shadow-sm"
-              />
-            {:else}
-              <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-cyan-300">
-                {(activePeer.customName || activePeer.name).slice(0, 2).toUpperCase()}
-              </div>
-            {/if}
-            {#if activePeer.isOnline}
-              <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-emerald-500 border-2 border-slate-950 shadow-sm shadow-emerald-500/50"></span>
-            {/if}
-          </div>
+          {#if isGroupChat && activeGroup}
+            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 border border-indigo-400/40 flex items-center justify-center font-bold text-xs text-white shadow-md shadow-indigo-900/30 shrink-0">
+              <Users class="w-4 h-4 sm:w-5 sm:h-5" />
+            </div>
 
-          <div class="min-w-0">
-            <div class="flex items-center gap-1.5 sm:gap-2">
-              {#if isEditingPeerNickname}
-                <form class="flex items-center gap-1" on:submit|preventDefault={handleSaveCustomName}>
-                  <input
-                    type="text"
-                    bind:value={editingPeerNicknameValue}
-                    placeholder="Set custom nickname / initial..."
-                    class="bg-slate-900 border border-cyan-500/50 rounded-lg px-2 py-0.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                    autofocus
-                  />
-                  <button type="submit" class="p-1 text-emerald-400 hover:bg-emerald-500/20 rounded" title="Save nickname">
-                    <Check class="w-3.5 h-3.5" />
-                  </button>
-                  <button type="button" on:click={() => (isEditingPeerNickname = false)} class="p-1 text-slate-400 hover:bg-slate-800 rounded" title="Cancel">
-                    <X class="w-3.5 h-3.5" />
-                  </button>
-                </form>
-              {:else}
-                <h2 class="text-xs sm:text-sm font-bold text-white truncate max-w-[120px] sm:max-w-none">
-                  {activePeer.customName || activePeer.name}
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 sm:gap-2">
+                <h2 class="text-xs sm:text-sm font-bold text-white truncate max-w-[140px] sm:max-w-none">
+                  {activeGroup.name}
                 </h2>
-                <button
-                  type="button"
-                  on:click={() => {
-                    editingPeerNicknameValue = activePeer.customName || '';
-                    isEditingPeerNickname = true;
-                  }}
-                  class="p-1 text-slate-400 hover:text-cyan-400 hover:bg-slate-800/80 rounded transition"
-                  title="Edit custom name/initial"
-                >
-                  <Pencil class="w-3 h-3" />
-                </button>
+                {#if isGroupOwner}
+                  <span class="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono border border-amber-500/30 flex items-center gap-0.5">
+                    <Crown class="w-2.5 h-2.5" /> Owner
+                  </span>
+                {:else if isGroupAdmin}
+                  <span class="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono border border-purple-500/30 flex items-center gap-0.5">
+                    <Shield class="w-2.5 h-2.5" /> Admin
+                  </span>
+                {/if}
+              </div>
+              <div class="flex items-center gap-2 text-[10px] sm:text-[11px] text-slate-400 mt-0.5">
+                <span>{activeGroup.members.length} anggota</span>
+                <span>•</span>
+                {#if activeGroup.send_permission === 'admins_only'}
+                  <span class="text-amber-400 flex items-center gap-0.5 font-mono">
+                    <Lock class="w-2.5 h-2.5" /> Hanya Admin
+                  </span>
+                {:else if activeGroup.send_permission === 'custom'}
+                  <span class="text-indigo-400 flex items-center gap-0.5 font-mono">
+                    <Shield class="w-2.5 h-2.5" /> Izin kustom aktif
+                  </span>
+                {:else}
+                  <span class="text-emerald-400 font-mono">Semua anggota dapat kirim</span>
+                {/if}
+              </div>
+            </div>
+          {:else}
+            <div class="relative shrink-0">
+              {#if $peerAvatars[activePeer.id]}
+                <img
+                  src={$peerAvatars[activePeer.id]}
+                  alt={activePeer.customName || activePeer.name}
+                  class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover border border-slate-700 shadow-sm"
+                />
+              {:else}
+                <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-cyan-300">
+                  {(activePeer.customName || activePeer.name).slice(0, 2).toUpperCase()}
+                </div>
               {/if}
-              <span class="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono">
-                {activePeer.networkType.toUpperCase()}
-              </span>
-              {#if isPeerBlocked}
-                <span class="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 font-mono font-bold">
-                  BLOCKED
-                </span>
+              {#if activePeer.isOnline}
+                <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-emerald-500 border-2 border-slate-950 shadow-sm shadow-emerald-500/50"></span>
               {/if}
             </div>
-            {#if activePeer.customName}
-              <p class="text-[10px] text-cyan-400/80 font-mono truncate">
-                Device: {activePeer.name}
+
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 sm:gap-2">
+                {#if isEditingPeerNickname}
+                  <form class="flex items-center gap-1" on:submit|preventDefault={handleSaveCustomName}>
+                    <input
+                      type="text"
+                      bind:value={editingPeerNicknameValue}
+                      placeholder="Set custom nickname / initial..."
+                      class="bg-slate-900 border border-cyan-500/50 rounded-lg px-2 py-0.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                      autofocus
+                    />
+                    <button type="submit" class="p-1 text-emerald-400 hover:bg-emerald-500/20 rounded" title="Save nickname">
+                      <Check class="w-3.5 h-3.5" />
+                    </button>
+                    <button type="button" on:click={() => (isEditingPeerNickname = false)} class="p-1 text-slate-400 hover:bg-slate-800 rounded" title="Cancel">
+                      <X class="w-3.5 h-3.5" />
+                    </button>
+                  </form>
+                {:else}
+                  <h2 class="text-xs sm:text-sm font-bold text-white truncate max-w-[120px] sm:max-w-none">
+                    {activePeer.customName || activePeer.name}
+                  </h2>
+                  <button
+                    type="button"
+                    on:click={() => {
+                      editingPeerNicknameValue = activePeer.customName || '';
+                      isEditingPeerNickname = true;
+                    }}
+                    class="p-1 text-slate-400 hover:text-cyan-400 hover:bg-slate-800/80 rounded transition"
+                    title="Edit custom name/initial"
+                  >
+                    <Pencil class="w-3 h-3" />
+                  </button>
+                {/if}
+                <span class="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono">
+                  {activePeer.networkType.toUpperCase()}
+                </span>
+                {#if isPeerBlocked}
+                  <span class="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 font-mono font-bold">
+                    BLOCKED
+                  </span>
+                {/if}
+              </div>
+              {#if activePeer.customName}
+                <p class="text-[10px] text-cyan-400/80 font-mono truncate">
+                  Device: {activePeer.name}
+                </p>
+              {/if}
+              <p class="text-[10px] sm:text-[11px] text-slate-400 truncate font-mono">
+                {activePeer.email || activePeer.id}
               </p>
-            {/if}
-            <p class="text-[10px] sm:text-[11px] text-slate-400 truncate font-mono">
-              {activePeer.email || activePeer.id}
-            </p>
-          </div>
+            </div>
+          {/if}
         </div>
 
         <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          {#if isGroupChat && activeGroup}
+            <!-- Group Settings & Info Button -->
+            <button
+              type="button"
+              on:click={openGroupInfoModal}
+              class="px-2.5 py-1.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer active:scale-95 shadow-sm"
+              title="Info Grup & Kelola Anggota / Izin"
+            >
+              <Settings class="w-3.5 h-3.5" />
+              <span class="hidden sm:inline">Info Grup</span>
+            </button>
+          {/if}
+
           <!-- Search Conversation Button -->
           <button
             type="button"
@@ -1123,50 +1536,62 @@
             {/if}
           </button>
 
-          <!-- Browse Remote Shared Folders Button -->
-          <button
-            type="button"
-            on:click={() => (showRemoteExplorer = true)}
-            class="p-1.5 rounded-xl transition cursor-pointer text-slate-400 hover:text-indigo-300 hover:bg-indigo-500/15 border border-transparent hover:border-indigo-500/30"
-            title="Browse & Pull files from this remote device"
-          >
-            <HardDrive class="w-4 h-4" />
-          </button>
+          {#if !isGroupChat}
+            <!-- Browse Remote Shared Folders Button -->
+            <button
+              type="button"
+              on:click={() => (showRemoteExplorer = true)}
+              class="p-1.5 rounded-xl transition cursor-pointer text-slate-400 hover:text-indigo-300 hover:bg-indigo-500/15 border border-transparent hover:border-indigo-500/30"
+              title="Browse & Pull files from this remote device"
+            >
+              <HardDrive class="w-4 h-4" />
+            </button>
 
-          <!-- Start Voice / Video Meeting Button -->
-          <button
-            type="button"
-            on:click={async () => {
-              if (activePeer) {
-                activeMainTab.set('meeting');
-                const title = `Call with ${activePeer.customName || activePeer.name}`;
-                await createMeetingRoom(title);
-                await inviteContactToMeeting(activePeer.id);
-              }
-            }}
-            class="p-1.5 rounded-xl transition cursor-pointer text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/15 border border-transparent hover:border-emerald-500/30"
-            title="Start P2P Voice & Video Meeting with this contact"
-          >
-            <Video class="w-4 h-4" />
-          </button>
+            <!-- Start Voice / Video Meeting Button -->
+            <button
+              type="button"
+              on:click={async () => {
+                if (activePeer) {
+                  activeMainTab.set('meeting');
+                  const title = `Call with ${activePeer.customName || activePeer.name}`;
+                  await createMeetingRoom(title);
+                  await inviteContactToMeeting(activePeer.id);
+                }
+              }}
+              class="p-1.5 rounded-xl transition cursor-pointer text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/15 border border-transparent hover:border-emerald-500/30"
+              title="Start P2P Voice & Video Meeting with this contact"
+            >
+              <Video class="w-4 h-4" />
+            </button>
 
-          <!-- Block / Unblock Button -->
-          <button
-            type="button"
-            on:click={toggleBlockPeer}
-            class="px-2 sm:px-2.5 py-1 rounded-xl text-xs font-semibold border transition flex items-center gap-1 {isPeerBlocked
-              ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'
-              : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/20'}"
-            title={isPeerBlocked ? 'Unblock this peer' : 'Block this peer'}
-          >
-            {#if isPeerBlocked}
-              <ShieldCheck class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline">Unblock</span>
-            {:else}
-              <Ban class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline">Block</span>
-            {/if}
-          </button>
+            <!-- Block / Unblock Button -->
+            <button
+              type="button"
+              on:click={toggleBlockPeer}
+              class="px-2 sm:px-2.5 py-1 rounded-xl text-xs font-semibold border transition flex items-center gap-1 {isPeerBlocked
+                ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'
+                : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/20'}"
+              title={isPeerBlocked ? 'Unblock this peer' : 'Block this peer'}
+            >
+              {#if isPeerBlocked}
+                <ShieldCheck class="w-3.5 h-3.5" />
+                <span class="hidden sm:inline">Unblock</span>
+              {:else}
+                <Ban class="w-3.5 h-3.5" />
+                <span class="hidden sm:inline">Block</span>
+              {/if}
+            </button>
+          {:else}
+            <!-- Leave Group Button -->
+            <button
+              type="button"
+              on:click={handleLeaveGroup}
+              class="p-1.5 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 border border-transparent hover:border-rose-500/20 transition cursor-pointer"
+              title="Keluar dari grup"
+            >
+              <LogOut class="w-4 h-4" />
+            </button>
+          {/if}
 
           <!-- Clear Chat History -->
           <button
@@ -1272,6 +1697,23 @@
             {@const isDataImage = !!dataImageUrl}
 
             <div class="flex flex-col {isOutgoing ? 'items-end' : 'items-start'} group">
+              {#if isGroupChat && !isOutgoing}
+                {@const senderMember = activeGroup?.members.find((m) => m.device_id === msg.sender_device_id)}
+                {@const isSenderOwner = activeGroup?.owner_id === msg.sender_device_id}
+                {@const isSenderAdmin = isSenderOwner || senderMember?.role === 'admin'}
+                <div class="flex items-center gap-1.5 mb-1 px-1 text-[11px] font-semibold text-slate-300">
+                  <span class="text-cyan-400">{msg.sender_alias || senderMember?.alias || 'Anggota'}</span>
+                  {#if isSenderOwner}
+                    <span class="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] border border-amber-500/30 flex items-center gap-0.5">
+                      <Crown class="w-2.5 h-2.5" /> Owner
+                    </span>
+                  {:else if isSenderAdmin}
+                    <span class="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono text-[9px] border border-purple-500/30 flex items-center gap-0.5">
+                      <Shield class="w-2.5 h-2.5" /> Admin
+                    </span>
+                  {/if}
+                </div>
+              {/if}
               <div
                 class="max-w-[85%] sm:max-w-[75%] rounded-2xl p-3.5 text-xs shadow-lg transition-all relative {isOutgoing
                   ? 'bg-gradient-to-tr from-cyan-950/60 to-indigo-950/60 border border-cyan-500/40 text-slate-100 rounded-br-sm shadow-cyan-500/5'
@@ -1703,6 +2145,35 @@
         </div>
       {/if}
 
+      <!-- Pasted Image Preview Card (Ctrl+V) -->
+      {#if pastedImagePreview}
+        <div class="px-4 py-2 border-t border-slate-800/80 bg-slate-950/90 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="relative group/pasted rounded-xl overflow-hidden border border-cyan-500/50 bg-slate-900 shadow-md shrink-0">
+              <img
+                src={pastedImagePreview}
+                alt="Pasted clipboard"
+                class="h-14 w-auto max-w-[160px] object-cover rounded-lg"
+              />
+            </div>
+            <div class="text-xs text-slate-300 min-w-0">
+              <p class="font-bold text-cyan-300 flex items-center gap-1.5">
+                <ImageIcon class="w-3.5 h-3.5" /> Gambar dari Clipboard
+              </p>
+              <p class="text-[11px] text-slate-400 truncate">Tambahkan caption pesan atau langsung kirim gambar.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            on:click={() => (pastedImagePreview = null)}
+            class="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition cursor-pointer"
+            title="Hapus gambar tempelan"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+      {/if}
+
       <!-- Emoticon Popover Picker -->
       {#if showEmojiPicker && !isPeerBlocked}
         <div class="p-3 border-t border-slate-800 bg-slate-950/95 max-h-48 overflow-y-auto space-y-2 backdrop-blur-md">
@@ -1727,7 +2198,12 @@
 
       <!-- Chat Input Area -->
       <footer class="p-2 sm:p-3.5 border-t border-slate-800/80 bg-slate-950/80 shrink-0">
-        {#if isRecordingVoice}
+        {#if isGroupChat && !canSendInGroup}
+          <div class="p-3 bg-slate-900/90 border border-slate-800 rounded-2xl flex items-center justify-center gap-2 text-xs text-slate-400 shadow-inner">
+            <Lock class="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Hanya Admin atau anggota yang diizinkan yang dapat mengirim pesan di grup ini.</span>
+          </div>
+        {:else if isRecordingVoice}
           <!-- Voice Recording Active Bar -->
           <div class="flex items-center justify-between gap-3 p-2.5 sm:p-3 bg-slate-900 border border-rose-500/40 rounded-2xl shadow-xl shadow-rose-950/20">
             <div class="flex items-center gap-3">
@@ -1805,15 +2281,16 @@
                 bind:value={messageInput}
                 on:input={autoResizeTextarea}
                 on:keydown={handleKeyDown}
+                on:paste={handlePaste}
                 disabled={isPeerBlocked}
                 rows="1"
-                placeholder={isPeerBlocked ? "This contact is blocked" : "Type a message..."}
+                placeholder={isPeerBlocked ? "This contact is blocked" : "Type a message... (Ctrl+V to paste image)"}
                 class="w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 resize-none max-h-36 transition font-sans disabled:opacity-40"
               ></textarea>
             </div>
 
             <!-- Voice Note Mic Button / Send Button -->
-            {#if !messageInput.trim() && attachingFiles.length === 0}
+            {#if !messageInput.trim() && attachingFiles.length === 0 && !pastedImagePreview}
               <button
                 type="button"
                 disabled={isPeerBlocked}
@@ -1938,6 +2415,473 @@
     peerAlias={activePeer.customName || activePeer.name}
     onClose={() => (showRemoteExplorer = false)}
   />
+{/if}
+
+<!-- Create Group Modal -->
+{#if showCreateGroupModal}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+  <div
+    class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4"
+    role="dialog"
+    aria-modal="true"
+    on:click={() => (showCreateGroupModal = false)}
+  >
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <div
+      class="relative max-w-md w-full bg-slate-900 border border-slate-700/80 rounded-2xl p-5 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+      role="document"
+      on:click|stopPropagation
+    >
+      <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md">
+            <Users class="w-4 h-4" />
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">Buat Grup Chat Baru</h3>
+            <p class="text-[11px] text-slate-400">P2P mesh chat terenkripsi multi-device</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          on:click={() => (showCreateGroupModal = false)}
+          class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+        >
+          <X class="w-4 h-4" />
+        </button>
+      </div>
+
+      <div class="space-y-4 overflow-y-auto flex-1 pr-1">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Nama Grup <span class="text-rose-400">*</span></label>
+          <input
+            type="text"
+            bind:value={newGroupName}
+            placeholder="mis. Tim Dev, Kantor Cabang, Diskusi Proyek..."
+            class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition"
+          />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Deskripsi (Opsional)</label>
+          <input
+            type="text"
+            bind:value={newGroupDesc}
+            placeholder="Tujuan atau topik grup..."
+            class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition"
+          />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">Izin Pengiriman Pesan Awal</label>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <label class="flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition {newGroupSendPermission === 'all'
+              ? 'bg-cyan-500/10 border-cyan-500/50 text-cyan-300'
+              : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'}">
+              <input type="radio" bind:group={newGroupSendPermission} value="all" class="text-cyan-500" />
+              <div>
+                <p class="font-bold">Semua Anggota</p>
+                <p class="text-[10px] text-slate-400">Semua bisa chat</p>
+              </div>
+            </label>
+            <label class="flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition {newGroupSendPermission === 'admins_only'
+              ? 'bg-purple-500/10 border-purple-500/50 text-purple-300'
+              : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'}">
+              <input type="radio" bind:group={newGroupSendPermission} value="admins_only" class="text-purple-500" />
+              <div>
+                <p class="font-bold flex items-center gap-1"><Lock class="w-3 h-3" /> Hanya Admin</p>
+                <p class="text-[10px] text-slate-400">Kanal pengumuman</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-xs font-semibold text-slate-300">Pilih Anggota ({selectedGroupMemberIds.size} dipilih)</label>
+          </div>
+
+          <div class="max-h-44 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950/60 p-2 space-y-1">
+            {#each allPeers.filter((p) => !p.isOwnDevice) as p (p.id)}
+              {@const isChecked = selectedGroupMemberIds.has(p.id)}
+              <!-- svelte-ignore a11y-click-events-have-key-events -->
+              <!-- svelte-ignore a11y-no-static-element-interactions -->
+              <div
+                on:click={() => {
+                  if (isChecked) {
+                    selectedGroupMemberIds.delete(p.id);
+                  } else {
+                    selectedGroupMemberIds.add(p.id);
+                  }
+                  selectedGroupMemberIds = new Set(selectedGroupMemberIds);
+                }}
+                class="flex items-center justify-between p-2 rounded-lg cursor-pointer transition {isChecked
+                  ? 'bg-cyan-500/15 border border-cyan-500/30'
+                  : 'hover:bg-slate-900 border border-transparent'}"
+              >
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <div class="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-cyan-300 shrink-0">
+                    {(p.customName || p.name).slice(0, 2).toUpperCase()}
+                  </div>
+                  <div class="min-w-0">
+                    <p class="text-xs font-medium text-white truncate">{p.customName || p.name}</p>
+                    <p class="text-[10px] text-slate-500 font-mono truncate">{p.email || p.id}</p>
+                  </div>
+                </div>
+                <div>
+                  {#if isChecked}
+                    <CheckSquare class="w-4 h-4 text-cyan-400" />
+                  {:else}
+                    <Square class="w-4 h-4 text-slate-600" />
+                  {/if}
+                </div>
+              </div>
+            {/each}
+            {#if allPeers.filter((p) => !p.isOwnDevice).length === 0}
+              <p class="text-center text-xs text-slate-500 py-4">Belum ada kontak yang tersedia untuk diundang.</p>
+            {/if}
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2.5 pt-4 mt-4 border-t border-slate-800 shrink-0">
+        <button
+          type="button"
+          on:click={() => (showCreateGroupModal = false)}
+          class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+        >
+          Batal
+        </button>
+        <button
+          type="button"
+          on:click={handleCreateGroup}
+          disabled={!newGroupName.trim()}
+          class="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 disabled:opacity-40 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-cyan-500/20 cursor-pointer"
+        >
+          <Plus class="w-4 h-4" />
+          <span>Buat Grup</span>
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Group Info & Management Modal -->
+{#if showGroupInfoModal && activeGroup}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+  <div
+    class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4"
+    role="dialog"
+    aria-modal="true"
+    on:click={() => (showGroupInfoModal = false)}
+  >
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <div
+      class="relative max-w-lg w-full bg-slate-900 border border-slate-700/80 rounded-2xl p-5 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+      role="document"
+      on:click|stopPropagation
+    >
+      <!-- Header -->
+      <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md">
+            <Users class="w-5 h-5" />
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">{activeGroup.name}</h3>
+            <p class="text-[11px] text-slate-400">{activeGroup.members.length} Anggota • P2P Mesh Group</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          on:click={() => (showGroupInfoModal = false)}
+          class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+        >
+          <X class="w-4 h-4" />
+        </button>
+      </div>
+
+      <div class="space-y-4 overflow-y-auto flex-1 pr-1">
+        {#if activeGroup.description}
+          <div class="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-slate-300">
+            <p class="text-[10px] font-mono text-slate-500 mb-0.5">DESKRIPSI GRUP</p>
+            <p>{activeGroup.description}</p>
+          </div>
+        {/if}
+
+        <!-- Message Sending Permission Section (Admin Configurable) -->
+        <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs font-bold text-white flex items-center gap-1.5">
+                <Lock class="w-3.5 h-3.5 text-cyan-400" />
+                <span>Izin Pengiriman Pesan</span>
+              </p>
+              <p class="text-[10px] text-slate-400">Atur siapa saja yang diperbolehkan mengirim chat di grup</p>
+            </div>
+            {#if !isGroupAdmin}
+              <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">Hanya Admin</span>
+            {/if}
+          </div>
+
+          {#if isGroupAdmin}
+            <div class="space-y-1.5">
+              <label class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-xs {editingSendPermission === 'all'
+                ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-200'
+                : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'}">
+                <input type="radio" bind:group={editingSendPermission} value="all" class="text-cyan-500" />
+                <div>
+                  <span class="font-semibold">Semua Anggota (All Member)</span>
+                  <p class="text-[10px] text-slate-400">Semua anggota diizinkan bebas mengirim pesan</p>
+                </div>
+              </label>
+
+              <label class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-xs {editingSendPermission === 'admins_only'
+                ? 'bg-purple-500/15 border-purple-500/40 text-purple-200'
+                : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'}">
+                <input type="radio" bind:group={editingSendPermission} value="admins_only" class="text-purple-500" />
+                <div>
+                  <span class="font-semibold">Hanya Admin (Admins Only)</span>
+                  <p class="text-[10px] text-slate-400">Hanya owner & admin yang dapat mengirim pesan (Kanal pengumuman)</p>
+                </div>
+              </label>
+
+              <label class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-xs {editingSendPermission === 'custom'
+                ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-200'
+                : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'}">
+                <input type="radio" bind:group={editingSendPermission} value="custom" class="text-indigo-500" />
+                <div>
+                  <span class="font-semibold">Kustom (Custom Whitelist)</span>
+                  <p class="text-[10px] text-slate-400">Admin + anggota tertentu yang dicentang di bawah dapat mengirim pesan</p>
+                </div>
+              </label>
+            </div>
+
+            <!-- Custom Member Whitelist Checklist -->
+            {#if editingSendPermission === 'custom'}
+              <div class="mt-2 p-2.5 rounded-xl border border-indigo-500/30 bg-slate-900/90 space-y-1.5">
+                <p class="text-[11px] font-bold text-indigo-300">Pilih Anggota yang Diizinkan Mengirim Pesan:</p>
+                <div class="max-h-36 overflow-y-auto space-y-1">
+                  {#each activeGroup.members.filter((m) => m.role !== 'admin' && m.device_id !== activeGroup.owner_id) as m (m.device_id)}
+                    {@const isAllowed = editingAllowedSenders.has(m.device_id)}
+                    <!-- svelte-ignore a11y-click-events-have-key-events -->
+                    <!-- svelte-ignore a11y-no-static-element-interactions -->
+                    <div
+                      on:click={() => {
+                        if (isAllowed) {
+                          editingAllowedSenders.delete(m.device_id);
+                        } else {
+                          editingAllowedSenders.add(m.device_id);
+                        }
+                        editingAllowedSenders = new Set(editingAllowedSenders);
+                      }}
+                      class="flex items-center justify-between p-1.5 rounded-lg cursor-pointer transition {isAllowed ? 'bg-indigo-500/20 text-white' : 'hover:bg-slate-800/80 text-slate-400'}"
+                    >
+                      <span class="text-xs font-medium">{m.alias}</span>
+                      {#if isAllowed}
+                        <CheckSquare class="w-3.5 h-3.5 text-indigo-400" />
+                      {:else}
+                        <Square class="w-3.5 h-3.5 text-slate-600" />
+                      {/if}
+                    </div>
+                  {/each}
+                  {#if activeGroup.members.filter((m) => m.role !== 'admin' && m.device_id !== activeGroup.owner_id).length === 0}
+                    <p class="text-[11px] text-slate-500 italic py-1">Semua anggota di grup ini adalah admin/owner.</p>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+
+            <div class="flex justify-end pt-1">
+              <button
+                type="button"
+                on:click={handleSaveGroupPermission}
+                disabled={isSavingGroupSettings}
+                class="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold text-xs transition flex items-center gap-1.5 shadow-md shadow-cyan-500/20 cursor-pointer"
+              >
+                {#if isSavingGroupSettings}
+                  <RefreshCw class="w-3 h-3 animate-spin" />
+                {:else}
+                  <Check class="w-3 h-3" />
+                {/if}
+                <span>Simpan Izin Kirim</span>
+              </button>
+            </div>
+          {:else}
+            <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300">
+              {#if activeGroup.send_permission === 'admins_only'}
+                <p class="text-amber-400 font-semibold flex items-center gap-1.5">
+                  <Lock class="w-3.5 h-3.5" /> Hanya Admin yang dapat mengirim pesan.
+                </p>
+              {:else if activeGroup.send_permission === 'custom'}
+                <p class="text-indigo-400 font-semibold flex items-center gap-1.5">
+                  <Shield class="w-3.5 h-3.5" /> Pengiriman pesan dibatasi untuk anggota tertentu.
+                </p>
+              {:else}
+                <p class="text-emerald-400 font-semibold flex items-center gap-1.5">
+                  <Check class="w-3.5 h-3.5" /> Semua anggota dapat mengirim pesan.
+                </p>
+              {/if}
+            </div>
+          {/if}
+        </div>
+
+        <!-- Invite New Members Accordion / Dropdown (Only Admin) -->
+        {#if isGroupAdmin}
+          {@const nonMembers = allPeers.filter((p) => !p.isOwnDevice && !activeGroup.members.some((m) => m.device_id === p.id))}
+          <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs font-bold text-white flex items-center gap-1.5">
+                  <UserPlus class="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Undang Anggota Baru</span>
+                </p>
+                <p class="text-[10px] text-slate-400">Hanya Admin yang dapat mengundang anggota ke grup</p>
+              </div>
+              <button
+                type="button"
+                on:click={() => (showInviteMemberDropdown = !showInviteMemberDropdown)}
+                class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer"
+              >
+                {showInviteMemberDropdown ? 'Tutup' : '+ Pilih Kontak'}
+              </button>
+            </div>
+
+            {#if showInviteMemberDropdown}
+              <div class="pt-2 border-t border-slate-800/80 space-y-2">
+                {#if nonMembers.length === 0}
+                  <p class="text-xs text-slate-500 py-2 text-center">Semua kontak Anda sudah berada di dalam grup ini.</p>
+                {:else}
+                  <div class="max-h-36 overflow-y-auto space-y-1">
+                    {#each nonMembers as p (p.id)}
+                      {@const isChecked = selectedNewMemberIds.has(p.id)}
+                      <!-- svelte-ignore a11y-click-events-have-key-events -->
+                      <!-- svelte-ignore a11y-no-static-element-interactions -->
+                      <div
+                        on:click={() => {
+                          if (isChecked) {
+                            selectedNewMemberIds.delete(p.id);
+                          } else {
+                            selectedNewMemberIds.add(p.id);
+                          }
+                          selectedNewMemberIds = new Set(selectedNewMemberIds);
+                        }}
+                        class="flex items-center justify-between p-2 rounded-lg cursor-pointer transition {isChecked
+                          ? 'bg-cyan-500/15 border border-cyan-500/30'
+                          : 'hover:bg-slate-900 border border-transparent'}"
+                      >
+                        <span class="text-xs font-medium text-white">{p.customName || p.name}</span>
+                        {#if isChecked}
+                          <CheckSquare class="w-4 h-4 text-cyan-400" />
+                        {:else}
+                          <Square class="w-4 h-4 text-slate-600" />
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                  <div class="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      on:click={handleInviteMembersToGroup}
+                      disabled={selectedNewMemberIds.size === 0}
+                      class="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-md"
+                    >
+                      <UserPlus class="w-3.5 h-3.5" />
+                      <span>Undang {selectedNewMemberIds.size} Anggota</span>
+                    </button>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- Members List -->
+        <div class="space-y-1.5">
+          <p class="text-xs font-bold text-slate-300">Daftar Anggota ({activeGroup.members.length})</p>
+          <div class="space-y-1 max-h-56 overflow-y-auto">
+            {#each activeGroup.members as m (m.device_id)}
+              {@const isMe = m.device_id === myDeviceId}
+              {@const isOwner = m.device_id === activeGroup.owner_id}
+              {@const isAdmin = m.role === 'admin' || isOwner}
+
+              <div class="flex items-center justify-between p-2 rounded-xl bg-slate-950/60 border border-slate-800">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <div class="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-cyan-300 shrink-0">
+                    {m.alias.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-xs font-semibold text-white truncate">{m.alias}</span>
+                      {#if isMe}
+                        <span class="text-[9px] px-1 rounded bg-indigo-500/20 text-indigo-300 font-mono">You</span>
+                      {/if}
+                      {#if isOwner}
+                        <span class="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono flex items-center gap-0.5">
+                          <Crown class="w-2.5 h-2.5" /> Owner
+                        </span>
+                      {:else if m.role === 'admin'}
+                        <span class="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-mono flex items-center gap-0.5">
+                          <Shield class="w-2.5 h-2.5" /> Admin
+                        </span>
+                      {/if}
+                    </div>
+                    <p class="text-[10px] text-slate-500 font-mono truncate">{m.device_id}</p>
+                  </div>
+                </div>
+
+                <!-- Member Management Action Buttons -->
+                <div class="flex items-center gap-1 shrink-0">
+                  <!-- Owner-only: Promote / Demote Admin -->
+                  {#if isGroupOwner && !isOwner && !isMe}
+                    <button
+                      type="button"
+                      on:click={() => handleToggleAdminRole(m)}
+                      class="px-2 py-1 rounded-lg text-[11px] font-medium border transition cursor-pointer {m.role === 'admin'
+                        ? 'bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border-purple-500/30'
+                        : 'bg-slate-800 hover:bg-purple-500/20 text-slate-300 hover:text-purple-300 border-slate-700'}"
+                      title={m.role === 'admin' ? 'Turunkan dari Admin' : 'Jadikan Admin'}
+                    >
+                      {m.role === 'admin' ? 'Hapus Admin' : 'Jadikan Admin'}
+                    </button>
+                  {/if}
+
+                  <!-- Admin/Owner: Remove Member -->
+                  {#if (isGroupOwner && !isOwner && !isMe) || (isGroupAdmin && !isGroupOwner && !isAdmin && !isMe)}
+                    <button
+                      type="button"
+                      on:click={() => handleRemoveMember(m)}
+                      class="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
+                      title="Keluarkan dari grup"
+                    >
+                      <UserMinus class="w-3.5 h-3.5" />
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+
+        <!-- Danger Zone: Leave Group -->
+        <div class="pt-2 border-t border-slate-800 flex items-center justify-between">
+          <p class="text-[11px] text-slate-500">Keluar dari obrolan grup ini</p>
+          <button
+            type="button"
+            on:click={handleLeaveGroup}
+            class="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+          >
+            <LogOut class="w-3.5 h-3.5" />
+            <span>Keluar Grup</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 {/if}
 
 <style>

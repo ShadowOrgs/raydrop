@@ -133,6 +133,29 @@ export interface ChatMessage {
   files_json?: string | null;
   is_read: boolean;
   created_at: number;
+  sender_device_id?: string | null;
+  sender_alias?: string | null;
+}
+
+export interface GroupMember {
+  device_id: string;
+  alias: string;
+  avatar?: string | null;
+  role: 'owner' | 'admin' | 'member';
+  joined_at: number;
+}
+
+export interface ChatGroup {
+  id: string;
+  name: string;
+  description?: string | null;
+  avatar?: string | null;
+  owner_id: string;
+  send_permission: 'all' | 'admins_only' | 'custom';
+  allowed_senders: string[];
+  members: GroupMember[];
+  created_at: number;
+  updated_at: number;
 }
 
 export interface ClipboardSyncedPayload {
@@ -358,6 +381,63 @@ export const raydropApi = {
     invoke<void>('clear_chat_messages', { peerDeviceId }),
   getUnreadChatCounts: () =>
     invoke<Record<string, number>>('get_unread_chat_counts'),
+  createChatGroup: (
+    name: string,
+    description?: string | null,
+    avatar?: string | null,
+    memberDeviceIds: string[] = []
+  ) =>
+    invoke<ChatGroup>('create_chat_group', {
+      name,
+      description,
+      avatar,
+      memberDeviceIds,
+    }),
+  getChatGroups: () => invoke<ChatGroup[]>('get_chat_groups'),
+  getChatGroup: (groupId: string) =>
+    invoke<ChatGroup | null>('get_chat_group', { groupId }),
+  updateChatGroupDetails: (
+    groupId: string,
+    name: string,
+    description?: string | null,
+    avatar?: string | null
+  ) =>
+    invoke<ChatGroup>('update_chat_group_details', {
+      groupId,
+      name,
+      description,
+      avatar,
+    }),
+  inviteGroupMembers: (groupId: string, newDeviceIds: string[]) =>
+    invoke<ChatGroup>('invite_group_members', { groupId, newDeviceIds }),
+  removeGroupMember: (groupId: string, targetDeviceId: string) =>
+    invoke<ChatGroup>('remove_group_member', { groupId, targetDeviceId }),
+  setMemberRole: (groupId: string, targetDeviceId: string, newRole: string) =>
+    invoke<ChatGroup>('set_member_role', { groupId, targetDeviceId, newRole }),
+  setGroupSendPermission: (
+    groupId: string,
+    sendPermission: string,
+    allowedSenders?: string[]
+  ) =>
+    invoke<ChatGroup>('set_group_send_permission', {
+      groupId,
+      sendPermission,
+      allowedSenders,
+    }),
+  leaveChatGroup: (groupId: string) =>
+    invoke<void>('leave_chat_group', { groupId }),
+  sendGroupChatMessage: (
+    groupId: string,
+    content: string,
+    msgType?: string,
+    filesJson?: string | null
+  ) =>
+    invoke<ChatMessage>('send_group_chat_message', {
+      groupId,
+      content,
+      msgType,
+      filesJson,
+    }),
   updateTrayBadge: (count: number) =>
     invoke<void>('update_tray_badge', { count }),
   openExternalUrl: (url: string) =>

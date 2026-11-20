@@ -1,10 +1,20 @@
 import { writable, derived } from 'svelte/store';
-import { raydropApi, type ChatMessage } from '../utils/tauri-ipc';
+import { raydropApi, type ChatMessage, type ChatGroup } from '../utils/tauri-ipc';
 
 export const chatStore = writable<Record<string, ChatMessage[]>>({});
+export const chatGroups = writable<ChatGroup[]>([]);
 export const unreadCounts = writable<Record<string, number>>({});
 export const hasMoreMap = writable<Record<string, boolean>>({});
 export const isLoadingOlder = writable<boolean>(false);
+
+export async function fetchChatGroups() {
+  try {
+    const groups = await raydropApi.getChatGroups();
+    chatGroups.set(groups);
+  } catch (err) {
+    console.warn('Failed to load chat groups:', err);
+  }
+}
 
 export interface ChatToast {
   id: string;

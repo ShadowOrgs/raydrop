@@ -297,6 +297,31 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 return;
             }
 
+            // Group Control WAN Relay Handler (Invite, update, remove, leave)
+            if session_id.starts_with("grp_ctl:") {
+                if let Ok(bytes) = hex::decode(payload_json) {
+                    if let Ok(ctl_val) = serde_json::from_slice::<Value>(&bytes) {
+                        let ctl_type = ctl_val.get("control_type").and_then(|v| v.as_str()).unwrap_or("");
+                        if ctl_type == "GROUP_INVITE" || ctl_type == "GROUP_UPDATE" || ctl_type == "GROUP_MEMBER_LEFT" {
+                            if let Some(group_val) = ctl_val.get("group") {
+                                if let Ok(group) = serde_json::from_value::<crate::db::storage::ChatGroup>(group_val.clone()) {
+                                    let _ = state.db.upsert_chat_group(&group);
+                                    let _ = app.emit("chat_group_updated", &group);
+                                }
+                            }
+                        } else if ctl_type == "GROUP_MEMBER_REMOVED" {
+                            let gid = ctl_val.get("group_id").and_then(|v| v.as_str()).unwrap_or("");
+                            let target = ctl_val.get("target_device_id").and_then(|v| v.as_str()).unwrap_or("");
+                            if target == state.identity.device_id {
+                                let _ = state.db.delete_chat_group(gid);
+                                let _ = app.emit("chat_group_removed", gid);
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+
             // Real-time P2P Chat Packet Handler (Zero Server DB, E2EE Relay / Direct)
             if session_id.starts_with("chat:") {
                 if let Ok(Some(contact)) = state.db.get_contact(&from_device_id) {
@@ -346,9 +371,21 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                     .and_then(|v| v.as_u64())
                     .unwrap_or_else(now_unix_secs);
 
+                let from_alias = chat_val
+                    .get("from_alias")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                let maybe_group_id = chat_val.get("group_id").and_then(|v| v.as_str());
+                let peer_id = if let Some(gid) = maybe_group_id {
+                    gid.to_string()
+                } else {
+                    from_device_id.clone()
+                };
+
                 let chat_msg = crate::db::storage::ChatMessage {
                     id: msg_id,
-                    peer_device_id: from_device_id.clone(),
+                    peer_device_id: peer_id,
                     direction: "incoming".to_string(),
                     content,
                     msg_type,
@@ -356,6 +393,8 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                     files_json,
                     is_read: false,
                     created_at,
+                    sender_device_id: Some(from_device_id.clone()),
+                    sender_alias: Some(from_alias.to_string()),
                 };
 
                 let from_alias = chat_val

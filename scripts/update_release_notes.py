@@ -95,7 +95,7 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.24"
+    tag = clean_args[0] if clean_args else "v1.2.25"
     ver = tag.lstrip("v")
     title = f"Raydrop {tag}: Screen Share Autoplay Fix, Meeting User Avatars & Hand Raise Banner"
     

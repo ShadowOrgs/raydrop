@@ -40,6 +40,8 @@
     addChatToast,
     removeChatToast,
     totalUnreadCount,
+    chatGroups,
+    fetchChatGroups,
   } from "./lib/stores/chat";
   import { contacts, lanContacts } from "./lib/stores/contacts";
   import {
@@ -281,6 +283,28 @@
         contacts.set(list);
       } catch (_) {}
     });
+
+    // Listen for group chat updates & removals
+    await raydropApi.listenEvent<any>("chat_group_updated", (group) => {
+      chatGroups.update((groups) => {
+        const idx = groups.findIndex((g) => g.id === group.id);
+        if (idx >= 0) {
+          groups[idx] = group;
+          return [...groups];
+        } else {
+          return [group, ...groups];
+        }
+      });
+    });
+
+    await raydropApi.listenEvent<string>("chat_group_removed", (groupId) => {
+      chatGroups.update((groups) => groups.filter((g) => g.id !== groupId));
+      if (get(activeChatPeerId) === groupId) {
+        activeChatPeerId.set(null);
+      }
+    });
+
+    await fetchChatGroups();
 
     await raydropApi.listenEvent<ClipboardSyncedPayload>(
       "clipboard_synced",

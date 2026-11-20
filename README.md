@@ -38,6 +38,8 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 
 ### 🌟 What Makes Raydrop Unique?
 - 🚀 **Parallel P2P Transfer Engine:** Multi-segment streaming with auto-resume (`.raypart`) and BLAKE3 integrity verification.
+- 👥 **Encrypted Group Chat & Admin Roles:** Create multi-user group chats with multi-admin support, admin-only invitations, and flexible broadcast/custom sending controls.
+- 📋 **Direct Clipboard Image Paste:** Paste screenshots (Ctrl+V) directly into conversations with image preview cards and caption support.
 - 🔄 **Continuous Real-Time Folder Mirroring:** Automated background folder sync that monitors filesystem changes and mirrors files without manual intervention.
 - 📂 **Remote Folder Browser:** Securely explore authorized folder structures on paired peer devices and pull files on demand.
 - 🎧 **Zero-Cloud Online Meetings & Voice Rooms:** Host Discord & Zoom-like encrypted meetings with 1080p 60fps screen sharing, voice activity detection, and in-meeting file drop.
@@ -49,6 +51,21 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 ---
 
 ## ✨ Key Features
+
+### 👥 P2P Encrypted Group Chat & Granular Admin Permissions (New in v1.2.25)
+- **Zero-Cloud Group Channels:** Create multi-member P2P group conversations with full end-to-end encryption across local Wi-Fi mesh and WAN signaling relay.
+- **Hierarchical Admin Hierarchy:** Group creator acts as Primary Owner and can promote trusted members to co-admins or demote them.
+- **Admin-Only Invitation Security:** Only group owner and admins hold permission to invite new contacts into the group.
+- **Configurable Send Permissions:** Admins can configure message sending rules on the fly:
+  - **All Members:** Open discussion where every participant can send messages and voice notes.
+  - **Admins Only:** Broadcast / announcement channel where only the owner and co-admins can send messages.
+  - **Custom Whitelist:** Specific selected members allowed alongside admins. Restricted members see an intuitive lock indicator banner.
+- **Self-Healing Group Membership:** Members can exit groups at any time; if the primary owner leaves, ownership is automatically transitioned to the next admin.
+
+### 📋 Direct Clipboard Image Paste in Chat (New in v1.2.25)
+- **Ctrl+V Screenshot & Graphic Paste:** Paste captured screenshots, snipped graphics, or copied images directly from your system clipboard into chat.
+- **Image Preview Card with Caption Support:** Displays an instant thumbnail preview of the pasted image with optional text captioning before sending.
+- **One-Click Clipboard Copy & Fullscreen Lightbox:** Recipient devices can view full-screen zoom previews, copy the raw image back to their system clipboard, or save directly to Downloads.
 
 ### 🎧 P2P Online Meeting & Crystal-Clear Voice Rooms (New in v1.2.20 - v1.2.21)
 - **Discord & Zoom-Style P2P Room:** Host or join private encrypted meeting rooms directly between peers using WebRTC mesh with zero central audio/video relay servers.
