@@ -3,7 +3,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { contacts } from "../stores/contacts";
   import { appSettings } from "../stores/state";
-  import { peerAvatars, myAvatar } from "../stores/avatars";
+  import { peerAvatars, myAvatar, loadPeerAvatar } from "../stores/avatars";
   import { raydropApi } from "../utils/tauri-ipc";
   import {
     isInMeeting,
@@ -61,6 +61,7 @@
     ChevronRight,
     Headphones,
     X,
+    Loader2,
   } from "lucide-svelte";
 
   // Lobby States
@@ -83,7 +84,18 @@
   function attachStream(node: HTMLMediaElement, stream: MediaStream | null) {
     node.srcObject = stream;
     if (stream) {
-      node.play().catch(() => {});
+      if (node instanceof HTMLVideoElement) {
+        node.muted = true;
+      }
+      const playPromise = node.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          if (node instanceof HTMLVideoElement && !node.muted) {
+            node.muted = true;
+            node.play().catch(() => {});
+          }
+        });
+      }
     }
     return {
       update(newStream: MediaStream | null) {
@@ -91,7 +103,18 @@
           node.srcObject = newStream;
         }
         if (newStream) {
-          node.play().catch(() => {});
+          if (node instanceof HTMLVideoElement) {
+            node.muted = true;
+          }
+          const playPromise = node.play();
+          if (playPromise !== undefined) {
+            playPromise.catch(() => {
+              if (node instanceof HTMLVideoElement && !node.muted) {
+                node.muted = true;
+                node.play().catch(() => {});
+              }
+            });
+          }
         }
       },
       destroy() {
@@ -106,6 +129,20 @@
     ($isScreenSharing
       ? { deviceId: "local", alias: "You", stream: $localVideoStream }
       : null);
+
+  $: raisedHandParticipants = [
+    ...($isHandRaised ? [{ deviceId: "local", alias: "You" }] : []),
+    ...activeParticipantList.filter((p) => p.isHandRaised),
+  ];
+
+  // Auto-preload peer avatars
+  $: {
+    for (const p of activeParticipantList) {
+      if (p.deviceId && p.deviceId !== "local" && !$peerAvatars[p.deviceId]) {
+        loadPeerAvatar(p.deviceId);
+      }
+    }
+  }
 
   interface InvitableUser {
     key: string;
@@ -630,8 +667,18 @@
           <!-- Spotlight Screen Sharing Mode -->
           <div class="w-full h-full flex flex-col gap-3">
             <div
-              class="flex-1 rounded-2xl bg-black border border-indigo-500/40 relative overflow-hidden flex items-center justify-center"
+              class="flex-1 rounded-2xl bg-black border border-indigo-500/40 relative overflow-hidden flex items-center justify-center shadow-2xl"
             >
+              <!-- Floating Notification: Raised Hand banner during presentation -->
+              {#if raisedHandParticipants.length > 0}
+                <div class="absolute top-4 left-1/2 transform -translate-x-1/2 z-30 flex items-center gap-2 px-4 py-2 rounded-2xl bg-amber-500/90 text-amber-950 font-bold text-xs sm:text-sm shadow-2xl backdrop-blur-md animate-bounce border border-amber-300">
+                  <span class="text-base sm:text-lg">✋</span>
+                  <span>
+                    {raisedHandParticipants.map(p => p.alias).join(", ")} {raisedHandParticipants.length > 1 ? "mengangkat tangan" : "mengangkat tangan"}!
+                  </span>
+                </div>
+              {/if}
+
               {#if screenSharingPeer.deviceId === "local"}
                 <video
                   autoplay
@@ -645,52 +692,152 @@
                 <video
                   autoplay
                   playsinline
+                  muted
                   class="w-full h-full object-contain"
                   use:attachStream={screenSharingPeer.stream}
                 ></video>
+              {:else}
+                <div class="flex flex-col items-center justify-center gap-3 text-slate-400">
+                  <Loader2 class="w-8 h-8 animate-spin text-cyan-400" />
+                  <span class="text-xs font-medium">Menghubungkan layar {screenSharingPeer.alias}...</span>
+                </div>
               {/if}
+
+              <!-- Screen Presenter Label -->
               <div
-                class="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur-md px-3 py-1 rounded-xl text-xs font-mono border border-slate-700 text-slate-200"
+                class="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur-md px-3 py-1.5 rounded-xl text-xs font-mono border border-indigo-500/50 text-indigo-200 flex items-center gap-2 shadow-lg"
               >
-                🖥️ {screenSharingPeer.alias} is presenting screen
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                <span>🖥️ {screenSharingPeer.alias} is presenting screen</span>
               </div>
             </div>
 
             <!-- Participant strip underneath presentation -->
-            <div class="h-28 flex items-center gap-2 overflow-x-auto py-1">
+            <div class="h-28 flex items-center gap-2.5 overflow-x-auto py-1 px-1">
               <!-- Local Tile -->
               <div
-                class="h-full aspect-video rounded-xl bg-slate-900 border {$isMicMuted
+                class="h-full aspect-video rounded-xl bg-slate-900/90 border-2 {$isHandRaised
+                  ? 'border-amber-400 ring-2 ring-amber-400/40'
+                  : $isMicMuted
                   ? 'border-slate-800'
-                  : 'border-emerald-500/50'} relative flex items-center justify-center shrink-0 overflow-hidden"
+                  : 'border-emerald-500/50'} relative flex flex-col items-center justify-center shrink-0 overflow-hidden shadow-md group transition-all"
               >
-                <span class="text-xs font-bold text-slate-300">You</span>
-                {#if $isMicMuted}
-                  <MicOff
-                    class="w-3.5 h-3.5 absolute top-2 right-2 text-rose-400"
+                <!-- Video or Avatar -->
+                {#if $isCameraOn && $localVideoStream}
+                  <video
+                    autoplay
+                    playsinline
+                    muted
+                    class="w-full h-full object-cover transform -scale-x-100"
+                    use:attachStream={$localVideoStream}
+                  ></video>
+                {:else if $myAvatar}
+                  <img
+                    src={$myAvatar}
+                    alt="You"
+                    class="w-10 h-10 rounded-full object-cover border border-slate-700/60 shadow-sm"
                   />
+                {:else}
+                  <div
+                    class="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300"
+                  >
+                    {$appSettings.alias_name?.slice(0, 2).toUpperCase() || "YOU"}
+                  </div>
                 {/if}
+
+                <!-- Sharing Screen Badge -->
+                {#if $isScreenSharing}
+                  <div
+                    class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-indigo-600/90 text-[10px] font-bold text-white flex items-center gap-1 shadow-sm border border-indigo-400/50 animate-pulse"
+                  >
+                    <span>🖥️ Sharing</span>
+                  </div>
+                {/if}
+
+                <!-- Raised Hand Badge -->
+                {#if $isHandRaised}
+                  <div
+                    class="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-amber-400 text-amber-950 font-bold text-[11px] flex items-center gap-1 shadow-md border border-amber-300 animate-bounce"
+                  >
+                    <span>✋</span>
+                  </div>
+                {/if}
+
+                <!-- Bottom Label -->
+                <div
+                  class="absolute bottom-1 left-1.5 right-1.5 flex items-center justify-between text-[11px] font-medium text-slate-200 bg-slate-950/80 backdrop-blur-sm px-1.5 py-0.5 rounded border border-slate-800"
+                >
+                  <span class="truncate">You</span>
+                  {#if $isMicMuted}
+                    <MicOff class="w-3 h-3 text-rose-400 shrink-0" />
+                  {/if}
+                </div>
               </div>
 
               <!-- Remote Peers Tiles -->
               {#each activeParticipantList as peer (peer.deviceId)}
+                {@const peerImg = peer.avatar || $peerAvatars[peer.deviceId]}
                 <div
-                  class="h-full aspect-video rounded-xl bg-slate-900 border {peer.isSpeaking
-                    ? 'border-emerald-400 shadow-md shadow-emerald-500/20'
-                    : 'border-slate-800'} relative flex items-center justify-center shrink-0 overflow-hidden"
+                  class="h-full aspect-video rounded-xl bg-slate-900/90 border-2 {peer.isHandRaised
+                    ? 'border-amber-400 ring-2 ring-amber-400/40'
+                    : peer.isSpeaking
+                    ? 'border-emerald-400 ring-2 ring-emerald-500/30'
+                    : 'border-slate-800'} relative flex flex-col items-center justify-center shrink-0 overflow-hidden shadow-md group transition-all"
                 >
-                  <span class="text-xs font-bold text-slate-300"
-                    >{peer.alias}</span
-                  >
-                  {#if peer.isMuted}
-                    <MicOff
-                      class="w-3.5 h-3.5 absolute top-2 right-2 text-rose-400"
+                  <!-- Video or Avatar -->
+                  {#if peer.isCameraOn && peer.stream}
+                    <video
+                      autoplay
+                      playsinline
+                      muted
+                      class="w-full h-full object-cover"
+                      use:attachStream={peer.stream}
+                    ></video>
+                  {:else if peerImg}
+                    <img
+                      src={peerImg}
+                      alt={peer.alias}
+                      class="w-10 h-10 rounded-full object-cover border border-slate-700/60 shadow-sm"
                     />
+                  {:else}
+                    <div
+                      class="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300"
+                    >
+                      {peer.alias?.slice(0, 2).toUpperCase() || "P"}
+                    </div>
                   {/if}
+
+                  <!-- Sharing Screen Badge -->
+                  {#if peer.isScreenSharing}
+                    <div
+                      class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-indigo-600/90 text-[10px] font-bold text-white flex items-center gap-1 shadow-sm border border-indigo-400/50 animate-pulse"
+                    >
+                      <span>🖥️ Sharing</span>
+                    </div>
+                  {/if}
+
+                  <!-- Raised Hand Badge -->
+                  {#if peer.isHandRaised}
+                    <div
+                      class="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-amber-400 text-amber-950 font-bold text-[11px] flex items-center gap-1 shadow-md border border-amber-300 animate-bounce"
+                    >
+                      <span>✋</span>
+                    </div>
+                  {/if}
+
+                  <!-- Bottom Label -->
+                  <div
+                    class="absolute bottom-1 left-1.5 right-1.5 flex items-center justify-between text-[11px] font-medium text-slate-200 bg-slate-950/80 backdrop-blur-sm px-1.5 py-0.5 rounded border border-slate-800"
+                  >
+                    <span class="truncate">{peer.alias}</span>
+                    {#if peer.isMuted}
+                      <MicOff class="w-3 h-3 text-rose-400 shrink-0" />
+                    {/if}
+                  </div>
+
                   {#if peer.stream}
                     <!-- Hidden audio element auto-playing remote participant's voice -->
-                    <audio autoplay playsinline use:attachStream={peer.stream}
-                    ></audio>
+                    <audio autoplay playsinline use:attachStream={peer.stream}></audio>
                   {/if}
                 </div>
               {/each}
@@ -703,7 +850,9 @@
           >
             <!-- 1. Local User Tile -->
             <div
-              class="rounded-2xl bg-slate-900 border-2 {$isMicMuted
+              class="rounded-2xl bg-slate-900 border-2 {$isHandRaised
+                ? 'border-amber-400 ring-2 ring-amber-400/40'
+                : $isMicMuted
                 ? 'border-slate-800'
                 : 'border-emerald-500/40'} shadow-lg relative flex flex-col items-center justify-center overflow-hidden transition-all group"
             >
@@ -718,7 +867,7 @@
               {:else}
                 <!-- Avatar / Initials Tile -->
                 <div
-                  class="w-20 h-20 rounded-2xl bg-gradient-to-tr from-indigo-500/20 to-sky-500/20 border border-indigo-500/40 flex items-center justify-center text-xl font-bold text-indigo-300 shadow-inner"
+                  class="w-20 h-20 rounded-2xl bg-gradient-to-tr from-indigo-500/20 to-sky-500/20 border border-indigo-500/40 flex items-center justify-center text-xl font-bold text-indigo-300 shadow-inner overflow-hidden"
                 >
                   {#if $myAvatar}
                     <img
@@ -732,13 +881,20 @@
                 </div>
               {/if}
 
+              <!-- Sharing Screen Badge -->
+              {#if $isScreenSharing}
+                <div class="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-lg bg-indigo-600/90 text-xs font-bold text-white flex items-center gap-1 shadow-md border border-indigo-400/50 animate-pulse">
+                  <span>🖥️ Sharing Screen</span>
+                </div>
+              {/if}
+
               <!-- Badges -->
               <div
                 class="absolute bottom-2.5 left-2.5 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-xl text-xs font-medium text-slate-200 border border-slate-800 flex items-center gap-1.5"
               >
                 <span>{$appSettings.alias_name || "You"} (You)</span>
                 {#if $isHandRaised}
-                  <span class="text-amber-400">✋</span>
+                  <span class="text-amber-400 animate-bounce">✋</span>
                 {/if}
               </div>
 
@@ -753,8 +909,11 @@
 
             <!-- 2. Remote Participants Tiles -->
             {#each activeParticipantList as peer (peer.deviceId)}
+              {@const peerImg = peer.avatar || $peerAvatars[peer.deviceId]}
               <div
-                class="rounded-2xl bg-slate-900 border-2 {peer.isSpeaking
+                class="rounded-2xl bg-slate-900 border-2 {peer.isHandRaised
+                  ? 'border-amber-400 ring-2 ring-amber-400/40'
+                  : peer.isSpeaking
                   ? 'border-emerald-400 shadow-lg shadow-emerald-500/25 ring-2 ring-emerald-500/30'
                   : 'border-slate-800'} shadow-lg relative flex flex-col items-center justify-center overflow-hidden transition-all"
               >
@@ -762,17 +921,18 @@
                   <video
                     autoplay
                     playsinline
+                    muted
                     class="w-full h-full object-cover"
                     use:attachStream={peer.stream}
                   ></video>
                 {:else}
                   <!-- Remote Avatar -->
                   <div
-                    class="w-20 h-20 rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-indigo-500/20 border border-cyan-500/40 flex items-center justify-center text-xl font-bold text-cyan-300 shadow-inner"
+                    class="w-20 h-20 rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-indigo-500/20 border border-cyan-500/40 flex items-center justify-center text-xl font-bold text-cyan-300 shadow-inner overflow-hidden"
                   >
-                    {#if peer.avatar}
+                    {#if peerImg}
                       <img
-                        src={peer.avatar}
+                        src={peerImg}
                         alt={peer.alias}
                         class="w-full h-full rounded-2xl object-cover"
                       />
@@ -788,13 +948,20 @@
                   ></audio>
                 {/if}
 
+                <!-- Remote Sharing Badge -->
+                {#if peer.isScreenSharing}
+                  <div class="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-lg bg-indigo-600/90 text-xs font-bold text-white flex items-center gap-1 shadow-md border border-indigo-400/50 animate-pulse">
+                    <span>🖥️ Sharing Screen</span>
+                  </div>
+                {/if}
+
                 <!-- Peer Badges -->
                 <div
                   class="absolute bottom-2.5 left-2.5 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-xl text-xs font-medium text-slate-200 border border-slate-800 flex items-center gap-1.5"
                 >
                   <span>{peer.alias}</span>
                   {#if peer.isHandRaised}
-                    <span class="text-amber-400">✋</span>
+                    <span class="text-amber-400 animate-bounce">✋</span>
                   {/if}
                 </div>
 

@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.23"
+    tag = clean_args[0] if clean_args else "v1.2.24"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Seamless 1080p Screen Sharing Fix & Person-Based Meeting Invites"
+    title = f"Raydrop {tag}: Screen Share Autoplay Fix, Meeting User Avatars & Hand Raise Banner"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Seamless 1080p Screen Sharing Fix & Person-Based Meeting Invites</h2>
+<h2 align="center">Raydrop {tag}: Screen Share Autoplay Fix, Meeting User Avatars & Hand Raise Banner</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,13 +126,18 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🖥️ Persistent 1080p Screen Sharing Without Container Drop
-- **Zero-Drop Track Replacement:** Pre-negotiated WebRTC transceivers ensure switching between camera and desktop screen share uses direct `replaceTrack` without triggering disruptive SDP renegotiation or transient disconnections.
-- **Resilient Connection Handling:** Eliminated false-positive peer drops caused by transient `disconnected` states during ICE candidate transitions.
-- **Live Stream Reactivity:** MediaStream changes automatically emit fresh stream instances with forced `node.play()` execution, preventing frozen video frames.
+#### 🖥️ Remote Screen Share Autoplay & Video Frame Fix
+- **Autoplay Compliance:** Remote screen share videos now strictly enforce `muted` mode (since audio is processed via dedicated high-fidelity audio elements), completely eliminating Chromium / WebView2 autoplay pauses that caused blank black screens.
+- **Robust Video Transceiver Mapping:** Accurately routes desktop video streams to WebRTC transceivers and triggers immediate frame decoding on remote peers.
 
-#### 👥 Person-Based Meeting Invites (Multi-Device Broadcast)
-- **Invite by Display Name / Full Name:** Contacts in the invite menu and contact list are now grouped by user instead of confusing individual device names.
-- **Simultaneous Device Ring:** Inviting a user broadcasts the incoming call to all of that user's linked devices simultaneously (PC, laptop, phone), allowing the user to pick whichever device they prefer to join the meeting from.
+#### 👤 Real-time User Avatars & "Sharing" Indicator in Meeting
+- **Avatars in Presentation Strip:** When someone is presenting, every participant's thumbnail card in the bottom strip renders their synced profile avatar and microphone state.
+- **Presenter Visual Badge:** A glowing, pulsing `🖥️ Sharing` badge is prominently placed on the presenting participant's tile so everyone knows whose screen is being projected.
+
+#### ✋ Prominent Raised Hand Alert Banner
+- **Visible During Presentation:** When any participant raises their hand while a screen is being shared, an animated floating banner (`✋ [Name] mengangkat tangan!`) pops up directly over the presentation screen, plus an animated badge on their participant tile.
+
+#### 🖼️ Transfer History Thumbnail Preload Reliability
+- **Base64 Data Stream:** Eliminates broken image icons by relying on direct native thumbnail decoding with fallback file badges during transfer history preloading.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

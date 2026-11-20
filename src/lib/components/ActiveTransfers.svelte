@@ -1230,19 +1230,6 @@
                         class="w-full h-full object-cover"
                       />
                     </div>
-                  {:else if isImg && primaryFilePath && !failedThumbnails[primaryFilePath]}
-                    <div class="w-11 h-11 rounded-xl overflow-hidden border border-cyan-500/30 bg-slate-800 shrink-0 shadow-sm">
-                      <img
-                        src={convertFileSrc(primaryFilePath)}
-                        alt=""
-                        on:error={() => {
-                          if (!transferThumbnails[primaryFilePath]) {
-                            failedThumbnails = { ...failedThumbnails, [primaryFilePath]: true };
-                          }
-                        }}
-                        class="w-full h-full object-cover"
-                      />
-                    </div>
                   {:else}
                     <div class="w-11 h-11 rounded-xl {badge.color} border flex items-center justify-center font-mono font-extrabold text-xs shrink-0 shadow-sm">
                       {badge.label}
@@ -1504,27 +1491,6 @@
                       <img
                         src={transferThumbnails[primaryFilePath]}
                         alt=""
-                        class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                      />
-                      <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                        <Eye class="w-4 h-4 text-white" />
-                      </div>
-                    </button>
-                  {:else if isImg && primaryFilePath && !failedThumbnails[primaryFilePath]}
-                    <button
-                      type="button"
-                      on:click={() => openImagePreview(primaryFilePath, primaryName)}
-                      class="w-10 h-10 rounded-xl overflow-hidden border border-cyan-500/30 bg-slate-800 shrink-0 relative group shadow-sm hover:ring-2 hover:ring-cyan-500/50 transition cursor-zoom-in"
-                      title="Click to view image"
-                    >
-                      <img
-                        src={convertFileSrc(primaryFilePath)}
-                        alt=""
-                        on:error={() => {
-                          if (!transferThumbnails[primaryFilePath]) {
-                            failedThumbnails = { ...failedThumbnails, [primaryFilePath]: true };
-                          }
-                        }}
                         class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                       />
                       <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
