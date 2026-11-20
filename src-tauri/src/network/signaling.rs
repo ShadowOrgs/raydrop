@@ -495,8 +495,8 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 return;
             }
 
-            // P2P Voice & Online Meeting Room Signaling Handler
-            if session_id.starts_with("meeting:") {
+            // P2P Voice & Online Meeting Room Signaling Handler & Remote Desktop Signaling
+            if session_id.starts_with("meeting:") || session_id.starts_with("remote:") {
                 if let Ok(bytes) = hex::decode(payload_json) {
                     if let Ok(signal_val) = serde_json::from_slice::<Value>(&bytes) {
                         let _ = app.emit(

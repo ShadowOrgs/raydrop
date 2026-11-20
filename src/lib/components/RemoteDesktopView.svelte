@@ -1,33 +1,25 @@
 <script lang="ts">
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import {
     Monitor,
     Shield,
     Lock,
     Key,
-    Wifi,
     RefreshCw,
     Play,
-    Square,
-    Eye,
-    EyeOff,
     Check,
     X,
     Maximize,
     Minimize,
-    Clipboard,
     ArrowDownToLine,
     ArrowUpFromLine,
     LogOut,
-    Power,
-    Sliders,
-    HelpCircle,
     Copy,
     Laptop,
-    Sparkles,
     AlertCircle,
-    Layers,
-    MonitorUp,
+    MonitorPlay,
+    Square,
+    Sparkles,
   } from 'lucide-svelte';
   import {
     remoteHostSettings,
@@ -46,6 +38,7 @@
     requestClipboardFromHost,
     sendShortcutToHost,
     initRemoteDesktopListener,
+    startHostScreenCapture,
     stopHostScreenCapture,
   } from '../stores/remote_desktop';
   import { contacts, lanContacts } from '../stores/contacts';
@@ -53,8 +46,6 @@
 
   let selectedTargetDeviceId = '';
   let inputPin = '';
-  let showInputPin = false;
-  let showHostPin = false;
 
   // Host configuration state
   let hostEnabled = true;
@@ -63,11 +54,17 @@
   let isSavingSettings = false;
   let saveSuccess = false;
 
+  // Change PIN modal state
+  let isChangePinModalOpen = false;
+  let newPin = '';
+  let confirmPin = '';
+  let pinChangeError = '';
+  let pinChangeSuccess = false;
+
   // Viewer state
   let videoEl: HTMLVideoElement | null = null;
   let viewerContainerEl: HTMLDivElement | null = null;
   let isFullscreen = false;
-  let scaleMode: 'fit' | 'fill' | 'original' = 'fit';
   let showToolbar = true;
   let lastMouseMoveTime = 0;
 
@@ -99,8 +96,8 @@
       seen.add(d.device_id);
       list.push({
         id: d.device_id,
-        name: d.device_name || 'My Device',
-        type: 'Perangkat Saya (Cloud)',
+        name: d.device_name || 'My Cloud Device',
+        type: 'My Cloud Device',
         isOnline: d.is_online,
       });
     }
@@ -110,8 +107,8 @@
       seen.add(c.device_id);
       list.push({
         id: c.device_id,
-        name: c.custom_name || c.alias_name || 'Kontak Raydrop',
-        type: 'Kontak',
+        name: c.custom_name || c.alias_name || 'Contact',
+        type: 'Contact',
         isOnline: c.is_online,
       });
     }
@@ -122,7 +119,7 @@
       list.push({
         id: l.device_id,
         name: l.alias_name || 'LAN Peer',
-        type: 'LAN Radar',
+        type: 'LAN Peer',
         isOnline: true,
       });
     }
@@ -148,31 +145,77 @@
     isFullscreen = !!document.fullscreenElement;
   }
 
-  async function handleSaveSettings() {
+  async function handleToggleHostEnabled() {
     try {
       isSavingSettings = true;
       await saveRemoteDesktopSettings(hostEnabled, hostPin, hostUnattended);
       saveSuccess = true;
       setTimeout(() => (saveSuccess = false), 2500);
     } catch (err: any) {
-      alert(`Gagal menyimpan pengaturan: ${err?.message || err}`);
+      alert(`Failed to save settings: ${err?.message || err}`);
     } finally {
       isSavingSettings = false;
     }
   }
 
-  function generateRandomPin() {
-    hostPin = Math.floor(100000 + Math.random() * 900000).toString();
-    handleSaveSettings();
+  function openChangePinModal() {
+    newPin = '';
+    confirmPin = '';
+    pinChangeError = '';
+    pinChangeSuccess = false;
+    isChangePinModalOpen = true;
+  }
+
+  function closeChangePinModal() {
+    isChangePinModalOpen = false;
+  }
+
+  function generateRandomPinInModal() {
+    const r = Math.floor(100000 + Math.random() * 900000).toString();
+    newPin = r;
+    confirmPin = r;
+    pinChangeError = '';
+  }
+
+  async function handleSaveNewPin() {
+    pinChangeError = '';
+    if (!/^\d{6}$/.test(newPin.trim())) {
+      pinChangeError = 'PIN must be exactly 6 digits (numbers only).';
+      return;
+    }
+    if (newPin.trim() !== confirmPin.trim()) {
+      pinChangeError = 'PINs do not match. Please re-enter.';
+      return;
+    }
+
+    try {
+      hostPin = newPin.trim();
+      await saveRemoteDesktopSettings(hostEnabled, hostPin, hostUnattended);
+      pinChangeSuccess = true;
+      setTimeout(() => {
+        closeChangePinModal();
+        pinChangeSuccess = false;
+      }, 1200);
+    } catch (err: any) {
+      pinChangeError = `Failed to update PIN: ${err?.message || err}`;
+    }
+  }
+
+  async function handleToggleScreenCapture() {
+    if ($isHostSharingScreen) {
+      stopHostScreenCapture();
+    } else {
+      await startHostScreenCapture();
+    }
   }
 
   function handleConnect() {
     if (!selectedTargetDeviceId) {
-      alert('Pilih perangkat tujuan yang ingin Anda remote terlebih dahulu.');
+      alert('Please select or enter a target device first.');
       return;
     }
     if (!inputPin.trim()) {
-      alert('Masukkan PIN Keamanan perangkat host.');
+      alert('Please enter the host security PIN.');
       return;
     }
     connectToRemoteHost(selectedTargetDeviceId, inputPin.trim());
@@ -259,7 +302,7 @@
       a: 'down',
     });
 
-    // Prevent default browser behavior for common shortcuts (like F5 reload or Backspace navigation)
+    // Prevent default browser behavior for common shortcuts (like F5 reload or Alt+Tab)
     if (['Tab', 'F5', 'Alt', 'Meta'].includes(e.key) || (e.ctrlKey && ['w', 'r', 't'].includes(e.key.toLowerCase()))) {
       e.preventDefault();
     }
@@ -312,19 +355,19 @@
               type="button"
               on:click={sendLocalClipboardToHost}
               class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1 cursor-pointer"
-              title="Kirim Clipboard lokal Anda (Teks atau Gambar) ke Host PC"
+              title="Send your local clipboard (Text or Image) to Host PC"
             >
               <ArrowUpFromLine class="w-3.5 h-3.5 text-cyan-400" />
-              <span class="hidden sm:inline">Kirim Clipboard</span>
+              <span class="hidden sm:inline">Send Clipboard</span>
             </button>
             <button
               type="button"
               on:click={requestClipboardFromHost}
               class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1 cursor-pointer"
-              title="Ambil isi Clipboard dari Host PC ke komputer Anda"
+              title="Get clipboard contents from Host PC to your local computer"
             >
               <ArrowDownToLine class="w-3.5 h-3.5 text-indigo-400" />
-              <span class="hidden sm:inline">Ambil Clipboard</span>
+              <span class="hidden sm:inline">Get Clipboard</span>
             </button>
           </div>
 
@@ -334,7 +377,7 @@
               type="button"
               on:click={() => sendShortcutToHost('win_d')}
               class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-mono transition"
-              title="Tampilkan Desktop Host (Win + D)"
+              title="Show Host Desktop (Win + D)"
             >
               Desktop
             </button>
@@ -342,7 +385,7 @@
               type="button"
               on:click={() => sendShortcutToHost('ctrl_shift_esc')}
               class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-mono transition"
-              title="Buka Task Manager di Host (Ctrl + Shift + Esc)"
+              title="Open Task Manager on Host (Ctrl + Shift + Esc)"
             >
               TaskMgr
             </button>
@@ -350,7 +393,7 @@
               type="button"
               on:click={() => sendShortcutToHost('win_l')}
               class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-rose-400 text-[11px] font-mono transition"
-              title="Kunci Host PC (Win + L)"
+              title="Lock Host PC (Win + L)"
             >
               Lock
             </button>
@@ -362,7 +405,7 @@
               type="button"
               on:click={toggleFullscreen}
               class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-              title={isFullscreen ? 'Keluar Fullscreen' : 'Layar Penuh (Fullscreen)'}
+              title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
             >
               {#if isFullscreen}
                 <Minimize class="w-3.5 h-3.5" />
@@ -374,10 +417,10 @@
               type="button"
               on:click={disconnectRemoteSession}
               class="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95"
-              title="Putus Sesi Remote"
+              title="Disconnect Remote Session"
             >
               <LogOut class="w-3.5 h-3.5" />
-              <span>Putus</span>
+              <span>Disconnect</span>
             </button>
           </div>
         </div>
@@ -419,7 +462,7 @@
               </span>
             </h2>
             <p class="text-xs text-slate-400 mt-0.5">
-              Remote kontrol PC dan HP secara instan dengan resolusi 1080p 60fps, perlindungan PIN aman, dan sinkronisasi clipboard dua arah.
+              Securely control remote PCs and devices with 60fps high resolution, encrypted PIN protection, and bidirectional clipboard sync.
             </p>
           </div>
         </div>
@@ -427,13 +470,13 @@
         {#if isHostActive}
           <div class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
             <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>Host Aktif: Dikontrol oleh {$activeRemoteSession?.peerAlias}</span>
+            <span>Host Active: Controlled by {$activeRemoteSession?.peerAlias}</span>
             <button
               type="button"
               on:click={disconnectRemoteSession}
               class="ml-2 px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[11px]"
             >
-              Hentikan
+              Stop Session
             </button>
           </div>
         {/if}
@@ -463,8 +506,8 @@
           <div class="flex items-center gap-2.5 pb-2 border-b border-slate-800">
             <Laptop class="w-5 h-5 text-cyan-400" />
             <div>
-              <h3 class="text-sm font-bold text-white">Remote Perangkat Lain (Client)</h3>
-              <p class="text-[11px] text-slate-400">Kontrol PC atau HP lain dari sini dengan memasukkan PIN</p>
+              <h3 class="text-sm font-bold text-white">Control Remote Device (Client)</h3>
+              <p class="text-[11px] text-slate-400">Access and control another computer or mobile device using its PIN</p>
             </div>
           </div>
 
@@ -472,18 +515,18 @@
             <!-- Target Device Selector -->
             <div>
               <label class="block text-xs font-semibold text-slate-300 mb-1.5">
-                Pilih Komputer / HP Tujuan:
+                Select Target Device:
               </label>
               {#if availablePeers.length === 0}
                 <div class="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-500 text-center">
-                  Belum ada perangkat online yang terdeteksi di Kontak atau LAN. Anda juga bisa memasukkan Device ID manual di bawah.
+                  No online devices detected in Contacts or LAN. You can enter a Host Device ID manually below.
                 </div>
               {:else}
                 <select
                   bind:value={selectedTargetDeviceId}
                   class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-cyan-500 transition"
                 >
-                  <option value="">-- Pilih Perangkat Online --</option>
+                  <option value="">-- Select Online Device --</option>
                   {#each availablePeers as peer}
                     <option value={peer.id}>
                       {peer.name} ({peer.type}) {peer.isOnline ? '🟢 Online' : '⚪ Offline'}
@@ -496,7 +539,7 @@
             <!-- Manual Device ID Input -->
             <div>
               <label class="block text-xs font-semibold text-slate-300 mb-1">
-                Atau Masukkan Device ID Host Manual:
+                Or Enter Host Device ID Manually:
               </label>
               <input
                 type="text"
@@ -506,41 +549,21 @@
               />
             </div>
 
-            <!-- Security PIN Input -->
+            <!-- Security PIN Input (Strictly Masked) -->
             <div>
               <label class="block text-xs font-semibold text-slate-300 mb-1">
-                PIN Akses Remote Host:
+                Host Security PIN:
               </label>
-              <div class="relative">
-                {#if showInputPin}
-                  <input
-                    type="text"
-                    bind:value={inputPin}
-                    placeholder="Masukkan 6-digit PIN host..."
-                    class="w-full px-3 py-2 pr-10 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 font-mono tracking-widest focus:outline-none focus:border-cyan-500 transition"
-                  />
-                {:else}
-                  <input
-                    type="password"
-                    bind:value={inputPin}
-                    placeholder="Masukkan 6-digit PIN host..."
-                    class="w-full px-3 py-2 pr-10 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 font-mono tracking-widest focus:outline-none focus:border-cyan-500 transition"
-                  />
-                {/if}
-                <button
-                  type="button"
-                  on:click={() => (showInputPin = !showInputPin)}
-                  class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition cursor-pointer"
-                >
-                  {#if showInputPin}
-                    <EyeOff class="w-4 h-4" />
-                  {:else}
-                    <Eye class="w-4 h-4" />
-                  {/if}
-                </button>
-              </div>
+              <input
+                type="password"
+                maxlength="6"
+                inputmode="numeric"
+                bind:value={inputPin}
+                placeholder="••••••"
+                class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 font-mono tracking-widest focus:outline-none focus:border-cyan-500 transition text-center sm:text-left"
+              />
               <p class="text-[10px] text-slate-500 mt-1">
-                PIN didapatkan dari menu "Akses Remote Komputer Ini" pada perangkat tujuan.
+                Obtain the PIN from the "Allow Remote Access" section on the target host device.
               </p>
             </div>
 
@@ -553,13 +576,13 @@
             >
               {#if $remoteConnectionStatus === 'verifying_pin'}
                 <RefreshCw class="w-4 h-4 animate-spin text-white" />
-                <span>Memverifikasi PIN Keamanan...</span>
+                <span>Verifying Security PIN...</span>
               {:else if $remoteConnectionStatus === 'connecting'}
                 <RefreshCw class="w-4 h-4 animate-spin text-white" />
-                <span>Menghubungkan WebRTC Stream...</span>
+                <span>Connecting WebRTC Stream...</span>
               {:else}
                 <Play class="w-4 h-4 fill-white" />
-                <span>Mulai Remote PC Sekarang</span>
+                <span>Connect & Start Remote Session</span>
               {/if}
             </button>
           </div>
@@ -571,8 +594,8 @@
             <div class="flex items-center gap-2.5">
               <Shield class="w-5 h-5 text-indigo-400" />
               <div>
-                <h3 class="text-sm font-bold text-white">Akses Remote Komputer Ini (Host)</h3>
-                <p class="text-[11px] text-slate-400">Atur izin dan PIN keamanan agar perangkat ini bisa di-remote</p>
+                <h3 class="text-sm font-bold text-white">Allow Remote Access (Host)</h3>
+                <p class="text-[11px] text-slate-400">Configure remote control permissions and security PIN</p>
               </div>
             </div>
 
@@ -581,7 +604,7 @@
               <input
                 type="checkbox"
                 bind:checked={hostEnabled}
-                on:change={handleSaveSettings}
+                on:change={handleToggleHostEnabled}
                 class="sr-only peer"
               />
               <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
@@ -591,94 +614,193 @@
           <div class="space-y-4">
             <!-- Host Device ID -->
             <div>
-              <span class="block text-xs font-semibold text-slate-300 mb-1">Device ID Anda:</span>
+              <span class="block text-xs font-semibold text-slate-300 mb-1">Your Device ID:</span>
               <div class="flex items-center justify-between p-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-cyan-300">
                 <span>{$appSettings.device_id}</span>
                 <button
                   type="button"
                   on:click={() => {
                     navigator.clipboard.writeText($appSettings.device_id);
-                    alert('Device ID berhasil disalin ke clipboard!');
+                    alert('Device ID copied to clipboard!');
                   }}
                   class="p-1 text-slate-400 hover:text-white"
-                  title="Salin Device ID"
+                  title="Copy Device ID"
                 >
                   <Copy class="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
 
-            <!-- Host Security PIN -->
+            <!-- Host Security PIN (Strictly Hidden & Protected) -->
             <div>
               <div class="flex items-center justify-between mb-1">
-                <span class="text-xs font-semibold text-slate-300">PIN Keamanan Remote:</span>
-                <button
-                  type="button"
-                  on:click={generateRandomPin}
-                  class="text-[11px] text-cyan-400 hover:text-cyan-300 transition"
-                >
-                  Acak PIN Baru
-                </button>
+                <span class="text-xs font-semibold text-slate-300">Security PIN:</span>
+                <span class="text-[11px] text-emerald-400 flex items-center gap-1">
+                  <Lock class="w-3 h-3" />
+                  Protected & Masked
+                </span>
               </div>
 
-              <div class="relative">
-                {#if showHostPin}
-                  <input
-                    type="text"
-                    bind:value={hostPin}
-                    placeholder="Set 6-digit PIN..."
-                    class="w-full px-3 py-2 pr-20 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 font-mono tracking-widest focus:outline-none focus:border-cyan-500 transition"
-                  />
-                {:else}
-                  <input
-                    type="password"
-                    bind:value={hostPin}
-                    placeholder="Set 6-digit PIN..."
-                    class="w-full px-3 py-2 pr-20 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 font-mono tracking-widest focus:outline-none focus:border-cyan-500 transition"
-                  />
-                {/if}
-                <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                  <button
-                    type="button"
-                    on:click={() => (showHostPin = !showHostPin)}
-                    class="p-1 text-slate-500 hover:text-slate-300 transition"
-                  >
-                    {#if showHostPin}
-                      <EyeOff class="w-4 h-4" />
-                    {:else}
-                      <Eye class="w-4 h-4" />
-                    {/if}
-                  </button>
-                  <button
-                    type="button"
-                    on:click={handleSaveSettings}
-                    disabled={isSavingSettings}
-                    class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-xs text-cyan-300 font-semibold border border-slate-700 cursor-pointer"
-                  >
-                    {#if saveSuccess}
-                      <Check class="w-3.5 h-3.5 text-emerald-400" />
-                    {:else}
-                      Simpan
-                    {/if}
-                  </button>
+              <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-base tracking-[0.35em] text-slate-300 select-none">••••••</span>
+                  <span class="text-[10px] text-slate-500 italic hidden sm:inline">(Always hidden for security)</span>
                 </div>
+                <button
+                  type="button"
+                  on:click={openChangePinModal}
+                  class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-cyan-300 font-semibold border border-slate-700 flex items-center gap-1.5 transition cursor-pointer active:scale-95"
+                >
+                  <Key class="w-3.5 h-3.5" />
+                  <span>Change PIN</span>
+                </button>
               </div>
               <p class="text-[10px] text-slate-500 mt-1">
-                Hanya perangkat yang memasukkan PIN di atas yang dapat mengontrol komputer ini.
+                To prevent unauthorized viewing by bystanders, the PIN is never displayed in clear text.
               </p>
+            </div>
+
+            <!-- Screen Capture Readiness (For Unattended Access) -->
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-semibold text-slate-300">Host Screen Sharing:</span>
+                <span class="text-[11px] {$isHostSharingScreen ? 'text-emerald-400' : 'text-slate-400'} flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full {$isHostSharingScreen ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}"></span>
+                  {$isHostSharingScreen ? 'Active & Ready' : 'Standby'}
+                </span>
+              </div>
+              <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                <div class="text-[11px] text-slate-400">
+                  {#if $isHostSharingScreen}
+                    Screen capture is actively running. Clients can connect without prompt.
+                  {:else}
+                    Start capture in advance for seamless unattended remote control.
+                  {/if}
+                </div>
+                <button
+                  type="button"
+                  on:click={handleToggleScreenCapture}
+                  class="ml-2 px-2.5 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1.5 cursor-pointer {$isHostSharingScreen
+                    ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border-rose-500/40'
+                    : 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border-cyan-500/40'}"
+                >
+                  {#if $isHostSharingScreen}
+                    <Square class="w-3 h-3 fill-rose-300" />
+                    <span>Stop Capture</span>
+                  {:else}
+                    <MonitorPlay class="w-3.5 h-3.5 text-cyan-300" />
+                    <span>Start Capture</span>
+                  {/if}
+                </button>
+              </div>
             </div>
 
             <!-- Security Info Banner -->
             <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-400 space-y-1.5">
               <div class="flex items-center gap-1.5 text-slate-200 font-semibold">
                 <Lock class="w-3.5 h-3.5 text-emerald-400" />
-                <span>Keamanan P2P Terjamin (Zero-Cloud)</span>
+                <span>P2P End-to-End Encrypted (Zero-Cloud)</span>
               </div>
               <p class="text-[11px] leading-relaxed">
-                Koneksi remote desktop dienkripsi ujung-ke-ujung (E2EE) langsung antar perangkat. Tidak ada video atau ketikan keyboard yang disimpan di server.
+                Remote desktop sessions are direct peer-to-peer and encrypted end-to-end. No video, keystrokes, or screen data are stored on any server.
               </p>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Change PIN Modal -->
+  {#if isChangePinModalOpen}
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
+      <div class="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-800 p-5 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+          <div class="flex items-center gap-2 text-white font-bold text-sm">
+            <Key class="w-4 h-4 text-cyan-400" />
+            <span>Set New Security PIN</span>
+          </div>
+          <button
+            type="button"
+            on:click={closeChangePinModal}
+            class="p-1 rounded text-slate-400 hover:text-white"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+
+        <p class="text-xs text-slate-400">
+          Enter a new 6-digit numeric PIN to protect this computer. For security, your PIN will never be visible on screen.
+        </p>
+
+        {#if pinChangeError}
+          <div class="p-2.5 rounded-xl bg-rose-950/70 border border-rose-800/80 text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle class="w-4 h-4 shrink-0" />
+            <span>{pinChangeError}</span>
+          </div>
+        {/if}
+
+        {#if pinChangeSuccess}
+          <div class="p-2.5 rounded-xl bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs flex items-center gap-2">
+            <Check class="w-4 h-4 shrink-0 text-emerald-400" />
+            <span>New Security PIN saved successfully!</span>
+          </div>
+        {/if}
+
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">
+              New 6-Digit PIN:
+            </label>
+            <input
+              type="password"
+              maxlength="6"
+              inputmode="numeric"
+              bind:value={newPin}
+              placeholder="••••••"
+              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 font-mono tracking-widest focus:outline-none focus:border-cyan-500 transition text-center sm:text-left"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">
+              Confirm New PIN:
+            </label>
+            <input
+              type="password"
+              maxlength="6"
+              inputmode="numeric"
+              bind:value={confirmPin}
+              placeholder="••••••"
+              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 font-mono tracking-widest focus:outline-none focus:border-cyan-500 transition text-center sm:text-left"
+            />
+          </div>
+
+          <button
+            type="button"
+            on:click={generateRandomPinInModal}
+            class="text-[11px] text-cyan-400 hover:text-cyan-300 transition flex items-center gap-1 cursor-pointer"
+          >
+            <Sparkles class="w-3.5 h-3.5" />
+            <span>Generate Random 6-Digit PIN</span>
+          </button>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+          <button
+            type="button"
+            on:click={closeChangePinModal}
+            class="px-3 py-1.5 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            on:click={handleSaveNewPin}
+            class="px-4 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow transition active:scale-95"
+          >
+            Save PIN
+          </button>
         </div>
       </div>
     </div>

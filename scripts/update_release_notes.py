@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.26"
+    tag = clean_args[0] if clean_args else "v1.2.27"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Screen Share Autoplay Fix, Meeting User Avatars & Hand Raise Banner"
+    title = f"Raydrop {tag}: P2P Remote Desktop Connection Fix, Masked Security PIN & English UI"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Screen Share Autoplay Fix, Meeting User Avatars & Hand Raise Banner</h2>
+<h2 align="center">Raydrop {tag}: P2P Remote Desktop Connection Fix, Masked Security PIN & English UI</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,18 +126,19 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🖥️ Remote Screen Share Autoplay & Video Frame Fix
-- **Autoplay Compliance:** Remote screen share videos now strictly enforce `muted` mode (since audio is processed via dedicated high-fidelity audio elements), completely eliminating Chromium / WebView2 autoplay pauses that caused blank black screens.
-- **Robust Video Transceiver Mapping:** Accurately routes desktop video streams to WebRTC transceivers and triggers immediate frame decoding on remote peers.
+#### 🔒 Always-Masked Security PIN for Remote Desktop
+- **Uncompromised Privacy:** Removed plaintext display and eye-toggle buttons so bystanders standing by or holding the PC cannot inspect or memorize the security PIN.
+- **Dedicated Set/Change PIN Modal:** Easily update your security PIN via password-masked fields with verification and an instant random 6-digit PIN generator.
 
-#### 👤 Real-time User Avatars & "Sharing" Indicator in Meeting
-- **Avatars in Presentation Strip:** When someone is presenting, every participant's thumbnail card in the bottom strip renders their synced profile avatar and microphone state.
-- **Presenter Visual Badge:** A glowing, pulsing `🖥️ Sharing` badge is prominently placed on the presenting participant's tile so everyone knows whose screen is being projected.
+#### ⚡ Remote Desktop Signaling & Connection Fix
+- **WAN & LAN Relay Routing:** Fixed signaling filter in the Rust backend to accept `remote:` packets alongside `meeting:`, enabling successful remote desktop handshakes across WAN relays and local networks.
+- **Timeout Protection:** Added 15-second connection timeout guard with clear error diagnostics if a host is offline or unreachable.
+- **Host Screen Sharing Readiness:** Hosts can start screen capture in advance for seamless, immediate unattended remote control.
 
-#### ✋ Prominent Raised Hand Alert Banner
-- **Visible During Presentation:** When any participant raises their hand while a screen is being shared, an animated floating banner (`✋ [Name] mengangkat tangan!`) pops up directly over the presentation screen, plus an animated badge on their participant tile.
+#### 🌐 Full English UI Localization
+- **Standardized English Interface:** Completely localized all Remote Desktop screens, buttons, tooltips, dialogs, and alerts to professional English.
 
-#### 🖼️ Transfer History Thumbnail Preload Reliability
-- **Base64 Data Stream:** Eliminates broken image icons by relying on direct native thumbnail decoding with fallback file badges during transfer history preloading.
+#### 📋 Direct Bidirectional Clipboard Synchronization
+- **Text & Image Sync:** Instant peer-to-peer clipboard sharing between client and host without server storage.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

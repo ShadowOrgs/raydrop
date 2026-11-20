@@ -43,6 +43,14 @@ let activeDataChannel: RTCDataChannel | null = null;
 let pingInterval: any = null;
 let pendingIceCandidates: RTCIceCandidateInit[] = [];
 let isListenerInitialized = false;
+let authTimeoutTimer: any = null;
+
+function clearAuthTimer() {
+  if (authTimeoutTimer) {
+    clearTimeout(authTimeoutTimer);
+    authTimeoutTimer = null;
+  }
+}
 
 // Load persisted settings from SQLite backend
 export async function loadRemoteDesktopSettings() {
@@ -100,14 +108,16 @@ export function initRemoteDesktopListener() {
 
     // 2. Client receives authentication rejection
     if (payload.type === 'remote_auth_rejected') {
+      clearAuthTimer();
       remoteConnectionStatus.set('error');
-      remoteErrorMessage.set(payload.reason || 'Koneksi remote ditolak oleh host.');
+      remoteErrorMessage.set(payload.reason || 'Remote connection rejected by host.');
       disconnectRemoteSession();
       return;
     }
 
     // 3. Client receives authentication acceptance -> awaiting WebRTC offer
     if (payload.type === 'remote_auth_accepted') {
+      clearAuthTimer();
       remoteConnectionStatus.set('connecting');
       return;
     }
@@ -147,6 +157,33 @@ export function initRemoteDesktopListener() {
 
 // ----------------- Host Handling Logic -----------------
 
+export async function startHostScreenCapture(): Promise<boolean> {
+  try {
+    const stream = await (navigator.mediaDevices as any).getDisplayMedia({
+      video: {
+        cursor: 'always',
+        displaySurface: 'monitor',
+        frameRate: { ideal: 60, max: 60 },
+        width: { ideal: 1920, max: 2560 },
+        height: { ideal: 1080, max: 1440 },
+      },
+      audio: false,
+    });
+
+    stream.getVideoTracks()[0].onended = () => {
+      stopHostScreenCapture();
+      disconnectRemoteSession();
+    };
+
+    hostScreenStream.set(stream);
+    isHostSharingScreen.set(true);
+    return true;
+  } catch (err: any) {
+    console.warn('Failed to start host screen capture:', err);
+    return false;
+  }
+}
+
 async function handleIncomingAuthRequest(
   clientDeviceId: string,
   sessionId: string,
@@ -160,7 +197,7 @@ async function handleIncomingAuthRequest(
   if (!settings.enabled) {
     sendRemoteSignal(clientDeviceId, sessionId, {
       type: 'remote_auth_rejected',
-      reason: 'Akses Remote Desktop dinonaktifkan pada komputer ini.',
+      reason: 'Remote desktop access is disabled on this device.',
     });
     return;
   }
@@ -171,7 +208,7 @@ async function handleIncomingAuthRequest(
   if (enteredPin !== hostPin) {
     sendRemoteSignal(clientDeviceId, sessionId, {
       type: 'remote_auth_rejected',
-      reason: 'PIN Keamanan salah! Akses ditolak.',
+      reason: 'Incorrect Security PIN! Access denied.',
     });
     return;
   }
@@ -202,7 +239,7 @@ async function handleIncomingAuthRequest(
       console.warn('Host cancelled screen share:', err);
       sendRemoteSignal(clientDeviceId, sessionId, {
         type: 'remote_auth_rejected',
-        reason: 'Host membatalkan izin tangkapan layar monitor.',
+        reason: 'Host screen capture is not active or permission was denied. Please start screen capture on the host device first.',
       });
       return;
     }
@@ -353,11 +390,13 @@ function setupHostDataChannel(dc: RTCDataChannel) {
 // ----------------- Client Handling Logic -----------------
 
 export async function connectToRemoteHost(targetDeviceId: string, pin: string) {
+  clearAuthTimer();
+  cleanupPeerConnection();
+
   const settings = get(appSettings);
   const myDeviceId = settings.device_id;
   const myAlias = settings.alias_name || 'Raydrop Client';
 
-  cleanupPeerConnection();
   remoteErrorMessage.set(null);
   remoteConnectionStatus.set('verifying_pin');
 
@@ -375,6 +414,18 @@ export async function connectToRemoteHost(targetDeviceId: string, pin: string) {
     peerAlias,
     sessionId,
   });
+
+  // Timeout guard (15 seconds): If host is unreachable or not responding, abort cleanly
+  authTimeoutTimer = setTimeout(() => {
+    const status = get(remoteConnectionStatus);
+    if (status === 'verifying_pin' || status === 'connecting') {
+      remoteConnectionStatus.set('error');
+      remoteErrorMessage.set(
+        'Connection timed out. Host did not respond. Please ensure Raydrop is running on the host device and Allow Remote Access is enabled.'
+      );
+      cleanupPeerConnection();
+    }
+  }, 15000);
 
   // Send authentication request with PIN
   sendRemoteSignal(targetDeviceId, sessionId, {
@@ -494,7 +545,7 @@ function setupClientDataChannel(dc: RTCDataChannel) {
       // Received clipboard from Host
       if (data.t === 'clip_read_res' && data.content) {
         await raydropApi.writeSystemClipboard(data.content).catch(() => {});
-        alert('📋 Konten clipboard dari Host berhasil disalin ke clipboard lokal Anda!');
+        alert('📋 Host clipboard contents copied to your local clipboard!');
         return;
       }
     } catch (_) {}
@@ -518,7 +569,7 @@ export async function sendLocalClipboardToHost() {
   try {
     const content = await raydropApi.readSystemClipboard();
     if (!content || !content.trim()) {
-      alert('Clipboard lokal Anda saat ini kosong.');
+      alert('Your local clipboard is currently empty.');
       return;
     }
     sendInputToHost({
@@ -526,7 +577,7 @@ export async function sendLocalClipboardToHost() {
       content,
     });
     const isImg = content.startsWith('data:image/');
-    alert(isImg ? '🖼️ Gambar clipboard berhasil dikirim ke Host!' : '📝 Teks clipboard berhasil dikirim ke Host!');
+    alert(isImg ? '🖼️ Clipboard image sent to host!' : '📝 Clipboard text sent to host!');
   } catch (err) {
     console.warn('Failed to send clipboard to host:', err);
   }
@@ -559,6 +610,7 @@ export function stopHostScreenCapture() {
 }
 
 function cleanupPeerConnection() {
+  clearAuthTimer();
   if (pingInterval) {
     clearInterval(pingInterval);
     pingInterval = null;
@@ -580,6 +632,7 @@ function cleanupPeerConnection() {
 }
 
 export function disconnectRemoteSession() {
+  clearAuthTimer();
   const session = get(activeRemoteSession);
   if (session) {
     sendRemoteSignal(session.peerDeviceId, session.sessionId, {
