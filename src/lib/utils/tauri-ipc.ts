@@ -290,6 +290,12 @@ export interface UpdateProgressPayload {
   speed_bytes_sec: number;
 }
 
+export interface RemoteDesktopSettings {
+  enabled: boolean;
+  pin: string;
+  unattended: boolean;
+}
+
 export const raydropApi = {
   getAppState: () => invoke<AppStateSnapshot>('get_app_state'),
   saveCloudSession: (params: {
@@ -544,6 +550,24 @@ export const raydropApi = {
     invoke<string>('pull_remote_file', { peerDeviceId, shareId, relativePath }),
   sendMeetingSignal: (targetDeviceId: string, sessionId: string, payload: any) =>
     invoke<void>('send_meeting_signal', { targetDeviceId, sessionId, payload }),
+  getRemoteDesktopSettings: () =>
+    invoke<RemoteDesktopSettings>('get_remote_desktop_settings'),
+  saveRemoteDesktopSettings: (enabled: boolean, pin: string, unattended: boolean) =>
+    invoke<void>('save_remote_desktop_settings', { enabled, pin, unattended }),
+  verifyRemoteDesktopPin: (pin: string) =>
+    invoke<boolean>('verify_remote_desktop_pin', { pin }),
+  simulateRemoteMouseMove: (normX: number, normY: number) =>
+    invoke<void>('simulate_remote_mouse_move', { normX, normY }),
+  simulateRemoteMouseClick: (button: string, action: string) =>
+    invoke<void>('simulate_remote_mouse_click', { button, action }),
+  simulateRemoteMouseWheel: (deltaY: number) =>
+    invoke<void>('simulate_remote_mouse_wheel', { deltaY }),
+  simulateRemoteKeyboardKey: (key: string, code: string, action: string) =>
+    invoke<void>('simulate_remote_keyboard_key', { key, code, action }),
+  simulateRemoteShortcut: (shortcut: string) =>
+    invoke<void>('simulate_remote_shortcut', { shortcut }),
+  getHostScreenSize: () =>
+    invoke<[number, number]>('get_host_screen_size'),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>
     listen<T>(event, (e) => handler(e.payload)),
 };

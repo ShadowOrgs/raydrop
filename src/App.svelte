@@ -15,10 +15,12 @@
   import BrowserExtensionModal from "./lib/components/BrowserExtensionModal.svelte";
   import MeetingView from "./lib/components/MeetingView.svelte";
   import MeetingInviteModal from "./lib/components/MeetingInviteModal.svelte";
+  import RemoteDesktopView from "./lib/components/RemoteDesktopView.svelte";
   import { setupMeetingSignalListener } from "./lib/stores/meeting";
+  import { initRemoteDesktopListener, loadRemoteDesktopSettings } from "./lib/stores/remote_desktop";
   import { initTorrentStore } from "./lib/stores/torrents";
   import { initAvatarStore, peerAvatars } from "./lib/stores/avatars";
-  import { Upload, X, Zap, MessageSquare, Wifi, Users, Video } from "lucide-svelte";
+  import { Upload, X, Zap, MessageSquare, Wifi, Users, Video, Monitor } from "lucide-svelte";
   import {
     appSettings,
     deviceCryptoMeta,
@@ -398,6 +400,8 @@
     // Initialize Torrent Engine & listeners
     initTorrentStore().catch(() => {});
     initAvatarStore().catch(() => {});
+    initRemoteDesktopListener();
+    loadRemoteDesktopSettings().catch(() => {});
 
     // Auto-check for software updates silently on startup after brief initialization
     setTimeout(() => {
@@ -470,9 +474,17 @@
       <MeetingView />
     </div>
     <div
+      class="h-full w-full {$activeMainTab === 'remote'
+        ? 'flex flex-col'
+        : 'hidden'}"
+    >
+      <RemoteDesktopView />
+    </div>
+    <div
       class="h-full w-full {$activeMainTab !== 'transfers' &&
       $activeMainTab !== 'chat' &&
-      $activeMainTab !== 'meeting'
+      $activeMainTab !== 'meeting' &&
+      $activeMainTab !== 'remote'
         ? 'flex flex-col'
         : 'hidden'}"
     >
@@ -646,7 +658,22 @@
       <span class="text-[10px]">Meeting</span>
     </button>
 
-    <!-- 4. LAN Radar -->
+    <!-- 4. Remote Desktop -->
+    <button
+      type="button"
+      on:click={() => activeMainTab.set("remote")}
+      class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all {$activeMainTab ===
+      'remote'
+        ? 'text-cyan-400 font-bold'
+        : 'text-slate-400 hover:text-slate-200'}"
+    >
+      <div class="relative">
+        <Monitor class="w-5 h-5" />
+      </div>
+      <span class="text-[10px]">Remote</span>
+    </button>
+
+    <!-- 5. LAN Radar -->
     <button
       type="button"
       on:click={() => activeMainTab.set("lan")}

@@ -7,6 +7,7 @@ pub mod http_downloader;
 pub mod network;
 pub mod os;
 pub mod remote_fs;
+pub mod remote_input;
 pub mod state;
 pub mod torrent;
 pub mod tray_badge;
@@ -448,6 +449,15 @@ pub fn run() {
             commands::pull_remote_file,
             commands::send_meeting_signal,
             commands::request_peer_avatar,
+            commands::get_remote_desktop_settings,
+            commands::save_remote_desktop_settings,
+            commands::verify_remote_desktop_pin,
+            commands::simulate_remote_mouse_move,
+            commands::simulate_remote_mouse_click,
+            commands::simulate_remote_mouse_wheel,
+            commands::simulate_remote_keyboard_key,
+            commands::simulate_remote_shortcut,
+            commands::get_host_screen_size,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Raydrop Tauri application");

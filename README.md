@@ -37,6 +37,7 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 **Your files, voice data, screen streams, and metadata NEVER touch the cloud.**
 
 ### 🌟 What Makes Raydrop Unique?
+- 🖥️ **P2P Remote Desktop with PIN Protection:** Full remote control for PC and mobile with 1080p 60fps streaming, secure PIN authorization, and bidirectional clipboard sync (text & image).
 - 🚀 **Parallel P2P Transfer Engine:** Multi-segment streaming with auto-resume (`.raypart`) and BLAKE3 integrity verification.
 - 👥 **Encrypted Group Chat & Admin Roles:** Create multi-user group chats with multi-admin support, admin-only invitations, and flexible broadcast/custom sending controls.
 - 📋 **Direct Clipboard Image Paste:** Paste screenshots (Ctrl+V) directly into conversations with image preview cards and caption support.
@@ -51,6 +52,14 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 ---
 
 ## ✨ Key Features
+
+### 🖥️ Raydrop P2P Remote Desktop & Control Suite (New in v1.2.26)
+- **High-Resolution 60 FPS Desktop Streaming:** Experience fluid, crystal-clear 1080p/2K desktop streaming powered by WebRTC with hardware acceleration and `maintain-resolution` priority for sharp text and code readability across WAN and LAN.
+- **Mandatory PIN Security & Access Control:** Remote connections are gated by a customizable 6-digit security PIN. Only authorized peers who supply the correct PIN can establish a control session, preventing unauthorized remote access on local networks.
+- **Bidirectional Clipboard Sync (Text & Images):** Effortlessly copy and paste between local and remote machines. Fully supports plain text, code snippets, and raw image screenshots in both directions with single-click syncing.
+- **Low-Latency Input Injection:** Native OS mouse movements, left/right/middle clicks, smooth wheel scrolling, and keyboard keystrokes are transmitted via low-overhead WebRTC DataChannels (<20ms local latency).
+- **Desktop Shortcut Toolbar:** Built-in floating controls for Windows key, Task Manager (`Ctrl+Shift+Esc`), Show Desktop (`Win+D`), Lock Host (`Win+L`), and fullscreen switching.
+- **Cross-Platform PC & Mobile Ready:** Remote control desktop machines directly from other PCs or mobile devices.
 
 ### 👥 P2P Encrypted Group Chat & Granular Admin Permissions (New in v1.2.25)
 - **Zero-Cloud Group Channels:** Create multi-member P2P group conversations with full end-to-end encryption across local Wi-Fi mesh and WAN signaling relay.

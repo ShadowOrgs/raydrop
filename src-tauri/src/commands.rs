@@ -3270,3 +3270,107 @@ pub async fn connect_peer_by_ip(
     Ok(contact)
 }
 
+// ----------------- Remote Desktop Control Commands -----------------
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RemoteDesktopSettings {
+    pub enabled: bool,
+    pub pin: String,
+    pub unattended: bool,
+}
+
+#[tauri::command]
+pub async fn get_remote_desktop_settings(
+    state: State<'_, Arc<AppState>>,
+) -> Result<RemoteDesktopSettings, String> {
+    let enabled_str = state.db.get_setting("remote_desktop_enabled").unwrap_or(None).unwrap_or_else(|| "true".to_string());
+    let pin_opt = state.db.get_setting("remote_desktop_pin").unwrap_or(None);
+    let unattended_str = state.db.get_setting("remote_desktop_unattended").unwrap_or(None).unwrap_or_else(|| "true".to_string());
+
+    let pin = match pin_opt {
+        Some(p) if !p.trim().is_empty() => p.trim().to_string(),
+        _ => {
+            // Generate a friendly 6-digit default PIN and persist it
+            let gen_pin = format!("{:06}", (rand::random::<u32>() % 900000) + 100000);
+            let _ = state.db.set_setting("remote_desktop_pin", &gen_pin);
+            gen_pin
+        }
+    };
+
+    Ok(RemoteDesktopSettings {
+        enabled: enabled_str == "true" || enabled_str == "1",
+        pin,
+        unattended: unattended_str == "true" || unattended_str == "1",
+    })
+}
+
+#[tauri::command]
+pub async fn save_remote_desktop_settings(
+    state: State<'_, Arc<AppState>>,
+    enabled: bool,
+    pin: String,
+    unattended: bool,
+) -> Result<(), String> {
+    let clean_pin = pin.trim();
+    if clean_pin.is_empty() {
+        return Err("PIN Remote Desktop tidak boleh kosong".to_string());
+    }
+    state.db.set_setting("remote_desktop_enabled", if enabled { "true" } else { "false" })?;
+    state.db.set_setting("remote_desktop_pin", clean_pin)?;
+    state.db.set_setting("remote_desktop_unattended", if unattended { "true" } else { "false" })?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn verify_remote_desktop_pin(
+    state: State<'_, Arc<AppState>>,
+    pin: String,
+) -> Result<bool, String> {
+    let current = state.db.get_setting("remote_desktop_pin").unwrap_or(None).unwrap_or_default();
+    Ok(pin.trim() == current.trim() && !current.trim().is_empty())
+}
+
+#[tauri::command]
+pub async fn simulate_remote_mouse_move(
+    norm_x: f32,
+    norm_y: f32,
+) -> Result<(), String> {
+    crate::remote_input::simulate_mouse_move(norm_x, norm_y)
+}
+
+#[tauri::command]
+pub async fn simulate_remote_mouse_click(
+    button: String,
+    action: String,
+) -> Result<(), String> {
+    crate::remote_input::simulate_mouse_click(&button, &action)
+}
+
+#[tauri::command]
+pub async fn simulate_remote_mouse_wheel(
+    delta_y: i32,
+) -> Result<(), String> {
+    crate::remote_input::simulate_mouse_wheel(delta_y)
+}
+
+#[tauri::command]
+pub async fn simulate_remote_keyboard_key(
+    key: String,
+    code: String,
+    action: String,
+) -> Result<(), String> {
+    crate::remote_input::simulate_keyboard_key(&key, &code, &action)
+}
+
+#[tauri::command]
+pub async fn simulate_remote_shortcut(
+    shortcut: String,
+) -> Result<(), String> {
+    crate::remote_input::simulate_shortcut(&shortcut)
+}
+
+#[tauri::command]
+pub async fn get_host_screen_size() -> Result<(u32, u32), String> {
+    Ok(crate::remote_input::get_screen_size())
+}
+

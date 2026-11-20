@@ -40,6 +40,7 @@
     MessageSquare,
     Camera,
     Video,
+    Monitor,
   } from "lucide-svelte";
 
   let copied = false;
@@ -124,7 +125,7 @@
           {#if $updateChecking}
             <RefreshCw class="w-2.5 h-2.5 animate-spin text-cyan-400" />
           {/if}
-          <span>v1.2.25</span>
+          <span>v1.2.26</span>
         </button>
 
         {#if $updateInfo?.has_update}
@@ -237,6 +238,24 @@
           : 'text-slate-400'}"
       />
       <span>Meeting</span>
+    </button>
+
+    <!-- 4. Remote Desktop Tab -->
+    <button
+      type="button"
+      on:click={() => activeMainTab.set("remote")}
+      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      'remote'
+        ? 'bg-gradient-to-r from-cyan-500/25 to-blue-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
+        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
+      title="Raydrop P2P Remote Desktop"
+    >
+      <Monitor
+        class="w-3.5 h-3.5 {$activeMainTab === 'remote'
+          ? 'text-cyan-400'
+          : 'text-slate-400'}"
+      />
+      <span>Remote</span>
     </button>
 
     <!-- 4. LAN Radar (Inactive Tab) -->
