@@ -64,20 +64,6 @@ fn allocate_dynamic_port() -> u16 {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(target_os = "windows")]
-    {
-        let current_args = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").unwrap_or_default();
-        let capture_switches = "--enable-usermedia-screen-capturing --auto-select-desktop-capture-source=\"Entire screen\" --auto-select-screen-capture-source";
-        if !current_args.contains("auto-select") {
-            let combined = if current_args.is_empty() {
-                capture_switches.to_string()
-            } else {
-                format!("{} {}", current_args, capture_switches)
-            };
-            std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", combined);
-        }
-    }
-
     tracing_subscriber::fmt::init();
 
     let (db, identity, settings) =

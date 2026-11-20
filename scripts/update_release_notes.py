@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.28"
+    tag = clean_args[0] if clean_args else "v1.2.29"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Auto-Hidden Floating Controls, Ghost Cursor Fix & Instant Auto-Connect"
+    title = f"Raydrop {tag}: Fix Remote Blank Screen & Reliable Stream Rendering"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Auto-Hidden Floating Controls, Ghost Cursor Fix & Instant Auto-Connect</h2>
+<h2 align="center">Raydrop {tag}: Fix Remote Blank Screen & Reliable Stream Rendering</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,17 +126,10 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🧹 Auto-Hidden Floating Toolbar & Clean Fullscreen View
-- **Zero Screen Obstruction:** The floating remote control header now automatically slides out of view after 1.5 seconds or on fullscreen entry, providing a 100% clean, unobstructed remote view.
-- **Top Edge Hover & Notch Summon:** Moving the mouse within the top 50px or hovering over the subtle top notch instantly reveals the toolbar.
-- **Pin / Unpin Option:** Includes a pin toggle so users can keep the toolbar permanently visible if desired.
-
-#### 🎯 Remote Ghost Cursor Eliminated
-- **Native Zero-Lag Cursor:** Switched remote screen capture constraints to `cursor: 'never'`, completely eliminating the delayed, double "ghost cursor" from the video stream. Remote control now feels as responsive as a local desktop.
-
-#### ⚡ Instant Auto-Connect with PIN (Unattended Access)
-- **Automatic Screen Capture via WebView2 Flags:** Configured WebView2 / Chromium engine flags (`--auto-select-desktop-capture-source="Entire screen" --enable-usermedia-screen-capturing`) to eliminate the "Choose what to share with..." picker prompt.
-- **PIN-Based Instant Access:** Entering the host security PIN bypasses all approval dialogs for instant, frictionless remote desktop connection.
-- **Ad-Hoc Access Without PIN:** If no PIN is entered, the host receives a prompt modal (`Allow / Decline`) for explicit manual authorization.
+#### 🛠️ Fix Remote Desktop Blank Black Screen & Premature Disconnect
+- **Removed Disruptive WebView2 CLI Switches:** Reverted experimental auto-select command line switches that conflicted with localized Windows displays and caused empty frame capture.
+- **Reliable Fallback Screen Capture:** Screen stream acquisition now utilizes robust, standard displayMedia constraints with fallback guarantees.
+- **Action-Based Video Element Stream Binding:** Video playback on the remote viewer uses the battle-tested `attachStream` action to guarantee immediate autoplay with `muted` enforcement, preventing frozen black frames.
+- **Resilient WebRTC Connection Handling:** Prevented premature session teardown on temporary ICE state renegotiations.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

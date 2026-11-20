@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy } from "svelte";
   import {
     Monitor,
     Shield,
@@ -21,7 +21,7 @@
     Square,
     Sparkles,
     Pin,
-  } from 'lucide-svelte';
+  } from "lucide-svelte";
   import {
     remoteHostSettings,
     isHostSharingScreen,
@@ -44,25 +44,25 @@
     pendingRemoteAuthRequest,
     acceptPendingRemoteRequest,
     rejectPendingRemoteRequest,
-  } from '../stores/remote_desktop';
-  import { contacts, lanContacts } from '../stores/contacts';
-  import { cloudMyDevices, appSettings } from '../stores/state';
+  } from "../stores/remote_desktop";
+  import { contacts, lanContacts } from "../stores/contacts";
+  import { cloudMyDevices, appSettings } from "../stores/state";
 
-  let selectedTargetDeviceId = '';
-  let inputPin = '';
+  let selectedTargetDeviceId = "";
+  let inputPin = "";
 
   // Host configuration state
   let hostEnabled = true;
-  let hostPin = '';
+  let hostPin = "";
   let hostUnattended = true;
   let isSavingSettings = false;
   let saveSuccess = false;
 
   // Change PIN modal state
   let isChangePinModalOpen = false;
-  let newPin = '';
-  let confirmPin = '';
-  let pinChangeError = '';
+  let newPin = "";
+  let confirmPin = "";
+  let pinChangeError = "";
   let pinChangeSuccess = false;
 
   // Viewer state
@@ -75,25 +75,56 @@
   let lastMouseMoveTime = 0;
 
   $: isClientConnected =
-    $remoteConnectionStatus === 'connected' &&
+    $remoteConnectionStatus === "connected" &&
     $activeRemoteSession?.isClient &&
     !!$clientRemoteStream;
 
   $: isHostActive =
-    $activeRemoteSession?.isHost &&
-    $remoteConnectionStatus === 'connected';
+    $activeRemoteSession?.isHost && $remoteConnectionStatus === "connected";
 
-  // Watch remote video stream and attach to video element
-  $: if (videoEl && $clientRemoteStream) {
-    if (videoEl.srcObject !== $clientRemoteStream) {
-      videoEl.srcObject = $clientRemoteStream;
-      videoEl.play().catch((e) => console.warn('Video play warning:', e));
+  // Svelte action to reliably attach MediaStream to video DOM element with autoplay handling
+  function attachStream(node: HTMLVideoElement, stream: MediaStream | null) {
+    node.srcObject = stream;
+    if (stream) {
+      node.muted = true;
+      const playPromise = node.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          node.muted = true;
+          node.play().catch(() => {});
+        });
+      }
     }
+    return {
+      update(newStream: MediaStream | null) {
+        if (node.srcObject !== newStream) {
+          node.srcObject = newStream;
+        }
+        if (newStream) {
+          node.muted = true;
+          const playPromise = node.play();
+          if (playPromise !== undefined) {
+            playPromise.catch(() => {
+              node.muted = true;
+              node.play().catch(() => {});
+            });
+          }
+        }
+      },
+      destroy() {
+        node.srcObject = null;
+      },
+    };
   }
 
   // Combined list of reachable remote target devices
   $: availablePeers = (() => {
-    const list: { id: string; name: string; type: string; isOnline: boolean }[] = [];
+    const list: {
+      id: string;
+      name: string;
+      type: string;
+      isOnline: boolean;
+    }[] = [];
     const seen = new Set<string>();
     const myDevId = $appSettings.device_id;
 
@@ -102,8 +133,8 @@
       seen.add(d.device_id);
       list.push({
         id: d.device_id,
-        name: d.device_name || 'My Cloud Device',
-        type: 'My Cloud Device',
+        name: d.device_name || "My Cloud Device",
+        type: "My Cloud Device",
         isOnline: d.is_online,
       });
     }
@@ -113,8 +144,8 @@
       seen.add(c.device_id);
       list.push({
         id: c.device_id,
-        name: c.custom_name || c.alias_name || 'Contact',
-        type: 'Contact',
+        name: c.custom_name || c.alias_name || "Contact",
+        type: "Contact",
         isOnline: c.is_online,
       });
     }
@@ -124,8 +155,8 @@
       seen.add(l.device_id);
       list.push({
         id: l.device_id,
-        name: l.alias_name || 'LAN Peer',
-        type: 'LAN Peer',
+        name: l.alias_name || "LAN Peer",
+        type: "LAN Peer",
         isOnline: true,
       });
     }
@@ -140,11 +171,11 @@
     hostPin = $remoteHostSettings.pin;
     hostUnattended = $remoteHostSettings.unattended;
 
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
   });
 
   onDestroy(() => {
-    document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    document.removeEventListener("fullscreenchange", handleFullscreenChange);
     if (toolbarTimer) clearTimeout(toolbarTimer);
   });
 
@@ -162,6 +193,12 @@
       await saveRemoteDesktopSettings(hostEnabled, hostPin, hostUnattended);
       saveSuccess = true;
       setTimeout(() => (saveSuccess = false), 2500);
+
+      if (hostEnabled && !$isHostSharingScreen) {
+        await startHostScreenCapture();
+      } else if (!hostEnabled && $isHostSharingScreen) {
+        stopHostScreenCapture();
+      }
     } catch (err: any) {
       alert(`Failed to save settings: ${err?.message || err}`);
     } finally {
@@ -170,9 +207,9 @@
   }
 
   function openChangePinModal() {
-    newPin = '';
-    confirmPin = '';
-    pinChangeError = '';
+    newPin = "";
+    confirmPin = "";
+    pinChangeError = "";
     pinChangeSuccess = false;
     isChangePinModalOpen = true;
   }
@@ -185,17 +222,17 @@
     const r = Math.floor(100000 + Math.random() * 900000).toString();
     newPin = r;
     confirmPin = r;
-    pinChangeError = '';
+    pinChangeError = "";
   }
 
   async function handleSaveNewPin() {
-    pinChangeError = '';
+    pinChangeError = "";
     if (!/^\d{6}$/.test(newPin.trim())) {
-      pinChangeError = 'PIN must be exactly 6 digits (numbers only).';
+      pinChangeError = "PIN must be exactly 6 digits (numbers only).";
       return;
     }
     if (newPin.trim() !== confirmPin.trim()) {
-      pinChangeError = 'PINs do not match. Please re-enter.';
+      pinChangeError = "PINs do not match. Please re-enter.";
       return;
     }
 
@@ -222,7 +259,7 @@
 
   function handleConnect() {
     if (!selectedTargetDeviceId) {
-      alert('Please select or enter a target device first.');
+      alert("Please select or enter a target device first.");
       return;
     }
     // Connect with PIN (direct auto-connect) or without PIN (requires host approval)
@@ -233,11 +270,11 @@
     if (!viewerContainerEl) return;
     if (!document.fullscreenElement) {
       viewerContainerEl.requestFullscreen().catch((err) => {
-        console.warn('Fullscreen request error:', err);
+        console.warn("Fullscreen request error:", err);
       });
     } else {
       document.exitFullscreen().catch((err) => {
-        console.warn('Exit fullscreen error:', err);
+        console.warn("Exit fullscreen error:", err);
       });
     }
   }
@@ -271,7 +308,7 @@
     const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
 
     sendInputToHost({
-      t: 'mm',
+      t: "mm",
       x,
       y,
     });
@@ -279,21 +316,23 @@
 
   function handleMouseDown(e: MouseEvent) {
     if (!isClientConnected) return;
-    const button = e.button === 0 ? 'left' : e.button === 2 ? 'right' : 'middle';
+    const button =
+      e.button === 0 ? "left" : e.button === 2 ? "right" : "middle";
     sendInputToHost({
-      t: 'mc',
+      t: "mc",
       b: button,
-      a: 'down',
+      a: "down",
     });
   }
 
   function handleMouseUp(e: MouseEvent) {
     if (!isClientConnected) return;
-    const button = e.button === 0 ? 'left' : e.button === 2 ? 'right' : 'middle';
+    const button =
+      e.button === 0 ? "left" : e.button === 2 ? "right" : "middle";
     sendInputToHost({
-      t: 'mc',
+      t: "mc",
       b: button,
-      a: 'up',
+      a: "up",
     });
   }
 
@@ -302,7 +341,7 @@
     e.preventDefault();
     const dy = e.deltaY > 0 ? 120 : -120;
     sendInputToHost({
-      t: 'mw',
+      t: "mw",
       dy,
     });
   }
@@ -316,18 +355,22 @@
     if (!isClientConnected) return;
     // Don't intercept if user is typing in a local input field
     const target = e.target as HTMLElement;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA"))
+      return;
 
     // Send key down to host
     sendInputToHost({
-      t: 'kk',
+      t: "kk",
       k: e.key,
       c: e.code,
-      a: 'down',
+      a: "down",
     });
 
     // Prevent default browser behavior for common shortcuts (like F5 reload or Alt+Tab)
-    if (['Tab', 'F5', 'Alt', 'Meta'].includes(e.key) || (e.ctrlKey && ['w', 'r', 't'].includes(e.key.toLowerCase()))) {
+    if (
+      ["Tab", "F5", "Alt", "Meta"].includes(e.key) ||
+      (e.ctrlKey && ["w", "r", "t"].includes(e.key.toLowerCase()))
+    ) {
       e.preventDefault();
     }
   }
@@ -335,20 +378,23 @@
   function handleKeyUp(e: KeyboardEvent) {
     if (!isClientConnected) return;
     const target = e.target as HTMLElement;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA"))
+      return;
 
     sendInputToHost({
-      t: 'kk',
+      t: "kk",
       k: e.key,
       c: e.code,
-      a: 'up',
+      a: "up",
     });
   }
 </script>
 
 <svelte:window on:keydown={handleKeyDown} on:keyup={handleKeyUp} />
 
-<div class="h-full w-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden relative select-none">
+<div
+  class="h-full w-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden relative select-none"
+>
   {#if isClientConnected}
     <!-- Active Remote Desktop Viewer Screen -->
     <div
@@ -368,14 +414,17 @@
         }}
       >
         {#if !showToolbar && !isToolbarPinned}
-          <div class="w-12 h-1 bg-slate-700/50 group-hover:bg-cyan-400 group-hover:h-1.5 rounded-full transition-all duration-200"></div>
+          <div
+            class="w-12 h-1 bg-slate-700/50 group-hover:bg-cyan-400 group-hover:h-1.5 rounded-full transition-all duration-200"
+          ></div>
         {/if}
       </div>
 
       <!-- Auto-Hidden Floating Top Control Bar (Clean full screen when mouse moves away) -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
-        class="absolute top-2 left-1/2 -translate-x-1/2 z-40 transition-all duration-300 ease-out {showToolbar || isToolbarPinned
+        class="absolute top-2 left-1/2 -translate-x-1/2 z-40 transition-all duration-300 ease-out {showToolbar ||
+        isToolbarPinned
           ? 'translate-y-0 opacity-100 pointer-events-auto'
           : '-translate-y-16 opacity-0 pointer-events-none'}"
         on:mouseenter={() => {
@@ -393,14 +442,22 @@
           }
         }}
       >
-        <div class="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-900/90 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs">
+        <div
+          class="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-900/90 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs"
+        >
           <!-- Host & Latency Info -->
           <div class="flex items-center gap-2 pr-2 border-r border-slate-800">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span class="font-bold text-white max-w-[130px] truncate" title={$activeRemoteSession?.peerAlias}>
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"
+            ></span>
+            <span
+              class="font-bold text-white max-w-[130px] truncate"
+              title={$activeRemoteSession?.peerAlias}
+            >
               {$activeRemoteSession?.peerAlias}
             </span>
-            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700">
+            <span
+              class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700"
+            >
               ⚡ {$remoteLatencyMs} ms
             </span>
           </div>
@@ -431,7 +488,7 @@
           <div class="flex items-center gap-1 pr-2 border-r border-slate-800">
             <button
               type="button"
-              on:click={() => sendShortcutToHost('win_d')}
+              on:click={() => sendShortcutToHost("win_d")}
               class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-mono transition"
               title="Show Host Desktop (Win + D)"
             >
@@ -439,7 +496,7 @@
             </button>
             <button
               type="button"
-              on:click={() => sendShortcutToHost('ctrl_shift_esc')}
+              on:click={() => sendShortcutToHost("ctrl_shift_esc")}
               class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-mono transition"
               title="Open Task Manager on Host (Ctrl + Shift + Esc)"
             >
@@ -447,7 +504,7 @@
             </button>
             <button
               type="button"
-              on:click={() => sendShortcutToHost('win_l')}
+              on:click={() => sendShortcutToHost("win_l")}
               class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-rose-400 text-[11px] font-mono transition"
               title="Lock Host PC (Win + L)"
             >
@@ -462,9 +519,15 @@
               type="button"
               on:click={() => (isToolbarPinned = !isToolbarPinned)}
               class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-              title={isToolbarPinned ? 'Unpin toolbar (Auto-hide)' : 'Pin toolbar (Always visible)'}
+              title={isToolbarPinned
+                ? "Unpin toolbar (Auto-hide)"
+                : "Pin toolbar (Always visible)"}
             >
-              <Pin class="w-3.5 h-3.5 {isToolbarPinned ? 'text-cyan-400 fill-cyan-400' : ''}" />
+              <Pin
+                class="w-3.5 h-3.5 {isToolbarPinned
+                  ? 'text-cyan-400 fill-cyan-400'
+                  : ''}"
+              />
             </button>
 
             <!-- Fullscreen Button -->
@@ -472,7 +535,7 @@
               type="button"
               on:click={toggleFullscreen}
               class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-              title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+              title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             >
               {#if isFullscreen}
                 <Minimize class="w-3.5 h-3.5" />
@@ -507,6 +570,7 @@
       >
         <video
           bind:this={videoEl}
+          use:attachStream={$clientRemoteStream}
           autoplay
           playsinline
           muted
@@ -516,30 +580,45 @@
     </div>
   {:else}
     <!-- Remote Desktop Dashboard (Host & Connect Client Views) -->
-    <div class="flex-1 p-4 sm:p-6 overflow-y-auto max-w-6xl w-full mx-auto space-y-6">
+    <div
+      class="flex-1 p-4 sm:p-6 overflow-y-auto max-w-6xl w-full mx-auto space-y-6"
+    >
       <!-- Header Banner -->
-      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+      <div
+        class="flex items-center justify-between pb-4 border-b border-slate-800"
+      >
         <div class="flex items-center gap-3">
-          <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-indigo-600/30 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-xl shadow-cyan-500/10">
+          <div
+            class="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-indigo-600/30 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-xl shadow-cyan-500/10"
+          >
             <Monitor class="w-6 h-6 stroke-[1.8]" />
           </div>
           <div>
             <h2 class="text-lg font-bold text-white flex items-center gap-2">
               <span>Raydrop Remote Desktop</span>
-              <span class="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[10px] border border-cyan-500/30">
+              <span
+                class="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[10px] border border-cyan-500/30"
+              >
                 P2P Ultra-Low Latency
               </span>
             </h2>
             <p class="text-xs text-slate-400 mt-0.5">
-              Securely control remote PCs and devices with 60fps high resolution, encrypted PIN protection, and bidirectional clipboard sync.
+              Securely control remote PCs and devices with 60fps high
+              resolution, encrypted PIN protection, and bidirectional clipboard
+              sync.
             </p>
           </div>
         </div>
 
         {#if isHostActive}
-          <div class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>Host Active: Controlled by {$activeRemoteSession?.peerAlias}</span>
+          <div
+            class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold"
+          >
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"
+            ></span>
+            <span
+              >Host Active: Controlled by {$activeRemoteSession?.peerAlias}</span
+            >
             <button
               type="button"
               on:click={disconnectRemoteSession}
@@ -553,7 +632,9 @@
 
       <!-- Error Alert Banner -->
       {#if $remoteErrorMessage}
-        <div class="p-4 rounded-xl bg-rose-950/70 border border-rose-800/80 flex items-center justify-between gap-3 text-rose-200 text-xs shadow-lg">
+        <div
+          class="p-4 rounded-xl bg-rose-950/70 border border-rose-800/80 flex items-center justify-between gap-3 text-rose-200 text-xs shadow-lg"
+        >
           <div class="flex items-center gap-2.5">
             <AlertCircle class="w-5 h-5 text-rose-400 shrink-0" />
             <span>{$remoteErrorMessage}</span>
@@ -571,24 +652,37 @@
       <!-- Main Two Column Grid: Connect to Client (Left) + Host Settings (Right) -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- 1. Connect to Remote Device (Client Mode) -->
-        <div class="p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-xl space-y-4 shadow-xl">
+        <div
+          class="p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-xl space-y-4 shadow-xl"
+        >
           <div class="flex items-center gap-2.5 pb-2 border-b border-slate-800">
             <Laptop class="w-5 h-5 text-cyan-400" />
             <div>
-              <h3 class="text-sm font-bold text-white">Control Remote Device (Client)</h3>
-              <p class="text-[11px] text-slate-400">Access and control another computer or mobile device with PIN or host approval</p>
+              <h3 class="text-sm font-bold text-white">
+                Control Remote Device (Client)
+              </h3>
+              <p class="text-[11px] text-slate-400">
+                Access and control another computer or mobile device with PIN or
+                host approval
+              </p>
             </div>
           </div>
 
           <div class="space-y-3.5">
             <!-- Target Device Selector -->
             <div>
-              <label for="rd-target-device" class="block text-xs font-semibold text-slate-300 mb-1.5">
+              <label
+                for="rd-target-device"
+                class="block text-xs font-semibold text-slate-300 mb-1.5"
+              >
                 Select Target Device:
               </label>
               {#if availablePeers.length === 0}
-                <div class="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-500 text-center">
-                  No online devices detected in Contacts or LAN. You can enter a Host Device ID manually below.
+                <div
+                  class="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-500 text-center"
+                >
+                  No online devices detected in Contacts or LAN. You can enter a
+                  Host Device ID manually below.
                 </div>
               {:else}
                 <select
@@ -599,7 +693,9 @@
                   <option value="">-- Select Online Device --</option>
                   {#each availablePeers as peer}
                     <option value={peer.id}>
-                      {peer.name} ({peer.type}) {peer.isOnline ? '🟢 Online' : '⚪ Offline'}
+                      {peer.name} ({peer.type}) {peer.isOnline
+                        ? "🟢 Online"
+                        : "⚪ Offline"}
                     </option>
                   {/each}
                 </select>
@@ -608,7 +704,10 @@
 
             <!-- Manual Device ID Input -->
             <div>
-              <label for="rd-manual-id" class="block text-xs font-semibold text-slate-300 mb-1">
+              <label
+                for="rd-manual-id"
+                class="block text-xs font-semibold text-slate-300 mb-1"
+              >
                 Or Enter Host Device ID Manually:
               </label>
               <input
@@ -623,11 +722,20 @@
             <!-- Security PIN Input (Strictly Masked) -->
             <div>
               <div class="flex items-center justify-between mb-1">
-                <label for="rd-host-pin" class="block text-xs font-semibold text-slate-300">
+                <label
+                  for="rd-host-pin"
+                  class="block text-xs font-semibold text-slate-300"
+                >
                   Host Security PIN:
                 </label>
-                <span class="text-[10px] {inputPin.trim() ? 'text-emerald-400 font-semibold' : 'text-slate-400'}">
-                  {inputPin.trim() ? '⚡ Instant Auto-Connect' : '✋ Host Approval'}
+                <span
+                  class="text-[10px] {inputPin.trim()
+                    ? 'text-emerald-400 font-semibold'
+                    : 'text-slate-400'}"
+                >
+                  {inputPin.trim()
+                    ? "⚡ Instant Auto-Connect"
+                    : "✋ Host Approval"}
                 </span>
               </div>
               <input
@@ -640,7 +748,8 @@
                 class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 font-mono tracking-widest focus:outline-none focus:border-cyan-500 transition text-center sm:text-left"
               />
               <p class="text-[10px] text-slate-500 mt-1">
-                Enter the host PIN for instant unattended access without host approval, or leave it blank to request manual permission.
+                Enter the host PIN for instant unattended access without host
+                approval, or leave it blank to request manual permission.
               </p>
             </div>
 
@@ -648,13 +757,18 @@
             <button
               type="button"
               on:click={handleConnect}
-              disabled={$remoteConnectionStatus === 'verifying_pin' || $remoteConnectionStatus === 'connecting'}
+              disabled={$remoteConnectionStatus === "verifying_pin" ||
+                $remoteConnectionStatus === "connecting"}
               class="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 disabled:opacity-50 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 transition flex items-center justify-center gap-2 cursor-pointer active:scale-95"
             >
-              {#if $remoteConnectionStatus === 'verifying_pin'}
+              {#if $remoteConnectionStatus === "verifying_pin"}
                 <RefreshCw class="w-4 h-4 animate-spin text-white" />
-                <span>{inputPin.trim() ? 'Verifying PIN & Auto-Connecting...' : 'Waiting for Host Approval...'}</span>
-              {:else if $remoteConnectionStatus === 'connecting'}
+                <span
+                  >{inputPin.trim()
+                    ? "Verifying PIN & Auto-Connecting..."
+                    : "Waiting for Host Approval..."}</span
+                >
+              {:else if $remoteConnectionStatus === "connecting"}
                 <RefreshCw class="w-4 h-4 animate-spin text-white" />
                 <span>Connecting WebRTC Stream...</span>
               {:else if inputPin.trim()}
@@ -669,13 +783,21 @@
         </div>
 
         <!-- 2. This Device Host Configuration (Host Mode) -->
-        <div class="p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-xl space-y-4 shadow-xl">
-          <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+        <div
+          class="p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-xl space-y-4 shadow-xl"
+        >
+          <div
+            class="flex items-center justify-between pb-2 border-b border-slate-800"
+          >
             <div class="flex items-center gap-2.5">
               <Shield class="w-5 h-5 text-indigo-400" />
               <div>
-                <h3 class="text-sm font-bold text-white">Allow Remote Access (Host)</h3>
-                <p class="text-[11px] text-slate-400">Configure remote control permissions and security PIN</p>
+                <h3 class="text-sm font-bold text-white">
+                  Allow Remote Access (Host)
+                </h3>
+                <p class="text-[11px] text-slate-400">
+                  Configure remote control permissions and security PIN
+                </p>
               </div>
             </div>
 
@@ -687,21 +809,27 @@
                 on:change={handleToggleHostEnabled}
                 class="sr-only peer"
               />
-              <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
+              <div
+                class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"
+              ></div>
             </label>
           </div>
 
           <div class="space-y-4">
             <!-- Host Device ID -->
             <div>
-              <span class="block text-xs font-semibold text-slate-300 mb-1">Your Device ID:</span>
-              <div class="flex items-center justify-between p-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-cyan-300">
+              <span class="block text-xs font-semibold text-slate-300 mb-1"
+                >Your Device ID:</span
+              >
+              <div
+                class="flex items-center justify-between p-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-cyan-300"
+              >
                 <span>{$appSettings.device_id}</span>
                 <button
                   type="button"
                   on:click={() => {
                     navigator.clipboard.writeText($appSettings.device_id);
-                    alert('Device ID copied to clipboard!');
+                    alert("Device ID copied to clipboard!");
                   }}
                   class="p-1 text-slate-400 hover:text-white"
                   title="Copy Device ID"
@@ -714,17 +842,29 @@
             <!-- Host Security PIN (Strictly Hidden & Protected) -->
             <div>
               <div class="flex items-center justify-between mb-1">
-                <span class="text-xs font-semibold text-slate-300">Security PIN:</span>
-                <span class="text-[11px] text-emerald-400 flex items-center gap-1">
+                <span class="text-xs font-semibold text-slate-300"
+                  >Security PIN:</span
+                >
+                <span
+                  class="text-[11px] text-emerald-400 flex items-center gap-1"
+                >
                   <Lock class="w-3 h-3" />
                   Protected & Masked
                 </span>
               </div>
 
-              <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+              <div
+                class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800"
+              >
                 <div class="flex items-center gap-2">
-                  <span class="font-mono text-base tracking-[0.35em] text-slate-300 select-none">••••••</span>
-                  <span class="text-[10px] text-slate-500 italic hidden sm:inline">(Always hidden for security)</span>
+                  <span
+                    class="font-mono text-base tracking-[0.35em] text-slate-300 select-none"
+                    >••••••</span
+                  >
+                  <span
+                    class="text-[10px] text-slate-500 italic hidden sm:inline"
+                    >(Always hidden for security)</span
+                  >
                 </div>
                 <button
                   type="button"
@@ -736,25 +876,41 @@
                 </button>
               </div>
               <p class="text-[10px] text-slate-500 mt-1">
-                Clients with this PIN can connect instantly without prompting you. If no PIN is entered, you must manually approve the request.
+                Clients with this PIN can connect instantly without prompting
+                you. If no PIN is entered, you must manually approve the
+                request.
               </p>
             </div>
 
             <!-- Screen Capture Readiness (For Unattended Access) -->
             <div>
               <div class="flex items-center justify-between mb-1">
-                <span class="text-xs font-semibold text-slate-300">Host Screen Sharing:</span>
-                <span class="text-[11px] {$isHostSharingScreen ? 'text-emerald-400' : 'text-slate-400'} flex items-center gap-1">
-                  <span class="w-2 h-2 rounded-full {$isHostSharingScreen ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}"></span>
-                  {$isHostSharingScreen ? 'Active & Ready' : 'Standby'}
+                <span class="text-xs font-semibold text-slate-300"
+                  >Host Screen Sharing:</span
+                >
+                <span
+                  class="text-[11px] {$isHostSharingScreen
+                    ? 'text-emerald-400'
+                    : 'text-slate-400'} flex items-center gap-1"
+                >
+                  <span
+                    class="w-2 h-2 rounded-full {$isHostSharingScreen
+                      ? 'bg-emerald-400 animate-pulse'
+                      : 'bg-slate-600'}"
+                  ></span>
+                  {$isHostSharingScreen ? "Active & Ready" : "Standby"}
                 </span>
               </div>
-              <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+              <div
+                class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800"
+              >
                 <div class="text-[11px] text-slate-400">
                   {#if $isHostSharingScreen}
-                    Screen capture is active. Remote clients connect automatically without prompt.
+                    Screen capture is active. Remote clients connect
+                    automatically without prompt.
                   {:else}
-                    Start capture in advance for seamless unattended remote control.
+                    Start capture in advance for seamless unattended remote
+                    control.
                   {/if}
                 </div>
                 <button
@@ -776,13 +932,19 @@
             </div>
 
             <!-- Security Info Banner -->
-            <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-400 space-y-1.5">
-              <div class="flex items-center gap-1.5 text-slate-200 font-semibold">
+            <div
+              class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-400 space-y-1.5"
+            >
+              <div
+                class="flex items-center gap-1.5 text-slate-200 font-semibold"
+              >
                 <Lock class="w-3.5 h-3.5 text-emerald-400" />
                 <span>P2P End-to-End Encrypted (Zero-Cloud)</span>
               </div>
               <p class="text-[11px] leading-relaxed">
-                Remote desktop sessions are direct peer-to-peer and encrypted end-to-end. No video, keystrokes, or screen data are stored on any server.
+                Remote desktop sessions are direct peer-to-peer and encrypted
+                end-to-end. No video, keystrokes, or screen data are stored on
+                any server.
               </p>
             </div>
           </div>
@@ -793,23 +955,34 @@
 
   <!-- Incoming Remote Access Approval Modal (for requests without PIN) -->
   {#if $pendingRemoteAuthRequest}
-    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
-      <div class="w-full max-w-sm rounded-2xl bg-slate-900 border border-cyan-500/40 p-5 shadow-2xl space-y-4">
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
+    >
+      <div
+        class="w-full max-w-sm rounded-2xl bg-slate-900 border border-cyan-500/40 p-5 shadow-2xl space-y-4"
+      >
         <div class="flex items-center gap-3 pb-3 border-b border-slate-800">
-          <div class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+          <div
+            class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400"
+          >
             <Laptop class="w-5 h-5" />
           </div>
           <div>
             <h3 class="text-sm font-bold text-white">Remote Access Request</h3>
-            <p class="text-xs text-cyan-300 font-semibold">{$pendingRemoteAuthRequest.fromAlias}</p>
+            <p class="text-xs text-cyan-300 font-semibold">
+              {$pendingRemoteAuthRequest.fromAlias}
+            </p>
           </div>
         </div>
 
         <p class="text-xs text-slate-300 leading-relaxed">
-          This device wants to remotely view and control your computer. Since no PIN was entered, your explicit approval is required.
+          This device wants to remotely view and control your computer. Since no
+          PIN was entered, your explicit approval is required.
         </p>
 
-        <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
+        <div
+          class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800"
+        >
           <button
             type="button"
             on:click={rejectPendingRemoteRequest}
@@ -831,9 +1004,15 @@
 
   <!-- Change PIN Modal -->
   {#if isChangePinModalOpen}
-    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
-      <div class="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-800 p-5 shadow-2xl space-y-4">
-        <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150"
+    >
+      <div
+        class="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-800 p-5 shadow-2xl space-y-4"
+      >
+        <div
+          class="flex items-center justify-between pb-2 border-b border-slate-800"
+        >
           <div class="flex items-center gap-2 text-white font-bold text-sm">
             <Key class="w-4 h-4 text-cyan-400" />
             <span>Set New Security PIN</span>
@@ -848,18 +1027,23 @@
         </div>
 
         <p class="text-xs text-slate-400">
-          Enter a new 6-digit numeric PIN to protect this computer. For security, your PIN will never be visible on screen.
+          Enter a new 6-digit numeric PIN to protect this computer. For
+          security, your PIN will never be visible on screen.
         </p>
 
         {#if pinChangeError}
-          <div class="p-2.5 rounded-xl bg-rose-950/70 border border-rose-800/80 text-rose-300 text-xs flex items-center gap-2">
+          <div
+            class="p-2.5 rounded-xl bg-rose-950/70 border border-rose-800/80 text-rose-300 text-xs flex items-center gap-2"
+          >
             <AlertCircle class="w-4 h-4 shrink-0" />
             <span>{pinChangeError}</span>
           </div>
         {/if}
 
         {#if pinChangeSuccess}
-          <div class="p-2.5 rounded-xl bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs flex items-center gap-2">
+          <div
+            class="p-2.5 rounded-xl bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs flex items-center gap-2"
+          >
             <Check class="w-4 h-4 shrink-0 text-emerald-400" />
             <span>New Security PIN saved successfully!</span>
           </div>
@@ -867,7 +1051,10 @@
 
         <div class="space-y-3">
           <div>
-            <label for="rd-new-pin" class="block text-xs font-semibold text-slate-300 mb-1">
+            <label
+              for="rd-new-pin"
+              class="block text-xs font-semibold text-slate-300 mb-1"
+            >
               New 6-Digit PIN:
             </label>
             <input
@@ -882,7 +1069,10 @@
           </div>
 
           <div>
-            <label for="rd-confirm-pin" class="block text-xs font-semibold text-slate-300 mb-1">
+            <label
+              for="rd-confirm-pin"
+              class="block text-xs font-semibold text-slate-300 mb-1"
+            >
               Confirm New PIN:
             </label>
             <input
@@ -906,7 +1096,9 @@
           </button>
         </div>
 
-        <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+        <div
+          class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800"
+        >
           <button
             type="button"
             on:click={closeChangePinModal}

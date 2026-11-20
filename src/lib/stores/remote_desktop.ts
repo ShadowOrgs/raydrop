@@ -165,44 +165,56 @@ export function initRemoteDesktopListener() {
 
 // ----------------- Host Handling Logic -----------------
 
-// Helper to acquire monitor screen stream with zero-cursor (prevents lagging ghost cursor)
+// Helper to acquire monitor screen stream safely
 export async function acquireHostScreenStream(): Promise<MediaStream | null> {
   let stream = get(hostScreenStream);
-  if (stream && stream.getVideoTracks().length > 0 && stream.getVideoTracks()[0].enabled) {
+  if (stream && stream.getVideoTracks().length > 0 && stream.getVideoTracks()[0].readyState === 'live') {
     return stream;
   }
 
   try {
-    const displayMediaOptions: any = {
+    stream = await (navigator.mediaDevices as any).getDisplayMedia({
       video: {
-        cursor: 'never', // Hide remote host cursor to eliminate double / ghost cursor!
         displaySurface: 'monitor',
         frameRate: { ideal: 60, max: 60 },
         width: { ideal: 1920, max: 2560 },
         height: { ideal: 1080, max: 1440 },
       },
       audio: false,
-      selfBrowserSurface: 'exclude',
-      surfaceSwitching: 'exclude',
-      systemAudio: 'exclude',
-      monitorTypeSurfaces: 'include',
-      preferCurrentTab: false,
-    };
+    });
+  } catch (err) {
+    console.warn('Standard monitor displayMedia failed, trying fallback:', err);
+    try {
+      stream = await (navigator.mediaDevices as any).getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+    } catch (e2) {
+      console.warn('Fallback displayMedia failed:', e2);
+      return null;
+    }
+  }
 
-    stream = await (navigator.mediaDevices as any).getDisplayMedia(displayMediaOptions);
-
-    stream.getVideoTracks()[0].onended = () => {
-      stopHostScreenCapture();
-      disconnectRemoteSession();
-    };
-
-    hostScreenStream.set(stream);
-    isHostSharingScreen.set(true);
-    return stream;
-  } catch (err: any) {
-    console.warn('Failed to acquire host screen capture:', err);
+  if (!stream || stream.getVideoTracks().length === 0) {
     return null;
   }
+
+  const track = stream.getVideoTracks()[0];
+  try {
+    const caps: any = track.getCapabilities ? track.getCapabilities() : {};
+    if ('cursor' in caps) {
+      await track.applyConstraints({ cursor: 'never' as any });
+    }
+  } catch (_) {}
+
+  track.onended = () => {
+    stopHostScreenCapture();
+    disconnectRemoteSession();
+  };
+
+  hostScreenStream.set(stream);
+  isHostSharingScreen.set(true);
+  return stream;
 }
 
 export async function startHostScreenCapture(): Promise<boolean> {
@@ -329,12 +341,12 @@ async function setupHostPeerConnection(
   // Set degradationPreference to maintain resolution for crisp text!
   try {
     const params = sender.getParameters();
+    (params as any).degradationPreference = 'maintain-resolution';
     if (params.encodings && params.encodings.length > 0) {
-      params.encodings[0].maxBitrate = 8_000_000; // 8 Mbps high-quality WebRTC stream
+      params.encodings[0].maxBitrate = 8_000_000;
       params.encodings[0].maxFramerate = 60;
-      params.degradationPreference = 'maintain-resolution';
-      await sender.setParameters(params);
     }
+    await sender.setParameters(params);
   } catch (err) {
     console.warn('Encoding tuning warning:', err);
   }
@@ -349,7 +361,7 @@ async function setupHostPeerConnection(
   };
 
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+    if (pc.connectionState === 'failed') {
       disconnectRemoteSession();
     }
   };
@@ -500,8 +512,12 @@ async function handleIncomingOffer(
   };
 
   pc.ontrack = (event) => {
-    if (event.streams && event.streams[0]) {
-      clientRemoteStream.set(event.streams[0]);
+    let stream = event.streams && event.streams[0] ? event.streams[0] : null;
+    if (!stream && event.track) {
+      stream = new MediaStream([event.track]);
+    }
+    if (stream) {
+      clientRemoteStream.set(stream);
       remoteConnectionStatus.set('connected');
     }
   };
@@ -516,7 +532,7 @@ async function handleIncomingOffer(
   };
 
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+    if (pc.connectionState === 'failed') {
       remoteConnectionStatus.set('disconnected');
     }
   };

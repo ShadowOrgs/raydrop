@@ -41,7 +41,12 @@
   let maxConcurrentDownloads = 3;
   let win11DirectMenu = false;
   let statusBanner = "";
-  let sharedFolders: Array<{ id: string; name: string; local_path: string; is_active: boolean }> = [];
+  let sharedFolders: Array<{
+    id: string;
+    name: string;
+    local_path: string;
+    is_active: boolean;
+  }> = [];
 
   $: if ($settingsModalOpen) {
     aliasName = $appSettings.alias_name;
@@ -76,7 +81,8 @@
       });
       if (typeof picked === "string") {
         const parts = picked.split(/[/\\]/);
-        const defaultName = parts[parts.length - 1] || parts[parts.length - 2] || "Shared Folder";
+        const defaultName =
+          parts[parts.length - 1] || parts[parts.length - 2] || "Shared Folder";
         await raydropApi.addSharedFolder(defaultName, picked);
         await loadSharedFolders();
         statusBanner = "Shared folder added successfully!";
@@ -101,17 +107,23 @@
       const picked = await open({
         multiple: false,
         directory: false,
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'] }],
-        title: 'Choose Profile Avatar',
+        filters: [
+          {
+            name: "Images",
+            extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif"],
+          },
+        ],
+        title: "Choose Profile Avatar",
       });
-      if (typeof picked === 'string') {
+      if (typeof picked === "string") {
         const b64 = await raydropApi.setMyAvatar(picked);
         myAvatar.set(b64);
-        statusBanner = 'Profile avatar updated and synced across all your devices!';
-        setTimeout(() => (statusBanner = ''), 3000);
+        statusBanner =
+          "Profile avatar updated and synced across all your devices!";
+        setTimeout(() => (statusBanner = ""), 3000);
       }
     } catch (err) {
-      console.warn('Failed to upload avatar:', err);
+      console.warn("Failed to upload avatar:", err);
     }
   }
 
@@ -222,20 +234,30 @@
 
       <div class="space-y-4 py-4 flex-1 overflow-y-auto pr-1">
         <!-- Profile Avatar Section -->
-        <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 flex items-center justify-between gap-3">
+        <div
+          class="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 flex items-center justify-between gap-3"
+        >
           <div class="flex items-center gap-3">
-            <div class="relative w-12 h-12 rounded-xl overflow-hidden border border-slate-700 bg-slate-800 flex items-center justify-center shrink-0">
+            <div
+              class="relative w-12 h-12 rounded-xl overflow-hidden border border-slate-700 bg-slate-800 flex items-center justify-center shrink-0"
+            >
               {#if $myAvatar}
-                <img src={$myAvatar} alt="Profile Avatar" class="w-full h-full object-cover" />
+                <img
+                  src={$myAvatar}
+                  alt="Profile Avatar"
+                  class="w-full h-full object-cover"
+                />
               {:else}
                 <span class="text-sm font-bold text-cyan-300">
-                  {(aliasName || 'RD').slice(0, 2).toUpperCase()}
+                  {(aliasName || "RD").slice(0, 2).toUpperCase()}
                 </span>
               {/if}
             </div>
             <div>
               <p class="text-xs font-semibold text-white">Profile Avatar</p>
-              <p class="text-[11px] text-slate-400">Synced to other peers during chat & transfer</p>
+              <p class="text-[11px] text-slate-400">
+                Synced to other peers during chat & transfer
+              </p>
             </div>
           </div>
           <button
@@ -287,15 +309,20 @@
         </div>
 
         <!-- Shared Folders (Remote Browser / On-Demand Pulling) -->
-        <div class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col gap-2.5">
+        <div
+          class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col gap-2.5"
+        >
           <div class="flex items-center justify-between">
             <div>
-              <p class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+              <p
+                class="text-xs font-semibold text-slate-200 flex items-center gap-1.5"
+              >
                 <HardDrive class="w-3.5 h-3.5 text-cyan-400" />
                 <span>Shared Folders (Remote On-Demand Browser)</span>
               </p>
               <p class="text-[11px] text-slate-400 mt-0.5">
-                Folders configured here can be browsed and pulled on-demand by your connected devices and trusted peers.
+                Folders configured here can be browsed and pulled on-demand by
+                your connected devices and trusted peers.
               </p>
             </div>
             <button
@@ -311,10 +338,18 @@
           {#if sharedFolders.length > 0}
             <div class="space-y-1.5 pt-1">
               {#each sharedFolders as sf (sf.id)}
-                <div class="p-2 rounded-lg bg-slate-900 border border-slate-800/80 flex items-center justify-between gap-2">
+                <div
+                  class="p-2 rounded-lg bg-slate-900 border border-slate-800/80 flex items-center justify-between gap-2"
+                >
                   <div class="min-w-0">
-                    <span class="text-xs font-medium text-slate-200 block truncate">{sf.name}</span>
-                    <span class="text-[10px] font-mono text-slate-500 block truncate">{sf.local_path}</span>
+                    <span
+                      class="text-xs font-medium text-slate-200 block truncate"
+                      >{sf.name}</span
+                    >
+                    <span
+                      class="text-[10px] font-mono text-slate-500 block truncate"
+                      >{sf.local_path}</span
+                    >
                   </div>
                   <button
                     type="button"
@@ -329,20 +364,28 @@
             </div>
           {:else}
             <div class="text-[11px] text-slate-500 italic pt-0.5">
-              Raydrop Downloads folder is shared by default. Click "+ Share Folder" to share additional directories.
+              Raydrop Downloads folder is shared by default. Click "+ Share
+              Folder" to share additional directories.
             </div>
           {/if}
         </div>
 
         <!-- IDM-style Auto-Categorize Subfolders -->
-        <div class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex items-center justify-between gap-3">
+        <div
+          class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex items-center justify-between gap-3"
+        >
           <div>
-            <p class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+            <p
+              class="text-xs font-semibold text-slate-200 flex items-center gap-1.5"
+            >
               <Folders class="w-3.5 h-3.5 text-cyan-400" />
               <span>Smart Download Categorization</span>
             </p>
             <p class="text-[11px] text-slate-400">
-              Automatically sort downloads into subfolders: <span class="text-slate-300">Documents, Videos, Music, Compressed, Programs</span>.
+              Automatically sort downloads into subfolders: <span
+                class="text-slate-300"
+                >Documents, Videos, Music, Compressed, Programs</span
+              >.
             </p>
           </div>
           <button
@@ -352,36 +395,45 @@
               ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
               : 'bg-slate-800 border-slate-700 text-slate-400'}"
           >
-            <span>{autoCategorize ? 'Enabled (ON)' : 'Disabled (OFF)'}</span>
+            <span>{autoCategorize ? "Enabled (ON)" : "Disabled (OFF)"}</span>
           </button>
         </div>
 
         <!-- Download Queue & Concurrency Limiter -->
-        <div class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col gap-2.5">
+        <div
+          class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col gap-2.5"
+        >
           <div class="flex items-center justify-between">
             <div>
-              <p class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+              <p
+                class="text-xs font-semibold text-slate-200 flex items-center gap-1.5"
+              >
                 <Layers class="w-3.5 h-3.5 text-cyan-400" />
                 <span>Max Concurrent Downloads (Queue)</span>
               </p>
               <p class="text-[11px] text-slate-400 mt-0.5">
-                Limit simultaneously running downloads. Extra tasks are queued and start automatically.
+                Limit simultaneously running downloads. Extra tasks are queued
+                and start automatically.
               </p>
             </div>
             <span
-              class="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full {maxConcurrentDownloads === 0
+              class="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full {maxConcurrentDownloads ===
+              0
                 ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
                 : 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'}"
             >
-              {maxConcurrentDownloads === 0 ? 'Unlimited' : `${maxConcurrentDownloads} Active`}
+              {maxConcurrentDownloads === 0
+                ? "Unlimited"
+                : `${maxConcurrentDownloads} Active`}
             </span>
           </div>
           <div class="flex items-center gap-1.5 flex-wrap pt-1">
-            {#each [{ val: 1, label: '1 Download' }, { val: 2, label: '2 Downloads' }, { val: 3, label: '3 (Default)' }, { val: 5, label: '5 Downloads' }, { val: 0, label: 'Unlimited' }] as opt}
+            {#each [{ val: 1, label: "1 Download" }, { val: 2, label: "2 Downloads" }, { val: 3, label: "3 (Default)" }, { val: 5, label: "5 Downloads" }, { val: 0, label: "Unlimited" }] as opt}
               <button
                 type="button"
                 on:click={() => (maxConcurrentDownloads = opt.val)}
-                class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all {maxConcurrentDownloads === opt.val
+                class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all {maxConcurrentDownloads ===
+                opt.val
                   ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm shadow-cyan-500/30'
                   : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}"
               >
@@ -557,7 +609,9 @@
         >
           <div>
             <div class="flex items-center gap-2">
-              <p class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+              <p
+                class="text-xs font-semibold text-slate-200 flex items-center gap-1.5"
+              >
                 <Puzzle class="w-3.5 h-3.5 text-cyan-400" />
                 <span>Browser Extension (IDM Mode)</span>
               </p>
@@ -568,7 +622,8 @@
               </span>
             </div>
             <p class="text-[11px] text-slate-400 mt-0.5">
-              Automatically intercept and accelerate large file downloads directly from Chrome, Edge, and Brave into Raydrop.
+              Automatically intercept and accelerate large file downloads
+              directly from Chrome, Edge, and Brave into Raydrop.
             </p>
           </div>
           <button
@@ -596,7 +651,7 @@
               <span
                 class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700"
               >
-                Current: v1.2.28
+                Current: v1.2.29
               </span>
             </div>
             <p class="text-[11px] text-slate-400 mt-0.5">
