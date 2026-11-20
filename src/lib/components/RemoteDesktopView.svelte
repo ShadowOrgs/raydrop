@@ -20,6 +20,7 @@
     MonitorPlay,
     Square,
     Sparkles,
+    Pin,
   } from 'lucide-svelte';
   import {
     remoteHostSettings,
@@ -40,6 +41,9 @@
     initRemoteDesktopListener,
     startHostScreenCapture,
     stopHostScreenCapture,
+    pendingRemoteAuthRequest,
+    acceptPendingRemoteRequest,
+    rejectPendingRemoteRequest,
   } from '../stores/remote_desktop';
   import { contacts, lanContacts } from '../stores/contacts';
   import { cloudMyDevices, appSettings } from '../stores/state';
@@ -65,7 +69,9 @@
   let videoEl: HTMLVideoElement | null = null;
   let viewerContainerEl: HTMLDivElement | null = null;
   let isFullscreen = false;
-  let showToolbar = true;
+  let showToolbar = false;
+  let isToolbarPinned = false;
+  let toolbarTimer: any = null;
   let lastMouseMoveTime = 0;
 
   $: isClientConnected =
@@ -139,10 +145,15 @@
 
   onDestroy(() => {
     document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    if (toolbarTimer) clearTimeout(toolbarTimer);
   });
 
   function handleFullscreenChange() {
     isFullscreen = !!document.fullscreenElement;
+    if (isFullscreen) {
+      // Auto hide toolbar on fullscreen enter for clean view
+      showToolbar = false;
+    }
   }
 
   async function handleToggleHostEnabled() {
@@ -214,10 +225,7 @@
       alert('Please select or enter a target device first.');
       return;
     }
-    if (!inputPin.trim()) {
-      alert('Please enter the host security PIN.');
-      return;
-    }
+    // Connect with PIN (direct auto-connect) or without PIN (requires host approval)
     connectToRemoteHost(selectedTargetDeviceId, inputPin.trim());
   }
 
@@ -237,6 +245,22 @@
   // Mouse & Keyboard Input Event Handlers on Remote Video Canvas
   function handleMouseMove(e: MouseEvent) {
     if (!videoEl || !isClientConnected) return;
+
+    // Auto-show floating toolbar when mouse moves near the top 50px
+    if (e.clientY <= 50) {
+      showToolbar = true;
+      if (toolbarTimer) {
+        clearTimeout(toolbarTimer);
+        toolbarTimer = null;
+      }
+    } else if (!isToolbarPinned && showToolbar && !toolbarTimer) {
+      // Auto-hide toolbar after 1.5 seconds when moving down
+      toolbarTimer = setTimeout(() => {
+        showToolbar = false;
+        toolbarTimer = null;
+      }, 1500);
+    }
+
     const now = performance.now();
     // Throttle to ~60 updates per second
     if (now - lastMouseMoveTime < 16) return;
@@ -331,11 +355,43 @@
       bind:this={viewerContainerEl}
       class="flex-1 w-full h-full relative flex flex-col bg-black overflow-hidden"
     >
-      <!-- Floating Top Control Bar -->
+      <!-- Top Hover Trigger Zone (Subtle mini notch indicator when toolbar is hidden) -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
-        class="absolute top-2 left-1/2 -translate-x-1/2 z-40 transition-all duration-300 {showToolbar
-          ? 'translate-y-0 opacity-100'
-          : '-translate-y-12 opacity-0 hover:opacity-100'}"
+        class="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-3.5 z-30 flex items-center justify-center cursor-pointer group"
+        on:mouseenter={() => {
+          showToolbar = true;
+          if (toolbarTimer) {
+            clearTimeout(toolbarTimer);
+            toolbarTimer = null;
+          }
+        }}
+      >
+        {#if !showToolbar && !isToolbarPinned}
+          <div class="w-12 h-1 bg-slate-700/50 group-hover:bg-cyan-400 group-hover:h-1.5 rounded-full transition-all duration-200"></div>
+        {/if}
+      </div>
+
+      <!-- Auto-Hidden Floating Top Control Bar (Clean full screen when mouse moves away) -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div
+        class="absolute top-2 left-1/2 -translate-x-1/2 z-40 transition-all duration-300 ease-out {showToolbar || isToolbarPinned
+          ? 'translate-y-0 opacity-100 pointer-events-auto'
+          : '-translate-y-16 opacity-0 pointer-events-none'}"
+        on:mouseenter={() => {
+          if (toolbarTimer) {
+            clearTimeout(toolbarTimer);
+            toolbarTimer = null;
+          }
+        }}
+        on:mouseleave={() => {
+          if (!isToolbarPinned) {
+            toolbarTimer = setTimeout(() => {
+              showToolbar = false;
+              toolbarTimer = null;
+            }, 1500);
+          }
+        }}
       >
         <div class="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-900/90 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs">
           <!-- Host & Latency Info -->
@@ -401,6 +457,17 @@
 
           <!-- Display & Window Controls -->
           <div class="flex items-center gap-1">
+            <!-- Pin Toolbar Button -->
+            <button
+              type="button"
+              on:click={() => (isToolbarPinned = !isToolbarPinned)}
+              class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              title={isToolbarPinned ? 'Unpin toolbar (Auto-hide)' : 'Pin toolbar (Always visible)'}
+            >
+              <Pin class="w-3.5 h-3.5 {isToolbarPinned ? 'text-cyan-400 fill-cyan-400' : ''}" />
+            </button>
+
+            <!-- Fullscreen Button -->
             <button
               type="button"
               on:click={toggleFullscreen}
@@ -413,6 +480,8 @@
                 <Maximize class="w-3.5 h-3.5" />
               {/if}
             </button>
+
+            <!-- Disconnect Button -->
             <button
               type="button"
               on:click={disconnectRemoteSession}
@@ -507,14 +576,14 @@
             <Laptop class="w-5 h-5 text-cyan-400" />
             <div>
               <h3 class="text-sm font-bold text-white">Control Remote Device (Client)</h3>
-              <p class="text-[11px] text-slate-400">Access and control another computer or mobile device using its PIN</p>
+              <p class="text-[11px] text-slate-400">Access and control another computer or mobile device with PIN or host approval</p>
             </div>
           </div>
 
           <div class="space-y-3.5">
             <!-- Target Device Selector -->
             <div>
-              <label class="block text-xs font-semibold text-slate-300 mb-1.5">
+              <label for="rd-target-device" class="block text-xs font-semibold text-slate-300 mb-1.5">
                 Select Target Device:
               </label>
               {#if availablePeers.length === 0}
@@ -523,6 +592,7 @@
                 </div>
               {:else}
                 <select
+                  id="rd-target-device"
                   bind:value={selectedTargetDeviceId}
                   class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-cyan-500 transition"
                 >
@@ -538,10 +608,11 @@
 
             <!-- Manual Device ID Input -->
             <div>
-              <label class="block text-xs font-semibold text-slate-300 mb-1">
+              <label for="rd-manual-id" class="block text-xs font-semibold text-slate-300 mb-1">
                 Or Enter Host Device ID Manually:
               </label>
               <input
+                id="rd-manual-id"
                 type="text"
                 bind:value={selectedTargetDeviceId}
                 placeholder="RAY-XXXX-XXXX-XXXX"
@@ -551,19 +622,25 @@
 
             <!-- Security PIN Input (Strictly Masked) -->
             <div>
-              <label class="block text-xs font-semibold text-slate-300 mb-1">
-                Host Security PIN:
-              </label>
+              <div class="flex items-center justify-between mb-1">
+                <label for="rd-host-pin" class="block text-xs font-semibold text-slate-300">
+                  Host Security PIN:
+                </label>
+                <span class="text-[10px] {inputPin.trim() ? 'text-emerald-400 font-semibold' : 'text-slate-400'}">
+                  {inputPin.trim() ? '⚡ Instant Auto-Connect' : '✋ Host Approval'}
+                </span>
+              </div>
               <input
+                id="rd-host-pin"
                 type="password"
                 maxlength="6"
                 inputmode="numeric"
                 bind:value={inputPin}
-                placeholder="••••••"
+                placeholder="•••••• (Leave blank for Host Approval)"
                 class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 font-mono tracking-widest focus:outline-none focus:border-cyan-500 transition text-center sm:text-left"
               />
               <p class="text-[10px] text-slate-500 mt-1">
-                Obtain the PIN from the "Allow Remote Access" section on the target host device.
+                Enter the host PIN for instant unattended access without host approval, or leave it blank to request manual permission.
               </p>
             </div>
 
@@ -576,13 +653,16 @@
             >
               {#if $remoteConnectionStatus === 'verifying_pin'}
                 <RefreshCw class="w-4 h-4 animate-spin text-white" />
-                <span>Verifying Security PIN...</span>
+                <span>{inputPin.trim() ? 'Verifying PIN & Auto-Connecting...' : 'Waiting for Host Approval...'}</span>
               {:else if $remoteConnectionStatus === 'connecting'}
                 <RefreshCw class="w-4 h-4 animate-spin text-white" />
                 <span>Connecting WebRTC Stream...</span>
+              {:else if inputPin.trim()}
+                <Play class="w-4 h-4 fill-white" />
+                <span>Connect with PIN (Instant Access)</span>
               {:else}
                 <Play class="w-4 h-4 fill-white" />
-                <span>Connect & Start Remote Session</span>
+                <span>Request Remote Access (Host Approval)</span>
               {/if}
             </button>
           </div>
@@ -656,7 +736,7 @@
                 </button>
               </div>
               <p class="text-[10px] text-slate-500 mt-1">
-                To prevent unauthorized viewing by bystanders, the PIN is never displayed in clear text.
+                Clients with this PIN can connect instantly without prompting you. If no PIN is entered, you must manually approve the request.
               </p>
             </div>
 
@@ -672,7 +752,7 @@
               <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800">
                 <div class="text-[11px] text-slate-400">
                   {#if $isHostSharingScreen}
-                    Screen capture is actively running. Clients can connect without prompt.
+                    Screen capture is active. Remote clients connect automatically without prompt.
                   {:else}
                     Start capture in advance for seamless unattended remote control.
                   {/if}
@@ -706,6 +786,44 @@
               </p>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Incoming Remote Access Approval Modal (for requests without PIN) -->
+  {#if $pendingRemoteAuthRequest}
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+      <div class="w-full max-w-sm rounded-2xl bg-slate-900 border border-cyan-500/40 p-5 shadow-2xl space-y-4">
+        <div class="flex items-center gap-3 pb-3 border-b border-slate-800">
+          <div class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+            <Laptop class="w-5 h-5" />
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">Remote Access Request</h3>
+            <p class="text-xs text-cyan-300 font-semibold">{$pendingRemoteAuthRequest.fromAlias}</p>
+          </div>
+        </div>
+
+        <p class="text-xs text-slate-300 leading-relaxed">
+          This device wants to remotely view and control your computer. Since no PIN was entered, your explicit approval is required.
+        </p>
+
+        <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
+          <button
+            type="button"
+            on:click={rejectPendingRemoteRequest}
+            class="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition cursor-pointer"
+          >
+            Decline
+          </button>
+          <button
+            type="button"
+            on:click={acceptPendingRemoteRequest}
+            class="px-4 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/20 transition cursor-pointer active:scale-95"
+          >
+            Allow Remote Control
+          </button>
         </div>
       </div>
     </div>
@@ -749,10 +867,11 @@
 
         <div class="space-y-3">
           <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">
+            <label for="rd-new-pin" class="block text-xs font-semibold text-slate-300 mb-1">
               New 6-Digit PIN:
             </label>
             <input
+              id="rd-new-pin"
               type="password"
               maxlength="6"
               inputmode="numeric"
@@ -763,10 +882,11 @@
           </div>
 
           <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">
+            <label for="rd-confirm-pin" class="block text-xs font-semibold text-slate-300 mb-1">
               Confirm New PIN:
             </label>
             <input
+              id="rd-confirm-pin"
               type="password"
               maxlength="6"
               inputmode="numeric"

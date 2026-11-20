@@ -27,6 +27,14 @@ export const remoteHostSettings = writable<RemoteDesktopSettings>({
   unattended: true,
 });
 
+export interface RemoteAuthRequest {
+  clientDeviceId: string;
+  sessionId: string;
+  fromAlias: string;
+}
+
+export const pendingRemoteAuthRequest = writable<RemoteAuthRequest | null>(null);
+
 export const isHostSharingScreen = writable(false);
 export const hostScreenStream = writable<MediaStream | null>(null);
 export const clientRemoteStream = writable<MediaStream | null>(null);
@@ -157,18 +165,31 @@ export function initRemoteDesktopListener() {
 
 // ----------------- Host Handling Logic -----------------
 
-export async function startHostScreenCapture(): Promise<boolean> {
+// Helper to acquire monitor screen stream with zero-cursor (prevents lagging ghost cursor)
+export async function acquireHostScreenStream(): Promise<MediaStream | null> {
+  let stream = get(hostScreenStream);
+  if (stream && stream.getVideoTracks().length > 0 && stream.getVideoTracks()[0].enabled) {
+    return stream;
+  }
+
   try {
-    const stream = await (navigator.mediaDevices as any).getDisplayMedia({
+    const displayMediaOptions: any = {
       video: {
-        cursor: 'always',
+        cursor: 'never', // Hide remote host cursor to eliminate double / ghost cursor!
         displaySurface: 'monitor',
         frameRate: { ideal: 60, max: 60 },
         width: { ideal: 1920, max: 2560 },
         height: { ideal: 1080, max: 1440 },
       },
       audio: false,
-    });
+      selfBrowserSurface: 'exclude',
+      surfaceSwitching: 'exclude',
+      systemAudio: 'exclude',
+      monitorTypeSurfaces: 'include',
+      preferCurrentTab: false,
+    };
+
+    stream = await (navigator.mediaDevices as any).getDisplayMedia(displayMediaOptions);
 
     stream.getVideoTracks()[0].onended = () => {
       stopHostScreenCapture();
@@ -177,11 +198,16 @@ export async function startHostScreenCapture(): Promise<boolean> {
 
     hostScreenStream.set(stream);
     isHostSharingScreen.set(true);
-    return true;
+    return stream;
   } catch (err: any) {
-    console.warn('Failed to start host screen capture:', err);
-    return false;
+    console.warn('Failed to acquire host screen capture:', err);
+    return null;
   }
+}
+
+export async function startHostScreenCapture(): Promise<boolean> {
+  const stream = await acquireHostScreenStream();
+  return !!stream;
 }
 
 async function handleIncomingAuthRequest(
@@ -190,8 +216,6 @@ async function handleIncomingAuthRequest(
   payload: any
 ) {
   const settings = get(remoteHostSettings);
-  const myDeviceId = get(appSettings).device_id;
-  const myAlias = get(appSettings).alias_name || 'Raydrop Host';
 
   // Check if remote control is enabled
   if (!settings.enabled) {
@@ -202,47 +226,66 @@ async function handleIncomingAuthRequest(
     return;
   }
 
-  // Check PIN
   const enteredPin = (payload.pin || '').trim();
   const hostPin = (settings.pin || '').trim();
-  if (enteredPin !== hostPin) {
-    sendRemoteSignal(clientDeviceId, sessionId, {
-      type: 'remote_auth_rejected',
-      reason: 'Incorrect Security PIN! Access denied.',
+
+  // 1. PIN matches -> Auto connect directly! No approval needed on host.
+  if (enteredPin && enteredPin === hostPin) {
+    await proceedHostAcceptRemote(clientDeviceId, sessionId, payload.fromAlias || 'Remote Client');
+    return;
+  }
+
+  // 2. No PIN provided -> Requires manual approval by the host user
+  if (!enteredPin) {
+    pendingRemoteAuthRequest.set({
+      clientDeviceId,
+      sessionId,
+      fromAlias: payload.fromAlias || 'Remote Client',
     });
     return;
   }
 
-  // Ensure host screen stream is ready
-  let stream = get(hostScreenStream);
-  if (!stream || stream.getVideoTracks().length === 0 || !stream.getVideoTracks()[0].enabled) {
-    try {
-      stream = await (navigator.mediaDevices as any).getDisplayMedia({
-        video: {
-          cursor: 'always',
-          displaySurface: 'monitor',
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920, max: 2560 },
-          height: { ideal: 1080, max: 1440 },
-        },
-        audio: false,
-      });
+  // 3. Incorrect PIN provided
+  sendRemoteSignal(clientDeviceId, sessionId, {
+    type: 'remote_auth_rejected',
+    reason: 'Incorrect Security PIN! Access denied.',
+  });
+}
 
-      stream.getVideoTracks()[0].onended = () => {
-        stopHostScreenCapture();
-        disconnectRemoteSession();
-      };
+// User manually approves an incoming remote request (when no PIN was used)
+export async function acceptPendingRemoteRequest() {
+  const req = get(pendingRemoteAuthRequest);
+  if (!req) return;
+  pendingRemoteAuthRequest.set(null);
+  await proceedHostAcceptRemote(req.clientDeviceId, req.sessionId, req.fromAlias);
+}
 
-      hostScreenStream.set(stream);
-      isHostSharingScreen.set(true);
-    } catch (err: any) {
-      console.warn('Host cancelled screen share:', err);
-      sendRemoteSignal(clientDeviceId, sessionId, {
-        type: 'remote_auth_rejected',
-        reason: 'Host screen capture is not active or permission was denied. Please start screen capture on the host device first.',
-      });
-      return;
-    }
+// User manually rejects an incoming remote request
+export function rejectPendingRemoteRequest() {
+  const req = get(pendingRemoteAuthRequest);
+  if (!req) return;
+  pendingRemoteAuthRequest.set(null);
+  sendRemoteSignal(req.clientDeviceId, req.sessionId, {
+    type: 'remote_auth_rejected',
+    reason: 'Remote request was declined by the host user.',
+  });
+}
+
+async function proceedHostAcceptRemote(
+  clientDeviceId: string,
+  sessionId: string,
+  clientAlias: string
+) {
+  const myAlias = get(appSettings).alias_name || 'Raydrop Host';
+
+  // Ensure host screen stream is ready (auto-selects screen with cursor: 'never')
+  const stream = await acquireHostScreenStream();
+  if (!stream) {
+    sendRemoteSignal(clientDeviceId, sessionId, {
+      type: 'remote_auth_rejected',
+      reason: 'Host screen capture could not be started or permission was cancelled.',
+    });
+    return;
   }
 
   // Accept auth and set active session
@@ -250,7 +293,7 @@ async function handleIncomingAuthRequest(
     isHost: true,
     isClient: false,
     peerDeviceId: clientDeviceId,
-    peerAlias: payload.fromAlias || 'Remote Client',
+    peerAlias: clientAlias,
     sessionId,
   });
   remoteConnectionStatus.set('connected');
@@ -415,17 +458,20 @@ export async function connectToRemoteHost(targetDeviceId: string, pin: string) {
     sessionId,
   });
 
-  // Timeout guard (15 seconds): If host is unreachable or not responding, abort cleanly
+  // Timeout guard (30 seconds for manual approval, 15 seconds for PIN): If host is unreachable or not responding, abort cleanly
+  const timeoutMs = pin.trim() ? 15000 : 30000;
   authTimeoutTimer = setTimeout(() => {
     const status = get(remoteConnectionStatus);
     if (status === 'verifying_pin' || status === 'connecting') {
       remoteConnectionStatus.set('error');
       remoteErrorMessage.set(
-        'Connection timed out. Host did not respond. Please ensure Raydrop is running on the host device and Allow Remote Access is enabled.'
+        pin.trim()
+          ? 'Connection timed out. Host did not respond. Please ensure Raydrop is running on the host device and Allow Remote Access is enabled.'
+          : 'Request timed out. Host did not accept the remote control request.'
       );
       cleanupPeerConnection();
     }
-  }, 15000);
+  }, timeoutMs);
 
   // Send authentication request with PIN
   sendRemoteSignal(targetDeviceId, sessionId, {

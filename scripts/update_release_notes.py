@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.27"
+    tag = clean_args[0] if clean_args else "v1.2.28"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: P2P Remote Desktop Connection Fix, Masked Security PIN & English UI"
+    title = f"Raydrop {tag}: Auto-Hidden Floating Controls, Ghost Cursor Fix & Instant Auto-Connect"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: P2P Remote Desktop Connection Fix, Masked Security PIN & English UI</h2>
+<h2 align="center">Raydrop {tag}: Auto-Hidden Floating Controls, Ghost Cursor Fix & Instant Auto-Connect</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -118,7 +118,7 @@ if __name__ == "__main__":
 | :--- | :---: | :---: | :--- |
 | **Windows** | `.msi` | x64 (64-bit) | [**Raydrop_{ver}_x64_en-US.msi**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_{ver}_x64_en-US.msi) |
 | **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | [**Raydrop_{ver}_universal.dmg**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_{ver}_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | [**Raydrop_{ver}_amd64.deb**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_{ver}_amd64.deb) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | [**raydrop_{ver}_amd64.deb**](https://github.com/asepindrak/raydrop/releases/download/{tag}/raydrop_{ver}_amd64.deb) |
 | **Linux (Universal)** | `.AppImage` | x64 (amd64) | [**Raydrop_{ver}_amd64.AppImage**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_{ver}_amd64.AppImage) |
 | **Android** | `.apk` | ARM64 (`arm64-v8a`) | [**Raydrop-arm64-v8a.apk**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop-arm64-v8a.apk) |
 
@@ -126,19 +126,17 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🔒 Always-Masked Security PIN for Remote Desktop
-- **Uncompromised Privacy:** Removed plaintext display and eye-toggle buttons so bystanders standing by or holding the PC cannot inspect or memorize the security PIN.
-- **Dedicated Set/Change PIN Modal:** Easily update your security PIN via password-masked fields with verification and an instant random 6-digit PIN generator.
+#### 🧹 Auto-Hidden Floating Toolbar & Clean Fullscreen View
+- **Zero Screen Obstruction:** The floating remote control header now automatically slides out of view after 1.5 seconds or on fullscreen entry, providing a 100% clean, unobstructed remote view.
+- **Top Edge Hover & Notch Summon:** Moving the mouse within the top 50px or hovering over the subtle top notch instantly reveals the toolbar.
+- **Pin / Unpin Option:** Includes a pin toggle so users can keep the toolbar permanently visible if desired.
 
-#### ⚡ Remote Desktop Signaling & Connection Fix
-- **WAN & LAN Relay Routing:** Fixed signaling filter in the Rust backend to accept `remote:` packets alongside `meeting:`, enabling successful remote desktop handshakes across WAN relays and local networks.
-- **Timeout Protection:** Added 15-second connection timeout guard with clear error diagnostics if a host is offline or unreachable.
-- **Host Screen Sharing Readiness:** Hosts can start screen capture in advance for seamless, immediate unattended remote control.
+#### 🎯 Remote Ghost Cursor Eliminated
+- **Native Zero-Lag Cursor:** Switched remote screen capture constraints to `cursor: 'never'`, completely eliminating the delayed, double "ghost cursor" from the video stream. Remote control now feels as responsive as a local desktop.
 
-#### 🌐 Full English UI Localization
-- **Standardized English Interface:** Completely localized all Remote Desktop screens, buttons, tooltips, dialogs, and alerts to professional English.
-
-#### 📋 Direct Bidirectional Clipboard Synchronization
-- **Text & Image Sync:** Instant peer-to-peer clipboard sharing between client and host without server storage.
+#### ⚡ Instant Auto-Connect with PIN (Unattended Access)
+- **Automatic Screen Capture via WebView2 Flags:** Configured WebView2 / Chromium engine flags (`--auto-select-desktop-capture-source="Entire screen" --enable-usermedia-screen-capturing`) to eliminate the "Choose what to share with..." picker prompt.
+- **PIN-Based Instant Access:** Entering the host security PIN bypasses all approval dialogs for instant, frictionless remote desktop connection.
+- **Ad-Hoc Access Without PIN:** If no PIN is entered, the host receives a prompt modal (`Allow / Decline`) for explicit manual authorization.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)
