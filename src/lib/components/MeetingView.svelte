@@ -689,6 +689,7 @@
 
     <!-- Main Meeting Workspace (Video Grid + Optional Chat Drawer) -->
     <div class="flex-1 flex overflow-hidden relative">
+      <AnnotationOverlay active={showMeetingAnnotation} on:close={() => (showMeetingAnnotation = false)} />
       <!-- Video / Participant Grid Area -->
       <div
         class="flex-1 p-3 sm:p-5 flex flex-col justify-center items-center overflow-y-auto"
@@ -699,7 +700,6 @@
             <div
               class="flex-1 rounded-2xl bg-black border border-indigo-500/40 relative overflow-hidden flex items-center justify-center shadow-2xl"
             >
-              <AnnotationOverlay active={showMeetingAnnotation} on:close={() => (showMeetingAnnotation = false)} />
               <!-- Floating Notification: Raised Hand banner during presentation -->
               {#if raisedHandParticipants.length > 0}
                 <div class="absolute top-4 left-1/2 transform -translate-x-1/2 z-30 flex items-center gap-2 px-4 py-2 rounded-2xl bg-amber-500/90 text-amber-950 font-bold text-xs sm:text-sm shadow-2xl backdrop-blur-md animate-bounce border border-amber-300">

@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.40"
+    tag = clean_args[0] if clean_args else "v1.2.41"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Remote Audio, Multi-Monitor, Power Controls, WoL, Custom Themes & PiP"
+    title = f"Raydrop {tag}: iPad/Tablet QR Second Display, Native WASAPI Host Audio & Meeting Fixes"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Remote Audio, Multi-Monitor, Power Controls, WoL, Custom Themes & PiP</h2>
+<h2 align="center">Raydrop {tag}: iPad/Tablet QR Second Display, Native WASAPI Host Audio & Meeting Fixes</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,23 +126,16 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🖥️ Remote Desktop Supercharges
-- **Remote Audio Streaming:** Stream system audio from the host PC directly to the remote client with mute/unmute controls in the remote toolbar.
-- **Drag & Drop Direct Transfer:** Drag and drop files directly onto the active Remote Desktop window to transfer them immediately to the host device.
-- **Multi-Monitor Switcher:** Enumerates host displays and lets you switch target monitor coordinate bounds (`Display 1`, `Display 2`, or `All Displays`).
-- **Remote Power Management:** Lock Screen, Sleep, Restart, or Shutdown the remote host securely with a confirmation modal.
-- **Tablet/Phone Second Display Mode:** Touch-to-mouse translation (`touchstart`, `touchmove`, `touchend`, two-finger scroll) plus edge-to-edge Fill Screen toggle.
-- **Floating Mini Player (PiP):** Picture-in-Picture mode available for both Remote Desktop and Meetings.
+#### 📱 Extend to iPad / Tablet / Phone via QR Code
+- **Zero-Install Wireless Second Display:** Click **"Extend to iPad / Tablet"** in the Remote Desktop header to start a local high-speed MJPEG + Touch-to-Mouse web viewer and generate a QR Code.
+- **Instant Safari/Chrome Viewing:** Scan the QR code from any iPad, iPhone, or Android tablet on the same Wi-Fi to instantly open a full-screen touch-enabled second screen with Fill/Fit and Fullscreen controls.
 
-#### 🎨 Collaboration, Chat & Custom Themes
-- **Laser Pointer & Screen Annotation:** Draw ephemeral fading laser trails or persistent colored pen annotations on top of Remote Desktop and Meeting screens.
-- **Code Syntax Highlighting in Chat:** Highlighted code blocks with language tags and 1-click Copy buttons.
-- **Voice Note Playback Speed:** Cycle playback speeds ($1\\times, 1.25\\times, 1.5\\times, 2\\times$) on voice messages.
-- **Custom Appearance Themes:** Switch between **Midnight Slate**, **OLED True Black**, **Cyberpunk Neon**, and **Clean Light** in Settings.
+#### 🔊 Native Windows WASAPI Loopback Host Audio
+- **Reliable System Audio Streaming:** Added native Rust WASAPI loopback audio capture (`cpal`) on the Host PC so YouTube, music, and system audio stream reliably to the Remote Client over WebRTC DataChannel—even when WebView2 screen capture omits audio tracks.
+- **Auto-Unmute on Interaction:** Client audio automatically resumes and plays smoothly on your first click or tap on the remote screen.
 
-#### ⚡ Networking & Download Accelerator Fixes
-- **Wake-on-LAN (WoL):** Send 102-byte UDP Magic Packets to wake offline devices from Remote Desktop or My Devices.
-- **Instant Media Streaming:** Stream actively downloading video/audio files (>512 KB) without waiting for 100% completion.
-- **HTTP Accelerator History Fix:** Completed HTTP downloads are now automatically recorded into **Transfer History** and cleared from the active HTTP Accelerator queue.
+#### 🤝 Meeting Pen & Screen Picker Fixes
+- **Fixed Meeting Pen & Laser Pointer:** Added `ResizeObserver` canvas initialization so the Annotation overlay renders and draws properly in both Video Grid and Spotlight Screen Share modes.
+- **App Window & Monitor Picker in Meeting:** Removed the monitor-only restriction in Meeting screen sharing so you can freely choose either a specific application window or an entire monitor (without affecting Remote Desktop).
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

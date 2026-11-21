@@ -167,6 +167,16 @@ export function initRemoteDesktopListener() {
       }
     }
   });
+
+  // Forward native WASAPI host audio loopback chunks over WebRTC DataChannel
+  raydropApi.listenEvent<string>('host_audio_chunk', (b64) => {
+    const sess = get(activeRemoteSession);
+    if (sess?.isHost && activeDataChannel && activeDataChannel.readyState === 'open' && b64) {
+      try {
+        activeDataChannel.send(JSON.stringify({ t: 'aud', d: b64 }));
+      } catch (_) {}
+    }
+  });
 }
 
 // ----------------- Host Handling Logic -----------------
@@ -512,6 +522,10 @@ function setupHostDataChannel(dc: RTCDataChannel) {
         dc.send(JSON.stringify({ t: 'monitors_list', monitors }));
       }
     } catch (_) {}
+    // Start native WASAPI loopback audio streaming from host PC
+    raydropApi.startHostAudioLoopback().catch((err) => {
+      console.warn('Native host audio loopback start warning:', err);
+    });
   };
 
   dc.onmessage = async (event) => {
@@ -748,6 +762,76 @@ async function handleIncomingIceCandidate(candidate: RTCIceCandidateInit) {
   }
 }
 
+let clientAudioCtx: AudioContext | null = null;
+let nextAudioPlayTime = 0;
+let clientAudioMuted = false;
+
+export function setClientAudioMuted(muted: boolean) {
+  clientAudioMuted = muted;
+  if (!muted) {
+    resumeClientAudio();
+  }
+}
+
+export function resumeClientAudio() {
+  if (clientAudioMuted) return;
+  try {
+    if (!clientAudioCtx) {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        clientAudioCtx = new AudioContextClass({ sampleRate: 24000 });
+        nextAudioPlayTime = 0;
+      }
+    }
+    if (clientAudioCtx && clientAudioCtx.state === 'suspended') {
+      clientAudioCtx.resume().catch(() => {});
+    }
+  } catch (_) {}
+}
+
+function playIncomingPcmChunk(b64: string) {
+  if (clientAudioMuted) return;
+  try {
+    if (!clientAudioCtx) {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      clientAudioCtx = new AudioContextClass({ sampleRate: 24000 });
+      nextAudioPlayTime = 0;
+    }
+    if (clientAudioCtx.state === 'suspended') {
+      // Auto-resume if user has interacted
+      clientAudioCtx.resume().catch(() => {});
+      if (clientAudioCtx.state === 'suspended') return;
+    }
+
+    const bin = atob(b64);
+    const len = bin.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = bin.charCodeAt(i);
+    }
+    const int16 = new Int16Array(bytes.buffer);
+    if (int16.length === 0) return;
+
+    const audioBuf = clientAudioCtx.createBuffer(1, int16.length, 24000);
+    const channelData = audioBuf.getChannelData(0);
+    for (let i = 0; i < int16.length; i++) {
+      channelData[i] = int16[i] / 32768.0;
+    }
+
+    const src = clientAudioCtx.createBufferSource();
+    src.buffer = audioBuf;
+    src.connect(clientAudioCtx.destination);
+
+    const now = clientAudioCtx.currentTime;
+    if (nextAudioPlayTime < now || nextAudioPlayTime - now > 0.25) {
+      nextAudioPlayTime = now + 0.04;
+    }
+    src.start(nextAudioPlayTime);
+    nextAudioPlayTime += audioBuf.duration;
+  } catch (_) {}
+}
+
 function setupClientDataChannel(dc: RTCDataChannel) {
   dc.onopen = () => {
     remoteConnectionStatus.set('connected');
@@ -784,6 +868,12 @@ function setupClientDataChannel(dc: RTCDataChannel) {
         remoteHostMonitors.set(data.monitors);
         const primary = data.monitors.find((m: any) => m.is_primary);
         if (primary) activeMonitorIndex.set(primary.index);
+        return;
+      }
+
+      // Received native PCM audio chunk from Host
+      if (data.t === 'aud' && data.d) {
+        playIncomingPcmChunk(data.d);
         return;
       }
     } catch (_) {}
@@ -868,6 +958,14 @@ export function stopHostScreenCapture() {
 
 function cleanupPeerConnection() {
   clearAuthTimer();
+  raydropApi.stopHostAudioLoopback().catch(() => {});
+  if (clientAudioCtx) {
+    try {
+      clientAudioCtx.close();
+    } catch (_) {}
+    clientAudioCtx = null;
+    nextAudioPlayTime = 0;
+  }
   if (pingInterval) {
     clearInterval(pingInterval);
     pingInterval = null;

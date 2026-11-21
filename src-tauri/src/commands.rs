@@ -3437,3 +3437,38 @@ pub async fn send_wake_on_lan(mac_address: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn start_host_audio_loopback(app: AppHandle) -> Result<(), String> {
+    crate::remote_audio::start_host_audio_loopback(app)
+}
+
+#[tauri::command]
+pub async fn stop_host_audio_loopback() -> Result<(), String> {
+    crate::remote_audio::stop_host_audio_loopback();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn start_second_screen_server(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::network::second_screen::SecondScreenInfo, String> {
+    crate::network::second_screen::start_second_screen_server(state.second_screen.clone()).await
+}
+
+#[tauri::command]
+pub async fn stop_second_screen_server(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state.second_screen.stop();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn push_second_screen_frame(
+    frame_base64: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state.second_screen.push_frame_b64(&frame_base64);
+    Ok(())
+}
+

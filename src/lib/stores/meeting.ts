@@ -325,10 +325,7 @@ export async function toggleScreenShare() {
       const displayStream = await (navigator.mediaDevices as any).getDisplayMedia({
         video: {
           cursor: 'always',
-          displaySurface: 'monitor',
           frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
         },
         audio: false,
       });

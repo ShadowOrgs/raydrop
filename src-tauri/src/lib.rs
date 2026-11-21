@@ -6,6 +6,7 @@ pub mod folder_sync;
 pub mod http_downloader;
 pub mod network;
 pub mod os;
+pub mod remote_audio;
 pub mod remote_fs;
 pub mod remote_input;
 pub mod state;
@@ -139,6 +140,7 @@ pub fn run() {
         http_downloader: http_mgr,
         folder_sync_watcher: folder_sync_mgr.clone(),
         pending_fs_requests: Mutex::new(HashMap::new()),
+        second_screen: Arc::new(crate::network::second_screen::SecondScreenState::new()),
     });
 
     #[cfg(desktop)]
@@ -515,6 +517,11 @@ pub fn run() {
             commands::set_host_target_monitor,
             commands::execute_remote_power_action,
             commands::send_wake_on_lan,
+            commands::start_host_audio_loopback,
+            commands::stop_host_audio_loopback,
+            commands::start_second_screen_server,
+            commands::stop_second_screen_server,
+            commands::push_second_screen_frame,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Raydrop Tauri application");

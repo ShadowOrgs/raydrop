@@ -1,6 +1,6 @@
 [package]
 name = "raydrop"
-version = "1.2.40"
+version = "1.2.41"
 description = "Universal Zero-Server P2P File Transfer System (LAN + WAN)"
 authors = ["Raydrop Team"]
 edition = "2021"
@@ -54,6 +54,7 @@ dunce = "1.0"
 tauri-plugin-single-instance = "2.0.0"
 arboard = "3.4"
 librqbit = "9.1"
+cpal = "0.15"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.52"

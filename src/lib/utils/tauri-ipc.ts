@@ -587,6 +587,16 @@ export const raydropApi = {
     invoke<void>('execute_remote_power_action', { action }),
   sendWakeOnLan: (macAddress: string) =>
     invoke<void>('send_wake_on_lan', { macAddress }),
+  startHostAudioLoopback: () =>
+    invoke<void>('start_host_audio_loopback'),
+  stopHostAudioLoopback: () =>
+    invoke<void>('stop_host_audio_loopback'),
+  startSecondScreenServer: () =>
+    invoke<{ url: string; token: string; port: number }>('start_second_screen_server'),
+  stopSecondScreenServer: () =>
+    invoke<void>('stop_second_screen_server'),
+  pushSecondScreenFrame: (frameBase64: string) =>
+    invoke<void>('push_second_screen_frame', { frameBase64 }),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>
     listen<T>(event, (e) => handler(e.payload)),
 };

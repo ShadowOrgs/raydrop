@@ -34,9 +34,12 @@
     PictureInPicture2,
     PenTool,
     Zap,
+    QrCode,
   } from "lucide-svelte";
+  import QRCode from "qrcode";
   import AnnotationOverlay from "./AnnotationOverlay.svelte";
   import { triggerWakeOnLan } from "../stores/wol";
+  import { raydropApi } from "../utils/tauri-ipc";
   import {
     remoteHostSettings,
     isHostSharingScreen,
@@ -60,6 +63,9 @@
     initRemoteDesktopListener,
     startHostScreenCapture,
     stopHostScreenCapture,
+    acquireHostScreenStream,
+    resumeClientAudio,
+    setClientAudioMuted,
     pendingRemoteAuthRequest,
     acceptPendingRemoteRequest,
     rejectPendingRemoteRequest,
@@ -112,6 +118,14 @@
   let showAnnotation = false;
   let isSecondDisplayFill = false;
   let isPowerMenuOpen = false;
+  let isSecondScreenModalOpen = false;
+  let isSecondScreenActive = false;
+  let secondScreenUrl = "";
+  let secondScreenQrDataUrl = "";
+  let secondScreenError = "";
+  let secondScreenTimer: any = null;
+  let secondScreenVideoEl: HTMLVideoElement | null = null;
+  let secondScreenCanvasEl: HTMLCanvasElement | null = null;
   let pendingPowerAction: "lock" | "sleep" | "restart" | "shutdown" | null = null;
   let lastMouseMoveTime = 0;
 
@@ -314,6 +328,7 @@
   });
 
   onDestroy(() => {
+    stopSecondScreenSharing();
     document.removeEventListener("fullscreenchange", handleFullscreenChange);
     if (typeof navigator !== "undefined" && (navigator as any).keyboard?.unlock) {
       (navigator as any).keyboard.unlock();
@@ -430,8 +445,82 @@
 
   function toggleAudioMute() {
     isAudioMuted = !isAudioMuted;
+    setClientAudioMuted(isAudioMuted);
     if (videoEl) {
       videoEl.muted = isAudioMuted;
+    }
+  }
+
+  async function startSecondScreenSharing() {
+    secondScreenError = "";
+    try {
+      const stream = await acquireHostScreenStream();
+      if (!stream) {
+        secondScreenError = "Please select a screen/monitor to extend to your iPad or Tablet.";
+        return;
+      }
+      const info = await raydropApi.startSecondScreenServer();
+      secondScreenUrl = info.url;
+      secondScreenQrDataUrl = await QRCode.toDataURL(info.url, {
+        width: 240,
+        margin: 2,
+        color: { dark: "#0f172a", light: "#ffffff" },
+      });
+      isSecondScreenActive = true;
+
+      if (!secondScreenVideoEl) {
+        secondScreenVideoEl = document.createElement("video");
+        secondScreenVideoEl.muted = true;
+        secondScreenVideoEl.playsInline = true;
+      }
+      secondScreenVideoEl.srcObject = stream;
+      await secondScreenVideoEl.play().catch(() => {});
+
+      if (!secondScreenCanvasEl) {
+        secondScreenCanvasEl = document.createElement("canvas");
+      }
+
+      if (secondScreenTimer) clearInterval(secondScreenTimer);
+      secondScreenTimer = setInterval(() => {
+        if (!isSecondScreenActive || !secondScreenVideoEl || !secondScreenCanvasEl) return;
+        const vw = secondScreenVideoEl.videoWidth;
+        const vh = secondScreenVideoEl.videoHeight;
+        if (!vw || !vh) return;
+        const scale = Math.min(1, 1600 / vw);
+        const cw = Math.round(vw * scale);
+        const ch = Math.round(vh * scale);
+        if (secondScreenCanvasEl.width !== cw) secondScreenCanvasEl.width = cw;
+        if (secondScreenCanvasEl.height !== ch) secondScreenCanvasEl.height = ch;
+        const ctx = secondScreenCanvasEl.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(secondScreenVideoEl, 0, 0, cw, ch);
+          const dataUrl = secondScreenCanvasEl.toDataURL("image/jpeg", 0.72);
+          raydropApi.pushSecondScreenFrame(dataUrl).catch(() => {});
+        }
+      }, 35); // ~28 fps smooth stream
+    } catch (err: any) {
+      secondScreenError = err?.message || String(err);
+    }
+  }
+
+  async function stopSecondScreenSharing() {
+    isSecondScreenActive = false;
+    if (secondScreenTimer) {
+      clearInterval(secondScreenTimer);
+      secondScreenTimer = null;
+    }
+    if (secondScreenVideoEl) {
+      secondScreenVideoEl.srcObject = null;
+    }
+    secondScreenUrl = "";
+    secondScreenQrDataUrl = "";
+    await raydropApi.stopSecondScreenServer().catch(() => {});
+  }
+
+  function openSecondScreenModal() {
+    isSecondScreenModalOpen = true;
+    if (!isSecondScreenActive) {
+      startSecondScreenSharing();
     }
   }
 
@@ -487,6 +576,7 @@
 
   function handleMouseDown(e: MouseEvent) {
     if (!isClientConnected) return;
+    resumeClientAudio();
     const button =
       e.button === 0 ? "left" : e.button === 2 ? "right" : "middle";
     sendInputToHost({
@@ -551,6 +641,7 @@
 
   function handleTouchStart(e: TouchEvent) {
     if (!isClientConnected || !e.touches.length) return;
+    resumeClientAudio();
     if (e.touches.length === 2) {
       lastTouchY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       return;
@@ -996,6 +1087,20 @@
               </button>
             </div>
           {/if}
+
+          <!-- Extend to iPad / Tablet (QR Code) Quick Button -->
+          <button
+            type="button"
+            on:click={openSecondScreenModal}
+            class="px-3 py-2 rounded-xl bg-gradient-to-r from-indigo-500/20 to-cyan-500/20 hover:from-indigo-500/30 hover:to-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-sm"
+            title="Use iPad, Tablet or Phone as Wireless Second Display via QR Code"
+          >
+            <QrCode class="w-3.5 h-3.5 text-cyan-400" />
+            <span>Extend to iPad / Tablet</span>
+            {#if isSecondScreenActive}
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            {/if}
+          </button>
 
           <!-- Connect by ID Quick Button -->
           <button
@@ -1895,6 +2000,135 @@
             class="px-4 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow transition active:scale-95"
           >
             Save PIN
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Extend to iPad / Tablet / Phone (QR Code Second Display Modal) -->
+  {#if isSecondScreenModalOpen}
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
+    >
+      <div
+        class="w-full max-w-md rounded-2xl bg-slate-900 border border-cyan-500/40 p-5 shadow-2xl space-y-4"
+      >
+        <div
+          class="flex items-center justify-between pb-3 border-b border-slate-800"
+        >
+          <div class="flex items-center gap-2.5">
+            <div
+              class="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400"
+            >
+              <QrCode class="w-5 h-5" />
+            </div>
+            <div>
+              <h3 class="text-sm font-bold text-white">
+                Extend to iPad / Tablet / Phone
+              </h3>
+              <p class="text-[11px] text-slate-400">
+                Scan QR Code using Camera to open Wireless Second Display
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            on:click={() => (isSecondScreenModalOpen = false)}
+            class="p-1 rounded text-slate-400 hover:text-white"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+
+        {#if secondScreenError}
+          <div
+            class="p-3 rounded-xl bg-rose-950/70 border border-rose-800/80 text-rose-200 text-xs flex items-center gap-2"
+          >
+            <AlertCircle class="w-4 h-4 text-rose-400 shrink-0" />
+            <span>{secondScreenError}</span>
+          </div>
+        {/if}
+
+        {#if isSecondScreenActive && secondScreenQrDataUrl}
+          <div class="flex flex-col items-center space-y-3 py-2">
+            <div
+              class="p-3 rounded-2xl bg-white shadow-xl border-4 border-cyan-500/30"
+            >
+              <img
+                src={secondScreenQrDataUrl}
+                alt="QR Code for Second Display"
+                class="w-48 h-48 object-contain"
+              />
+            </div>
+
+            <div class="w-full space-y-1.5">
+              <span class="block text-[11px] font-semibold text-slate-400">
+                Direct Local Wi-Fi URL (No App Required on iPad):
+              </span>
+              <div
+                class="flex items-center justify-between p-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-cyan-300 gap-2"
+              >
+                <span class="truncate">{secondScreenUrl}</span>
+                <button
+                  type="button"
+                  on:click={() => {
+                    navigator.clipboard.writeText(secondScreenUrl);
+                    alert("Second Display URL copied!");
+                  }}
+                  class="p-1 text-slate-400 hover:text-white shrink-0 cursor-pointer"
+                  title="Copy URL"
+                >
+                  <Copy class="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div
+              class="w-full p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 text-[11px] text-indigo-200 leading-relaxed space-y-1"
+            >
+              <p class="font-semibold text-indigo-300">
+                💡 How to use as a Separate Extended Screen:
+              </p>
+              <p>
+                1. Open Camera on your iPad / Android tablet on the same Wi-Fi and scan the QR code above.<br />
+                2. Safari/Chrome opens a full-screen touch display instantly.<br />
+                3. For an independent 2nd desktop (instead of mirror), enable a 2nd/virtual display in Windows (<kbd class="px-1 bg-slate-800 rounded">Win+P</kbd> → Extend) and select Display 2 when sharing!
+              </p>
+            </div>
+          </div>
+        {:else if !secondScreenError}
+          <div class="py-8 flex flex-col items-center justify-center gap-3 text-xs text-slate-400">
+            <RefreshCw class="w-6 h-6 animate-spin text-cyan-400" />
+            <span>Initializing Second Display stream & QR Code...</span>
+          </div>
+        {/if}
+
+        <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+          {#if isSecondScreenActive}
+            <button
+              type="button"
+              on:click={stopSecondScreenSharing}
+              class="px-3.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-semibold transition cursor-pointer"
+            >
+              Stop Streaming
+            </button>
+          {:else}
+            <button
+              type="button"
+              on:click={startSecondScreenSharing}
+              class="px-3.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-semibold transition cursor-pointer"
+            >
+              Start / Retry
+            </button>
+          {/if}
+
+          <button
+            type="button"
+            on:click={() => (isSecondScreenModalOpen = false)}
+            class="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold transition cursor-pointer"
+          >
+            {isSecondScreenActive ? "Minimize (Keep Active)" : "Close"}
           </button>
         </div>
       </div>

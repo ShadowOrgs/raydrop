@@ -50,6 +50,7 @@ pub struct AppState {
     pub http_downloader: Arc<crate::http_downloader::HttpDownloadManager>,
     pub folder_sync_watcher: Arc<crate::folder_sync::FolderSyncManager>,
     pub pending_fs_requests: Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>,
+    pub second_screen: Arc<crate::network::second_screen::SecondScreenState>,
 }
 
 impl AppState {

@@ -40,8 +40,23 @@
   function resizeCanvas() {
     if (!canvasEl || !canvasEl.parentElement) return;
     const rect = canvasEl.parentElement.getBoundingClientRect();
-    canvasEl.width = rect.width;
-    canvasEl.height = rect.height;
+    if (rect.width > 0 && rect.height > 0) {
+      canvasEl.width = rect.width;
+      canvasEl.height = rect.height;
+    }
+  }
+
+  function setupCanvas(node: HTMLCanvasElement) {
+    canvasEl = node;
+    resizeCanvas();
+    const ro = new ResizeObserver(() => resizeCanvas());
+    if (node.parentElement) ro.observe(node.parentElement);
+    return {
+      destroy() {
+        ro.disconnect();
+        if (canvasEl === node) canvasEl = null;
+      },
+    };
   }
 
   function startDraw(e: MouseEvent) {
@@ -147,6 +162,7 @@
   <div class="absolute inset-0 z-30 pointer-events-auto">
     <canvas
       bind:this={canvasEl}
+      use:setupCanvas
       on:mousedown={startDraw}
       on:mousemove={moveDraw}
       on:mouseup={endDraw}
