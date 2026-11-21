@@ -205,6 +205,9 @@
 
   onDestroy(() => {
     document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    if (typeof navigator !== "undefined" && (navigator as any).keyboard?.unlock) {
+      (navigator as any).keyboard.unlock();
+    }
   });
 
   function handleFullscreenChange() {
@@ -212,6 +215,14 @@
     if (isFullscreen) {
       // Auto hide toolbar on fullscreen enter for clean view
       showToolbar = false;
+      // Lock keyboard so all system shortcuts (Alt+Tab, Windows key, PrintScreen, Escape) pass to host
+      if (typeof navigator !== "undefined" && (navigator as any).keyboard?.lock) {
+        (navigator as any).keyboard.lock().catch(() => {});
+      }
+    } else {
+      if (typeof navigator !== "undefined" && (navigator as any).keyboard?.unlock) {
+        (navigator as any).keyboard.unlock();
+      }
     }
   }
 
@@ -395,7 +406,15 @@
       a: "down",
     });
 
-    // Prevent default browser behavior for common shortcuts (like F5 reload or Alt+Tab)
+    // In Fullscreen mode: intercept and prevent default for ALL shortcuts
+    // (Alt+Tab, Windows key/Meta, PrintScreen, F-keys, etc.) so host handles them!
+    if (isFullscreen) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
+    // Windowed mode: prevent common browser defaults
     if (
       ["Tab", "F5", "Alt", "Meta"].includes(e.key) ||
       (e.ctrlKey && ["w", "r", "t"].includes(e.key.toLowerCase()))
@@ -416,6 +435,11 @@
       c: e.code,
       a: "up",
     });
+
+    if (isFullscreen) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   }
 </script>
 

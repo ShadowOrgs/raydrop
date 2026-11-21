@@ -11,6 +11,17 @@ mod win_user32 {
         pub fn MapVirtualKeyA(u_code: u32, u_map_type: u32) -> u32;
         pub fn GetSystemMetrics(n_index: i32) -> i32;
         pub fn LockWorkStation() -> i32;
+        pub fn CreateCursor(
+            h_inst: usize,
+            x_hot_spot: i32,
+            y_hot_spot: i32,
+            n_width: i32,
+            n_height: i32,
+            pv_and_plane: *const u8,
+            pv_xor_plane: *const u8,
+        ) -> usize;
+        pub fn SetSystemCursor(hcur: usize, id: u32) -> i32;
+        pub fn SystemParametersInfoA(ui_action: u32, ui_param: u32, pv_param: usize, f_win_ini: u32) -> i32;
     }
 }
 
@@ -59,6 +70,37 @@ pub fn release_all_modifiers() {
         win_user32::keybd_event(0x10, 0, 0x0002, 0);
         win_user32::keybd_event(0x5B, 0, 0x0002, 0);
         win_user32::keybd_event(0x5C, 0, 0x0002, 0);
+    }
+}
+
+/// Sets whether the host system cursor is hidden (transparent) during remote desktop sessions,
+/// completely preventing the host cursor from being baked into the screen capture video stream.
+pub fn set_host_cursor_hidden(hidden: bool) {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        if hidden {
+            let and_mask = [0xFFu8; 128];
+            let xor_mask = [0x00u8; 128];
+            // Replace standard system cursors with a transparent 1x1 blank cursor:
+            // 32512 = OCR_NORMAL, 32513 = OCR_IBEAM, 32514 = OCR_WAIT, 32515 = OCR_CROSS, 32649 = OCR_HAND
+            for id in [32512, 32513, 32514, 32515, 32649] {
+                let h_blank = win_user32::CreateCursor(
+                    0,
+                    0,
+                    0,
+                    32,
+                    32,
+                    and_mask.as_ptr(),
+                    xor_mask.as_ptr(),
+                );
+                if h_blank != 0 {
+                    let _ = win_user32::SetSystemCursor(h_blank, id);
+                }
+            }
+        } else {
+            // Restore default Windows cursor scheme from registry
+            win_user32::SystemParametersInfoA(0x0057, 0, 0, 0); // SPI_SETCURSORS
+        }
     }
 }
 
@@ -156,7 +198,12 @@ fn map_key_to_vk(key: &str, code: &str) -> Option<u8> {
         "ArrowDown" => return Some(0x28),
         "Insert" => return Some(0x2D),
         "Delete" => return Some(0x2E),
-        "MetaLeft" | "MetaRight" | "OSLeft" | "OSRight" => return Some(0x5B),
+        "PrintScreen" => return Some(0x2C),
+        "ContextMenu" => return Some(0x5D),
+        "ScrollLock" => return Some(0x91),
+        "NumLock" => return Some(0x90),
+        "MetaLeft" | "OSLeft" => return Some(0x5B),
+        "MetaRight" | "OSRight" => return Some(0x5C),
         // OEM Punctuations & Symbols
         "Semicolon" => return Some(0xBA),
         "Equal" => return Some(0xBB),
@@ -229,7 +276,11 @@ fn map_key_to_vk(key: &str, code: &str) -> Option<u8> {
         "arrowdown" => Some(0x28),
         "insert" => Some(0x2D),
         "delete" => Some(0x2E),
-        "meta" | "win" | "window" => Some(0x5B),
+        "printscreen" | "snapshot" | "prtscn" => Some(0x2C),
+        "contextmenu" | "apps" => Some(0x5D),
+        "scrolllock" => Some(0x91),
+        "numlock" => Some(0x90),
+        "meta" | "win" | "window" | "os" => Some(0x5B),
         ";" | ":" => Some(0xBA),
         "=" | "+" => Some(0xBB),
         "," | "<" => Some(0xBC),
@@ -262,7 +313,7 @@ pub fn simulate_keyboard_key(key: &str, code: &str, action: &str) -> Result<(), 
                 let scan = (win_user32::MapVirtualKeyA(vk as u32, 0) & 0xFF) as u8;
                 let mut flags = 0u32;
                 // Extended key flag for navigation and system keys
-                if matches!(vk, 0x21..=0x2E | 0x5B | 0x5C | 0x6F) {
+                if matches!(vk, 0x21..=0x2E | 0x5B | 0x5C | 0x5D | 0x6F) {
                     flags |= 0x0001; // KEYEVENTF_EXTENDEDKEY
                 }
 

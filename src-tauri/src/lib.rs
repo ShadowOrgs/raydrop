@@ -485,6 +485,7 @@ pub fn run() {
             commands::simulate_remote_shortcut,
             commands::release_remote_modifiers,
             commands::get_host_screen_size,
+            commands::set_host_cursor_hidden,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Raydrop Tauri application");

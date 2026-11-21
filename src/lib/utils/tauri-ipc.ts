@@ -575,6 +575,8 @@ export const raydropApi = {
     invoke<void>('simulate_remote_shortcut', { shortcut }),
   releaseRemoteModifiers: () =>
     invoke<void>('release_remote_modifiers'),
+  setHostCursorHidden: (hidden: boolean) =>
+    invoke<void>('set_host_cursor_hidden', { hidden }),
   getHostScreenSize: () =>
     invoke<[number, number]>('get_host_screen_size'),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>

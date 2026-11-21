@@ -375,6 +375,9 @@ async function proceedHostAcceptRemote(
   });
   remoteConnectionStatus.set('connected');
 
+  // Hide host OS cursor so screen capture frames have zero baked cursor (no double cursor on client)
+  raydropApi.setHostCursorHidden(true).catch(() => {});
+
   // Reset any stuck modifier keys from previous session
   raydropApi.releaseRemoteModifiers().catch(() => {});
 
@@ -798,6 +801,7 @@ export function sendShortcutToHost(shortcut: string) {
 // ----------------- Cleanup & Teardown -----------------
 
 export function stopHostScreenCapture() {
+  raydropApi.setHostCursorHidden(false).catch(() => {});
   stopBackgroundKeepAlive();
   const stream = get(hostScreenStream);
   if (stream) {
@@ -831,6 +835,7 @@ function cleanupPeerConnection() {
 }
 
 export function disconnectRemoteSession() {
+  raydropApi.setHostCursorHidden(false).catch(() => {});
   stopBackgroundKeepAlive();
   clearAuthTimer();
   const session = get(activeRemoteSession);

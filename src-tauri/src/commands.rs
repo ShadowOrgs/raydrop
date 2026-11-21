@@ -3384,3 +3384,9 @@ pub async fn get_host_screen_size() -> Result<(u32, u32), String> {
     Ok(crate::remote_input::get_screen_size())
 }
 
+#[tauri::command]
+pub async fn set_host_cursor_hidden(hidden: bool) -> Result<(), String> {
+    crate::remote_input::set_host_cursor_hidden(hidden);
+    Ok(())
+}
+

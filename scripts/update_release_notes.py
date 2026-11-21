@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.36"
+    tag = clean_args[0] if clean_args else "v1.2.37"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Instant PIN Auth & Adaptive Anti-Freeze WebRTC Bitrate"
+    title = f"Raydrop {tag}: Fullscreen Keyboard Lock & Zero Ghost Cursor via Host Transparency"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Instant PIN Auth & Adaptive Anti-Freeze WebRTC Bitrate</h2>
+<h2 align="center">Raydrop {tag}: Fullscreen Keyboard Lock & Zero Ghost Cursor via Host Transparency</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,12 +126,13 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### ⚡ Instant PIN Authorization & Extended Timeout
-- **Immediate PIN Acknowledgment:** Host immediately sends `remote_auth_accepted` upon verifying the security PIN, clearing the client's timeout timer so clients never experience "Connection timed out" while host prepares screen streams.
-- **Extended Connection Timeout:** Relaxed client-side handshake timeout to 35-45 seconds for seamless WAN connections.
-- **Background Capture Warm-up:** Host auto-prepares screen sharing in background when remote access is enabled, making incoming PIN connects instantaneous.
+#### ⌨️ Fullscreen Keyboard Lock (Alt+Tab, Win Key, PrintScreen)
+- **Full System Shortcut Capture:** In Fullscreen mode, Raydrop now engages the `Keyboard.lock()` API and intercepts all system keystrokes (`Alt+Tab`, `Meta`/Windows key, `PrintScreen`, `Escape`, `F1-F12`). System shortcuts are intercepted on the client and directly transmitted to the remote host without triggering local client OS actions.
+- **Added Key Mappings:** Integrated native Windows Virtual-Key codes for `PrintScreen` (0x2C), `ContextMenu` (0x5D), and dedicated left/right `Meta` keys with extended key flags.
 
-#### 🌊 Adaptive Anti-Freeze WebRTC Bitrate (500kbps - 8Mbps)
-- **Eliminated WAN Bufferbloat:** Replaced rigid 15Mbps stream ceiling with dynamic 8Mbps max and 500kbps min (`x-google-min-bitrate=500`). When WAN connections experience brief network jitter or packet loss, the stream dynamically downscales instead of freezing frames.
+#### 🎯 True Zero Double Cursor via Host System Cursor Transparency
+- **Transparent Host System Cursor:** When a remote session is actively controlling the host, Raydrop replaces the host's primary cursors with a transparent mask via native Win32 `SetSystemCursor`. As a result, Windows DWM and Chromium desktop capture stream completely clean frames without any baked cursor.
+- **Natural 0ms Client Pointer:** The remote client uses its native local cursor (`cursor-default`) with zero lag, and no second ghost cursor appears in the video.
+- **Automatic Restoration:** When the remote session ends or capture is closed, the host's original Windows cursor scheme is instantly restored (`SPI_SETCURSORS`).
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)
