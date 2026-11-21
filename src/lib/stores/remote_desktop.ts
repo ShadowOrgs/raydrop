@@ -215,6 +215,7 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
       selfBrowserSurface: 'exclude',
       surfaceSwitching: 'exclude',
       systemAudio: 'exclude',
+      monitorTypeSurfaces: 'include',
     });
   } catch (err) {
     console.warn('Standard monitor displayMedia failed, trying fallback:', err);
@@ -225,6 +226,7 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
           displaySurface: 'monitor',
         },
         audio: false,
+        monitorTypeSurfaces: 'include',
       });
     } catch (e2) {
       console.warn('Fallback displayMedia failed:', e2);
@@ -237,7 +239,25 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
   }
 
   const track = stream.getVideoTracks()[0];
-  if (track && 'contentHint' in track) {
+
+  // Prevent users from accidentally sharing only the Raydrop window (which freezes on minimize/maximize)
+  const trackSettings = track.getSettings ? track.getSettings() : ({} as any);
+  if (trackSettings.displaySurface && trackSettings.displaySurface !== 'monitor') {
+    stream.getTracks().forEach((t) => t.stop());
+    alert(
+      "⚠️ Please choose 'Entire Screen' when sharing your desktop.\n\nSharing only a single window (like Raydrop) causes Windows to stop rendering and freeze frames whenever that window is minimized or maximized, and prevents controlling other apps."
+    );
+    return null;
+  }
+
+  track.onmute = () => {
+    console.warn('Screen capture track temporarily muted by OS');
+  };
+  track.onunmute = () => {
+    console.log('Screen capture track unmuted by OS');
+  };
+
+  if ('contentHint' in track) {
     // Treat stream as detail/text to avoid video macroblocking & compression blur on app switches
     (track as any).contentHint = 'detail';
   }

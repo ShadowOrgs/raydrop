@@ -83,36 +83,59 @@
   $: isHostActive =
     $activeRemoteSession?.isHost && $remoteConnectionStatus === "connected";
 
-  // Svelte action to reliably attach MediaStream to video DOM element with autoplay handling
+  // Svelte action to reliably attach MediaStream to video DOM element with autoplay & unfreeze handling
   function attachStream(node: HTMLVideoElement, stream: MediaStream | null) {
     node.srcObject = stream;
-    if (stream) {
-      node.muted = true;
-      const playPromise = node.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {
-          node.muted = true;
-          node.play().catch(() => {});
-        });
+
+    const playSafe = () => {
+      if (node && node.srcObject) {
+        node.muted = true;
+        const playPromise = node.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            node.muted = true;
+            node.play().catch(() => {});
+          });
+        }
       }
+    };
+
+    if (stream) {
+      playSafe();
     }
+
+    // Auto-resume playback if paused by browser on maximize, minimize, resize, or tab blur
+    const handlePause = () => {
+      if (node && node.srcObject) {
+        playSafe();
+      }
+    };
+
+    const handleResume = () => {
+      if (node && node.srcObject && node.paused) {
+        playSafe();
+      }
+    };
+
+    node.addEventListener("pause", handlePause);
+    window.addEventListener("resize", handleResume);
+    window.addEventListener("focus", handleResume);
+    document.addEventListener("visibilitychange", handleResume);
+
     return {
       update(newStream: MediaStream | null) {
         if (node.srcObject !== newStream) {
           node.srcObject = newStream;
         }
         if (newStream) {
-          node.muted = true;
-          const playPromise = node.play();
-          if (playPromise !== undefined) {
-            playPromise.catch(() => {
-              node.muted = true;
-              node.play().catch(() => {});
-            });
-          }
+          playSafe();
         }
       },
       destroy() {
+        node.removeEventListener("pause", handlePause);
+        window.removeEventListener("resize", handleResume);
+        window.removeEventListener("focus", handleResume);
+        document.removeEventListener("visibilitychange", handleResume);
         node.srcObject = null;
       },
     };

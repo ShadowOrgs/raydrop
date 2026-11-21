@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.34"
+    tag = clean_args[0] if clean_args else "v1.2.35"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Responsive Client Cursor & Zero-Freeze Background Remote"
+    title = f"Raydrop {tag}: Unfrozen Video on Maximize/Minimize & Entire Screen Enforcement"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Responsive Client Cursor & Zero-Freeze Background Remote</h2>
+<h2 align="center">Raydrop {tag}: Unfrozen Video on Maximize/Minimize & Entire Screen Enforcement</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,12 +126,12 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🖱️ Responsive 0ms Client Mouse Cursor (No Heavy Lag)
-- **Natural Client OS Cursor:** Set native client pointer (`cursor-default`) as default, rendering locally with 0ms latency and high-refresh-rate hardware acceleration. Mouse movement feels completely lightweight, crisp, and snappy.
-- **Eliminated Double Cursor:** Kept `cursor: 'never'` on the host capture stream so the host pointer is never burned into the video feed, preventing ghost double cursors.
+#### 📺 Unfrozen Video Stream on Maximize, Minimize, & Resize
+- **Auto-Resuming Video Playback:** Added auto-resume handlers for HTML5 video element `pause`, window `resize`, window `focus`, and `visibilitychange`. Maximizing or unmaximizing the Raydrop app now immediately triggers video playback recovery rather than leaving the canvas frozen on a stalled frame.
+- **Track Mute & Unmute Lifecycle:** Handled operating-system-level track mute/unmute events when display surface dimensions change.
 
-#### 🛡️ Zero-Freeze Host Screen Capture on Minimize
-- **Disabled Windows Native Occlusion & Background Throttling:** Added Chromium & WebView2 CLI switches (`--disable-background-timer-throttling`, `--disable-backgrounding-occluded-windows`, `--disable-renderer-backgrounding`, and `--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling`). Minimizing Raydrop on the host PC no longer halts screen capture or throttles WebRTC pipelines.
-- **Silent Audio Keepalive:** Embedded an inaudible background keepalive that notifies the Windows multimedia scheduler to keep WebRTC capture and data channels 100% active when the host window is minimized.
+#### 🖥️ Enforce 'Entire Screen' Capture (No Single-Window Freeze)
+- **Pre-Selected 'Entire Screen' Tab:** Instructs the browser picker to prioritize whole-monitor screen capture (`monitorTypeSurfaces: 'include'`).
+- **Validation Guard:** Prevents users from accidentally selecting only the "Raydrop" application window (which causes Windows DWM to halt rendering and freeze whenever that specific window is minimized or maximized). Prompts the user to select Entire Screen so all apps can be remoted seamlessly.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)
