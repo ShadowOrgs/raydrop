@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.37"
+    tag = clean_args[0] if clean_args else "v1.2.38"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Fullscreen Keyboard Lock & Zero Ghost Cursor via Host Transparency"
+    title = f"Raydrop {tag}: Full Device Grid UI, Quick-Enter PIN Modal & Host Settings Popup"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Fullscreen Keyboard Lock & Zero Ghost Cursor via Host Transparency</h2>
+<h2 align="center">Raydrop {tag}: Full Device Grid UI, Quick-Enter PIN Modal & Host Settings Popup</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,13 +126,16 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### ⌨️ Fullscreen Keyboard Lock (Alt+Tab, Win Key, PrintScreen)
-- **Full System Shortcut Capture:** In Fullscreen mode, Raydrop now engages the `Keyboard.lock()` API and intercepts all system keystrokes (`Alt+Tab`, `Meta`/Windows key, `PrintScreen`, `Escape`, `F1-F12`). System shortcuts are intercepted on the client and directly transmitted to the remote host without triggering local client OS actions.
-- **Added Key Mappings:** Integrated native Windows Virtual-Key codes for `PrintScreen` (0x2C), `ContextMenu` (0x5D), and dedicated left/right `Meta` keys with extended key flags.
+#### 📱 Full-Page Device List UI with User Avatars
+- **Full-Width Device Grid:** Redesigned the Remote Desktop dashboard into a clean, modern full-page grid displaying all reachable devices across Cloud, LAN, and Contacts.
+- **User Avatar Display:** Each device card showcases the user's avatar icon, live online/offline indicator badge, device name, device type, and ID.
+- **Search & Category Filtering:** Easily filter reachable devices by typing in the search bar or toggling pills (All, Cloud Devices, LAN Radar, Contacts).
 
-#### 🎯 True Zero Double Cursor via Host System Cursor Transparency
-- **Transparent Host System Cursor:** When a remote session is actively controlling the host, Raydrop replaces the host's primary cursors with a transparent mask via native Win32 `SetSystemCursor`. As a result, Windows DWM and Chromium desktop capture stream completely clean frames without any baked cursor.
-- **Natural 0ms Client Pointer:** The remote client uses its native local cursor (`cursor-default`) with zero lag, and no second ghost cursor appears in the video.
-- **Automatic Restoration:** When the remote session ends or capture is closed, the host's original Windows cursor scheme is instantly restored (`SPI_SETCURSORS`).
+#### ⚡ Quick-Enter PIN Modal (No-Click Connect)
+- **Instant Connection on Enter:** Clicking any device card opens a streamlined PIN dialog. Typing the 6-digit security PIN and pressing `Enter` instantly initiates unattended connection without requiring a manual mouse click.
+- **Manual Device ID Connection:** Added quick `+ Connect by ID` modal for connecting to unlisted devices directly by ID.
+
+#### 🛡️ Dedicated Host Settings Popup Modal
+- **Decoupled Host Controls:** Moved host configuration (Allow Remote Access toggle, Host Device ID copy, Change PIN, and Screen Capture control) into an organized popup modal, keeping the main interface clean and focused.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)
