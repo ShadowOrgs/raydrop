@@ -28,6 +28,7 @@
     toggleMicMute,
     toggleCamera,
     toggleScreenShare,
+    switchMeetingScreenShare,
     toggleHandRaise,
     sendMeetingReaction,
     sendMeetingChat,
@@ -1150,6 +1151,18 @@
             >{$isScreenSharing ? "Stop Share" : "Share Screen"}</span
           >
         </button>
+
+        {#if $isScreenSharing}
+          <button
+            type="button"
+            on:click={switchMeetingScreenShare}
+            class="flex items-center gap-1 px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 text-xs font-semibold transition cursor-pointer"
+            title="Switch Shared App Window or Monitor"
+          >
+            <Monitor class="w-3.5 h-3.5" />
+            <span class="hidden sm:inline">Switch</span>
+          </button>
+        {/if}
       </div>
 
       <!-- Center Controls: Reactions, Raise Hand, File Drop, Record -->

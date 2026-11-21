@@ -320,14 +320,14 @@ export async function toggleScreenShare() {
     removeTrackFromPeers('video');
     broadcastState({ isScreenSharing: false });
   } else {
-    // Start screen share
+    // Start screen share (allow choosing any monitor, app window, or browser surface)
     try {
       const displayStream = await (navigator.mediaDevices as any).getDisplayMedia({
-        video: {
-          cursor: 'always',
-          frameRate: { ideal: 60, max: 60 },
-        },
+        video: true,
         audio: false,
+        surfaceSwitching: 'include',
+        selfBrowserSurface: 'include',
+        monitorTypeSurfaces: 'include',
       });
 
       // Handle user clicking native browser "Stop sharing" bar
@@ -345,6 +345,37 @@ export async function toggleScreenShare() {
     } catch (err) {
       console.warn('Failed to share screen:', err);
     }
+  }
+}
+
+export async function switchMeetingScreenShare() {
+  try {
+    const displayStream = await (navigator.mediaDevices as any).getDisplayMedia({
+      video: true,
+      audio: false,
+      surfaceSwitching: 'include',
+      selfBrowserSurface: 'include',
+      monitorTypeSurfaces: 'include',
+    });
+
+    const oldStream = get(localVideoStream);
+    if (oldStream) {
+      oldStream.getVideoTracks().forEach((t) => t.stop());
+    }
+
+    displayStream.getVideoTracks()[0].onended = () => {
+      isScreenSharing.set(false);
+      removeTrackFromPeers('video');
+      broadcastState({ isScreenSharing: false });
+    };
+
+    localVideoStream.set(displayStream);
+    isScreenSharing.set(true);
+    isCameraOn.set(false);
+    addTrackToPeers(displayStream.getVideoTracks()[0]);
+    broadcastState({ isScreenSharing: true, isCameraOn: false });
+  } catch (err) {
+    console.warn('Failed to switch shared screen:', err);
   }
 }
 

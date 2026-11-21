@@ -522,6 +522,7 @@ pub fn run() {
             commands::start_second_screen_server,
             commands::stop_second_screen_server,
             commands::push_second_screen_frame,
+            commands::open_system_display_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Raydrop Tauri application");

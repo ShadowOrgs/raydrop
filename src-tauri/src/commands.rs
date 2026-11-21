@@ -3472,3 +3472,22 @@ pub async fn push_second_screen_frame(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn open_system_display_settings() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "ms-settings:display"])
+            .spawn()
+            .map_err(|e| format!("Failed to open Display Settings: {e}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("/System/Library/PreferencePanes/Displays.prefPane")
+            .spawn()
+            .map_err(|e| format!("Failed to open Display Settings: {e}"))?;
+    }
+    Ok(())
+}
+

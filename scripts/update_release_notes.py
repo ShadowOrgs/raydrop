@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.41"
+    tag = clean_args[0] if clean_args else "v1.2.42"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: iPad/Tablet QR Second Display, Native WASAPI Host Audio & Meeting Fixes"
+    title = f"Raydrop {tag}: Extend Display Picker, Meeting App/Window Share & Scrollable Modals"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: iPad/Tablet QR Second Display, Native WASAPI Host Audio & Meeting Fixes</h2>
+<h2 align="center">Raydrop {tag}: Extend Display Picker, Meeting App/Window Share & Scrollable Modals</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,16 +126,14 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 📱 Extend to iPad / Tablet / Phone via QR Code
-- **Zero-Install Wireless Second Display:** Click **"Extend to iPad / Tablet"** in the Remote Desktop header to start a local high-speed MJPEG + Touch-to-Mouse web viewer and generate a QR Code.
-- **Instant Safari/Chrome Viewing:** Scan the QR code from any iPad, iPhone, or Android tablet on the same Wi-Fi to instantly open a full-screen touch-enabled second screen with Fill/Fit and Fullscreen controls.
+#### 📱 True Extend to iPad / Tablet Setup
+- **Independent Screen or App Window Picker:** Extend to iPad/Tablet now uses an independent surface picker allowing you to choose either a secondary extended monitor (`Display 2`) or any specific application window without forcing primary monitor mirroring.
+- **Display Detection & Touch Mapping:** Automatically detects multiple Windows monitors, targets iPad touch input to the secondary display, and provides 1-click access to Windows Display Settings and Virtual Display Driver installation.
 
-#### 🔊 Native Windows WASAPI Loopback Host Audio
-- **Reliable System Audio Streaming:** Added native Rust WASAPI loopback audio capture (`cpal`) on the Host PC so YouTube, music, and system audio stream reliably to the Remote Client over WebRTC DataChannel—even when WebView2 screen capture omits audio tracks.
-- **Auto-Unmute on Interaction:** Client audio automatically resumes and plays smoothly on your first click or tap on the remote screen.
+#### 🤝 Meeting Screen Share Picker
+- **Pick App Window or Monitor:** Meeting screen sharing now uses full surface switching (`surfaceSwitching: 'include'`, `monitorTypeSurfaces: 'include'`) plus a **Switch** button in the meeting toolbar to change between application windows and monitors mid-call.
 
-#### 🤝 Meeting Pen & Screen Picker Fixes
-- **Fixed Meeting Pen & Laser Pointer:** Added `ResizeObserver` canvas initialization so the Annotation overlay renders and draws properly in both Video Grid and Spotlight Screen Share modes.
-- **App Window & Monitor Picker in Meeting:** Removed the monitor-only restriction in Meeting screen sharing so you can freely choose either a specific application window or an entire monitor (without affecting Remote Desktop).
+#### 🪟 Scrollable Popup Modals
+- **Full Vertical Scroll Support:** Added `max-h-[90vh] overflow-y-auto` across all Remote Desktop modals (Extend to iPad, Host Settings, Connect PIN, Manual Connect, Change PIN, Power Confirmation, and Auth Request) so no content ever overflows off smaller screens.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

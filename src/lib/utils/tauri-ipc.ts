@@ -597,6 +597,8 @@ export const raydropApi = {
     invoke<void>('stop_second_screen_server'),
   pushSecondScreenFrame: (frameBase64: string) =>
     invoke<void>('push_second_screen_frame', { frameBase64 }),
+  openSystemDisplaySettings: () =>
+    invoke<void>('open_system_display_settings'),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>
     listen<T>(event, (e) => handler(e.payload)),
 };

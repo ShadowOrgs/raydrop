@@ -126,6 +126,9 @@
   let secondScreenTimer: any = null;
   let secondScreenVideoEl: HTMLVideoElement | null = null;
   let secondScreenCanvasEl: HTMLCanvasElement | null = null;
+  let secondScreenStream: MediaStream | null = null;
+  let secondScreenMonitors: { index: number; name: string; width: number; height: number; is_primary: boolean }[] = [];
+  let selectedSecondScreenMonitorIdx = 0;
   let pendingPowerAction: "lock" | "sleep" | "restart" | "shutdown" | null = null;
   let lastMouseMoveTime = 0;
 
@@ -451,14 +454,46 @@
     }
   }
 
+  async function refreshSecondScreenMonitors() {
+    try {
+      secondScreenMonitors = await raydropApi.getHostMonitors();
+      if (secondScreenMonitors.length > 1) {
+        const secondary = secondScreenMonitors.find((m) => !m.is_primary);
+        if (secondary) {
+          selectedSecondScreenMonitorIdx = secondary.index;
+          await raydropApi.setHostTargetMonitor(secondary.index).catch(() => {});
+        }
+      }
+    } catch (_) {}
+  }
+
+  async function selectSecondScreenTouchMonitor(idx: number) {
+    selectedSecondScreenMonitorIdx = idx;
+    await raydropApi.setHostTargetMonitor(idx).catch(() => {});
+  }
+
   async function startSecondScreenSharing() {
     secondScreenError = "";
     try {
-      const stream = await acquireHostScreenStream();
-      if (!stream) {
-        secondScreenError = "Please select a screen/monitor to extend to your iPad or Tablet.";
+      await refreshSecondScreenMonitors();
+      if (secondScreenStream) {
+        secondScreenStream.getTracks().forEach((t) => t.stop());
+        secondScreenStream = null;
+      }
+
+      const stream: MediaStream = await (navigator.mediaDevices as any).getDisplayMedia({
+        video: true,
+        audio: false,
+        surfaceSwitching: "include",
+        selfBrowserSurface: "include",
+        monitorTypeSurfaces: "include",
+      });
+      if (!stream || stream.getVideoTracks().length === 0) {
+        secondScreenError = "Please select a Display 2 monitor or App Window to extend to your iPad/Tablet.";
         return;
       }
+      secondScreenStream = stream;
+
       const info = await raydropApi.startSecondScreenServer();
       secondScreenUrl = info.url;
       secondScreenQrDataUrl = await QRCode.toDataURL(info.url, {
@@ -509,6 +544,10 @@
       clearInterval(secondScreenTimer);
       secondScreenTimer = null;
     }
+    if (secondScreenStream) {
+      secondScreenStream.getTracks().forEach((t) => t.stop());
+      secondScreenStream = null;
+    }
     if (secondScreenVideoEl) {
       secondScreenVideoEl.srcObject = null;
     }
@@ -519,6 +558,7 @@
 
   function openSecondScreenModal() {
     isSecondScreenModalOpen = true;
+    refreshSecondScreenMonitors();
     if (!isSecondScreenActive) {
       startSecondScreenSharing();
     }
@@ -1385,7 +1425,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
     >
       <div
-        class="w-full max-w-sm rounded-2xl bg-slate-900 border border-cyan-500/40 p-5 shadow-2xl space-y-4"
+        class="w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-cyan-500/40 p-5 shadow-2xl space-y-4"
       >
         <!-- Modal Header -->
         <div
@@ -1532,7 +1572,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
     >
       <div
-        class="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-5 shadow-2xl space-y-4"
+        class="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-slate-800 p-5 shadow-2xl space-y-4"
       >
         <!-- Modal Header -->
         <div
@@ -1731,7 +1771,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
     >
       <div
-        class="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-800 p-5 shadow-2xl space-y-4"
+        class="w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-slate-800 p-5 shadow-2xl space-y-4"
       >
         <div
           class="flex items-center justify-between pb-2 border-b border-slate-800"
@@ -1796,7 +1836,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
     >
       <div
-        class="w-full max-w-sm rounded-2xl bg-slate-900 border border-amber-500/40 p-5 shadow-2xl space-y-4"
+        class="w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-amber-500/40 p-5 shadow-2xl space-y-4"
       >
         <div class="flex items-center gap-3 pb-3 border-b border-slate-800">
           <div
@@ -1847,7 +1887,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
     >
       <div
-        class="w-full max-w-sm rounded-2xl bg-slate-900 border border-cyan-500/40 p-5 shadow-2xl space-y-4"
+        class="w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-cyan-500/40 p-5 shadow-2xl space-y-4"
       >
         <div class="flex items-center gap-3 pb-3 border-b border-slate-800">
           <div
@@ -1896,7 +1936,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150"
     >
       <div
-        class="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-800 p-5 shadow-2xl space-y-4"
+        class="w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-slate-800 p-5 shadow-2xl space-y-4"
       >
         <div
           class="flex items-center justify-between pb-2 border-b border-slate-800"
@@ -2012,7 +2052,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
     >
       <div
-        class="w-full max-w-md rounded-2xl bg-slate-900 border border-cyan-500/40 p-5 shadow-2xl space-y-4"
+        class="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-cyan-500/40 p-5 shadow-2xl space-y-4"
       >
         <div
           class="flex items-center justify-between pb-3 border-b border-slate-800"
@@ -2084,17 +2124,78 @@
               </div>
             </div>
 
+            <!-- Detected Monitors & True Extend Setup -->
             <div
-              class="w-full p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 text-[11px] text-indigo-200 leading-relaxed space-y-1"
+              class="w-full p-3 rounded-xl bg-slate-950/90 border border-slate-800 space-y-2.5 text-xs"
             >
-              <p class="font-semibold text-indigo-300">
-                💡 How to use as a Separate Extended Screen:
-              </p>
-              <p>
-                1. Open Camera on your iPad / Android tablet on the same Wi-Fi and scan the QR code above.<br />
-                2. Safari/Chrome opens a full-screen touch display instantly.<br />
-                3. For an independent 2nd desktop (instead of mirror), enable a 2nd/virtual display in Windows (<kbd class="px-1 bg-slate-800 rounded">Win+P</kbd> → Extend) and select Display 2 when sharing!
-              </p>
+              <div class="flex items-center justify-between">
+                <span class="font-semibold text-slate-200 flex items-center gap-1.5">
+                  <Monitor class="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Detected Displays ({secondScreenMonitors.length})</span>
+                </span>
+                <button
+                  type="button"
+                  on:click={refreshSecondScreenMonitors}
+                  class="text-[11px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
+                  title="Refresh detected Windows displays"
+                >
+                  <RefreshCw class="w-3 h-3" />
+                  <span>Refresh</span>
+                </button>
+              </div>
+
+              {#if secondScreenMonitors.length > 1}
+                <div class="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px] text-emerald-300">
+                  ✅ Extended Display detected! Select which display iPad touch controls target:
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                  {#each secondScreenMonitors as mon}
+                    <button
+                      type="button"
+                      on:click={() => selectSecondScreenTouchMonitor(mon.index)}
+                      class="px-2.5 py-1 rounded-lg text-[11px] font-medium border transition cursor-pointer {selectedSecondScreenMonitorIdx === mon.index
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                        : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'}"
+                    >
+                      {mon.name} ({mon.width}x{mon.height})
+                    </button>
+                  {/each}
+                </div>
+              {:else}
+                <div class="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-200 space-y-1.5 leading-relaxed">
+                  <p class="font-semibold text-amber-300">
+                    ℹ️ Only 1 physical monitor detected (Mirror / App Window Mode)
+                  </p>
+                  <p>
+                    To make iPad a true independent <b>Extended 2nd Monitor</b> (not mirrored), either pick a specific <b>App Window</b> when sharing, or add a free Windows Virtual Display Driver:
+                  </p>
+                  <div class="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      on:click={() => raydropApi.openSystemDisplaySettings()}
+                      class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[10px] font-semibold cursor-pointer"
+                    >
+                      Open Display Settings
+                    </button>
+                    <a
+                      href="https://github.com/VirtualDrivers/Virtual-Display-Driver/releases"
+                      target="_blank"
+                      rel="noopener"
+                      class="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-[10px] font-semibold"
+                    >
+                      Get Virtual Display Driver ↗
+                    </a>
+                  </div>
+                </div>
+              {/if}
+
+              <button
+                type="button"
+                on:click={startSecondScreenSharing}
+                class="w-full py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-[11px] font-semibold transition cursor-pointer"
+              >
+                🔄 Switch Shared Screen or App Window
+              </button>
             </div>
           </div>
         {:else if !secondScreenError}
