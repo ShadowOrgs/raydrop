@@ -415,31 +415,64 @@ pub fn check_service_status() -> String {
 pub fn install_service_elevated() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {
-        sync_config_to_system_service_dir()?;
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let _ = sync_config_to_system_service_dir();
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        let exe_str = exe.to_string_lossy().replace('\'', "''");
-        let ps_inner = format!(
-            "sc.exe stop RaydropService | Out-Null; sc.exe delete RaydropService | Out-Null; Start-Sleep -Milliseconds 500; sc.exe create RaydropService binPath= '\\\"{}\\\" --service' start= auto DisplayName= 'Raydrop Unattended Remote Service'; sc.exe description RaydropService 'Enables pre-login Windows Lock/PIN screen remote desktop access for Raydrop.'; sc.exe start RaydropService",
-            exe_str
+        let exe_escaped = exe.to_string_lossy().replace('\'', "''");
+        let user_db = crate::db::storage::resolve_app_data_dir()
+            .map(|d| d.join("storage.db"))
+            .unwrap_or_default();
+        let user_db_escaped = user_db.to_string_lossy().replace('\'', "''");
+
+        let script_content = format!(
+            "$ErrorActionPreference = 'SilentlyContinue'\r\n\
+             New-Item -ItemType Directory -Force -Path 'C:\\ProgramData\\Raydrop\\Data' | Out-Null\r\n\
+             New-Item -ItemType Directory -Force -Path 'C:\\ProgramData\\Raydrop\\WebView2' | Out-Null\r\n\
+             if (Test-Path '{user_db}') {{\r\n\
+               Copy-Item -Force '{user_db}' 'C:\\ProgramData\\Raydrop\\Data\\storage.db'\r\n\
+             }}\r\n\
+             Stop-Service -Name 'RaydropService' -Force\r\n\
+             & sc.exe delete RaydropService | Out-Null\r\n\
+             Start-Sleep -Milliseconds 600\r\n\
+             $ErrorActionPreference = 'Stop'\r\n\
+             $binPath = '\"{exe}\" --service'\r\n\
+             New-Service -Name 'RaydropService' -BinaryPathName $binPath -DisplayName 'Raydrop Unattended Remote Service' -StartupType Automatic -Description 'Enables pre-login Windows Lock/PIN screen remote desktop access for Raydrop.' | Out-Null\r\n\
+             Start-Service -Name 'RaydropService'\r\n",
+            user_db = user_db_escaped,
+            exe = exe_escaped
         );
-        let status = std::process::Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-WindowStyle",
-                "Hidden",
-                "-Command",
-                &format!(
-                    "Start-Process powershell -ArgumentList '-NoProfile -WindowStyle Hidden -Command \"{}\"' -Verb RunAs -Wait",
-                    ps_inner.replace('"', "\\\"")
-                ),
-            ])
-            .status()
+
+        let script_path = std::env::temp_dir().join("raydrop_install_service.ps1");
+        std::fs::write(&script_path, script_content)
+            .map_err(|e| format!("Failed to write service installer script: {e}"))?;
+        let script_escaped = script_path.to_string_lossy().replace('\'', "''");
+
+        let ps_launcher = format!(
+            "$p = Start-Process powershell -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File','{}') -Verb RunAs -Wait -PassThru; exit $p.ExitCode",
+            script_escaped
+        );
+
+        let out = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_launcher])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
             .map_err(|e| format!("Failed to elevate service installer: {e}"))?;
 
-        if status.success() && check_service_status() != "not_installed" {
+        let _ = std::fs::remove_file(&script_path);
+
+        if out.status.success() && check_service_status() == "running" {
             Ok("Raydrop Windows Service installed and started! Pre-login PIN screen remote access is now active.".to_string())
+        } else if out.status.success() && check_service_status() != "not_installed" {
+            Ok("Raydrop Windows Service installed! Pre-login PIN screen remote access is configured.".to_string())
         } else {
-            Err("Service installation was cancelled or did not complete.".to_string())
+            let err_txt = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            if err_txt.is_empty() {
+                Err("Service installation was cancelled or did not complete.".to_string())
+            } else {
+                Err(format!("Service installation failed: {err_txt}"))
+            }
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -451,21 +484,33 @@ pub fn install_service_elevated() -> Result<String, String> {
 pub fn uninstall_service_elevated() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {
-        let ps_inner = "sc.exe stop RaydropService | Out-Null; sc.exe delete RaydropService | Out-Null";
-        let status = std::process::Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-WindowStyle",
-                "Hidden",
-                "-Command",
-                &format!(
-                    "Start-Process powershell -ArgumentList '-NoProfile -WindowStyle Hidden -Command \"{}\"' -Verb RunAs -Wait",
-                    ps_inner
-                ),
-            ])
-            .status()
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let script_content = "$ErrorActionPreference = 'SilentlyContinue'\r\n\
+            Stop-Service -Name 'RaydropService' -Force\r\n\
+            & sc.exe delete RaydropService | Out-Null\r\n\
+            exit 0\r\n";
+
+        let script_path = std::env::temp_dir().join("raydrop_uninstall_service.ps1");
+        std::fs::write(&script_path, script_content)
+            .map_err(|e| format!("Failed to write service uninstaller script: {e}"))?;
+        let script_escaped = script_path.to_string_lossy().replace('\'', "''");
+
+        let ps_launcher = format!(
+            "$p = Start-Process powershell -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File','{}') -Verb RunAs -Wait -PassThru; exit $p.ExitCode",
+            script_escaped
+        );
+
+        let out = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_launcher])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
             .map_err(|e| format!("Failed to uninstall service: {e}"))?;
-        if status.success() {
+
+        let _ = std::fs::remove_file(&script_path);
+
+        if out.status.success() {
             Ok("Raydrop Windows Service stopped and uninstalled.".to_string())
         } else {
             Err("Service uninstallation was cancelled.".to_string())
