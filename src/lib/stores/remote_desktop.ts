@@ -165,7 +165,7 @@ export function initRemoteDesktopListener() {
 
 // ----------------- Host Handling Logic -----------------
 
-// Helper to acquire monitor screen stream safely
+// Helper to acquire monitor screen stream safely without host cursor
 export async function acquireHostScreenStream(): Promise<MediaStream | null> {
   let stream = get(hostScreenStream);
   if (stream && stream.getVideoTracks().length > 0 && stream.getVideoTracks()[0].readyState === 'live') {
@@ -175,6 +175,7 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
   try {
     stream = await (navigator.mediaDevices as any).getDisplayMedia({
       video: {
+        cursor: 'never', // Completely removes host OS cursor from video capture frames
         displaySurface: 'monitor',
         frameRate: { ideal: 60, max: 60 },
         width: { ideal: 1920, max: 2560 },
@@ -186,7 +187,9 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
     console.warn('Standard monitor displayMedia failed, trying fallback:', err);
     try {
       stream = await (navigator.mediaDevices as any).getDisplayMedia({
-        video: true,
+        video: {
+          cursor: 'never',
+        },
         audio: false,
       });
     } catch (e2) {
@@ -200,12 +203,10 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
   }
 
   const track = stream.getVideoTracks()[0];
-  try {
-    const caps: any = track.getCapabilities ? track.getCapabilities() : {};
-    if ('cursor' in caps) {
-      await track.applyConstraints({ cursor: 'never' as any });
-    }
-  } catch (_) {}
+  if (track && 'contentHint' in track) {
+    // Treat stream as detail/text to avoid video macroblocking & compression blur on app switches
+    (track as any).contentHint = 'detail';
+  }
 
   track.onended = () => {
     stopHostScreenCapture();
@@ -319,6 +320,50 @@ async function proceedHostAcceptRemote(
   await setupHostPeerConnection(clientDeviceId, sessionId, stream);
 }
 
+// Utility to boost SDP bitrate, preventing pixelation and macroblocks on window/app switches
+function boostSdpBitrate(sdp: string, kbps: number = 15000): string {
+  if (!sdp) return sdp;
+  const bps = kbps * 1000;
+  const lines = sdp.split(/\r\n|\n/);
+  const result: string[] = [];
+  let inVideo = false;
+  let bandwidthAdded = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith('m=video')) {
+      inVideo = true;
+      bandwidthAdded = false;
+      result.push(line);
+      continue;
+    }
+    if (line.startsWith('m=audio') || line.startsWith('m=application')) {
+      inVideo = false;
+    }
+
+    if (inVideo && (line.startsWith('b=AS:') || line.startsWith('b=TIAS:'))) {
+      continue;
+    }
+
+    if (inVideo && !bandwidthAdded && (line.startsWith('c=') || line.startsWith('a='))) {
+      result.push(`b=AS:${kbps}`);
+      result.push(`b=TIAS:${bps}`);
+      bandwidthAdded = true;
+    }
+
+    if (inVideo && line.startsWith('a=fmtp:')) {
+      if (!line.includes('x-google-min-bitrate')) {
+        result.push(`${line};x-google-min-bitrate=2500;x-google-max-bitrate=${kbps};x-google-start-bitrate=6000`);
+        continue;
+      }
+    }
+
+    result.push(line);
+  }
+
+  return result.join('\r\n');
+}
+
 async function setupHostPeerConnection(
   clientDeviceId: string,
   sessionId: string,
@@ -336,14 +381,18 @@ async function setupHostPeerConnection(
 
   // Add Screen Share Video Track
   const videoTrack = stream.getVideoTracks()[0];
+  if (videoTrack && 'contentHint' in videoTrack) {
+    (videoTrack as any).contentHint = 'detail';
+  }
   const sender = pc.addTrack(videoTrack, stream);
 
-  // Set degradationPreference to maintain resolution for crisp text!
+  // Set degradationPreference to maintain resolution for crisp text & 15Mbps stream!
   try {
     const params = sender.getParameters();
     (params as any).degradationPreference = 'maintain-resolution';
     if (params.encodings && params.encodings.length > 0) {
-      params.encodings[0].maxBitrate = 8_000_000;
+      params.encodings[0].maxBitrate = 15_000_000;
+      params.encodings[0].minBitrate = 2_500_000;
       params.encodings[0].maxFramerate = 60;
     }
     await sender.setParameters(params);
@@ -366,13 +415,17 @@ async function setupHostPeerConnection(
     }
   };
 
-  // Create and send offer to client
+  // Create and send offer to client with boosted bitrate
   const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
+  const boostedOffer = {
+    type: offer.type,
+    sdp: boostSdpBitrate(offer.sdp || '', 15000),
+  };
+  await pc.setLocalDescription(boostedOffer);
 
   sendRemoteSignal(clientDeviceId, sessionId, {
     type: 'remote_webrtc_offer',
-    sdp: offer,
+    sdp: boostedOffer,
   });
 }
 
@@ -548,11 +601,15 @@ async function handleIncomingOffer(
   pendingIceCandidates = [];
 
   const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
+  const boostedAnswer = {
+    type: answer.type,
+    sdp: boostSdpBitrate(answer.sdp || '', 15000),
+  };
+  await pc.setLocalDescription(boostedAnswer);
 
   sendRemoteSignal(hostDeviceId, sessionId, {
     type: 'remote_webrtc_answer',
-    sdp: answer,
+    sdp: boostedAnswer,
   });
 }
 

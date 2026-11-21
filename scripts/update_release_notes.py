@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.29"
+    tag = clean_args[0] if clean_args else "v1.2.30"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Fix Remote Blank Screen & Reliable Stream Rendering"
+    title = f"Raydrop {tag}: Sleek Click-to-Expand Toolbar, Crisp 15Mbps Stream & Zero Host Ghost Cursor"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Fix Remote Blank Screen & Reliable Stream Rendering</h2>
+<h2 align="center">Raydrop {tag}: Sleek Click-to-Expand Toolbar, Crisp 15Mbps Stream & Zero Host Ghost Cursor</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>

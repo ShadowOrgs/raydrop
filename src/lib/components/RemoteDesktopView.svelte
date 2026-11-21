@@ -20,7 +20,8 @@
     MonitorPlay,
     Square,
     Sparkles,
-    Pin,
+    ChevronDown,
+    ChevronUp,
   } from "lucide-svelte";
   import {
     remoteHostSettings,
@@ -70,8 +71,6 @@
   let viewerContainerEl: HTMLDivElement | null = null;
   let isFullscreen = false;
   let showToolbar = false;
-  let isToolbarPinned = false;
-  let toolbarTimer: any = null;
   let lastMouseMoveTime = 0;
 
   $: isClientConnected =
@@ -176,7 +175,6 @@
 
   onDestroy(() => {
     document.removeEventListener("fullscreenchange", handleFullscreenChange);
-    if (toolbarTimer) clearTimeout(toolbarTimer);
   });
 
   function handleFullscreenChange() {
@@ -283,21 +281,6 @@
   function handleMouseMove(e: MouseEvent) {
     if (!videoEl || !isClientConnected) return;
 
-    // Auto-show floating toolbar when mouse moves near the top 50px
-    if (e.clientY <= 50) {
-      showToolbar = true;
-      if (toolbarTimer) {
-        clearTimeout(toolbarTimer);
-        toolbarTimer = null;
-      }
-    } else if (!isToolbarPinned && showToolbar && !toolbarTimer) {
-      // Auto-hide toolbar after 1.5 seconds when moving down
-      toolbarTimer = setTimeout(() => {
-        showToolbar = false;
-        toolbarTimer = null;
-      }, 1500);
-    }
-
     const now = performance.now();
     // Throttle to ~60 updates per second
     if (now - lastMouseMoveTime < 16) return;
@@ -401,91 +384,70 @@
       bind:this={viewerContainerEl}
       class="flex-1 w-full h-full relative flex flex-col bg-black overflow-hidden"
     >
-      <!-- Top Hover Trigger Zone (Subtle mini notch indicator when toolbar is hidden) -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div
-        class="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-3.5 z-30 flex items-center justify-center cursor-pointer group"
-        on:mouseenter={() => {
-          showToolbar = true;
-          if (toolbarTimer) {
-            clearTimeout(toolbarTimer);
-            toolbarTimer = null;
-          }
-        }}
+      <!-- Tiny Top Arrow Trigger Handle (Click-to-expand, tiny footprint so it never blocks apps) -->
+      <button
+        type="button"
+        on:click={() => (showToolbar = !showToolbar)}
+        class="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-3.5 z-50 bg-slate-900/90 hover:bg-slate-800 text-slate-400 hover:text-cyan-400 border-x border-b border-slate-700/80 rounded-b-md flex items-center justify-center cursor-pointer shadow-md transition-all group"
+        title={showToolbar ? "Hide remote controls" : "Show remote controls"}
       >
-        {#if !showToolbar && !isToolbarPinned}
-          <div
-            class="w-12 h-1 bg-slate-700/50 group-hover:bg-cyan-400 group-hover:h-1.5 rounded-full transition-all duration-200"
-          ></div>
+        {#if showToolbar}
+          <ChevronUp class="w-3 h-3 text-cyan-400 transition-transform" />
+        {:else}
+          <ChevronDown class="w-3 h-3 group-hover:translate-y-0.5 transition-transform" />
         {/if}
-      </div>
+      </button>
 
-      <!-- Auto-Hidden Floating Top Control Bar (Clean full screen when mouse moves away) -->
+      <!-- Click-Expanded Floating Top Control Bar (Clean, non-wrapping, generous spacing) -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
-        class="absolute top-2 left-1/2 -translate-x-1/2 z-40 transition-all duration-300 ease-out {showToolbar ||
-        isToolbarPinned
+        class="absolute top-4 left-1/2 -translate-x-1/2 z-40 transition-all duration-300 ease-out {showToolbar
           ? 'translate-y-0 opacity-100 pointer-events-auto'
           : '-translate-y-16 opacity-0 pointer-events-none'}"
-        on:mouseenter={() => {
-          if (toolbarTimer) {
-            clearTimeout(toolbarTimer);
-            toolbarTimer = null;
-          }
-        }}
-        on:mouseleave={() => {
-          if (!isToolbarPinned) {
-            toolbarTimer = setTimeout(() => {
-              showToolbar = false;
-              toolbarTimer = null;
-            }, 1500);
-          }
-        }}
       >
         <div
-          class="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-900/90 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs"
+          class="flex items-center gap-3 px-3.5 py-1.5 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs whitespace-nowrap"
         >
           <!-- Host & Latency Info -->
-          <div class="flex items-center gap-2 pr-2 border-r border-slate-800">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"
-            ></span>
+          <div class="flex items-center gap-2 pr-3 border-r border-slate-800 shrink-0">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.6)]"></span>
             <span
-              class="font-bold text-white max-w-[130px] truncate"
+              class="font-semibold text-white max-w-[140px] truncate"
               title={$activeRemoteSession?.peerAlias}
             >
               {$activeRemoteSession?.peerAlias}
             </span>
             <span
-              class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700"
+              class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-slate-800/90 text-cyan-300 border border-slate-700 shrink-0 whitespace-nowrap flex items-center gap-1"
             >
               ⚡ {$remoteLatencyMs} ms
             </span>
           </div>
 
           <!-- Clipboard Actions (Bidirectional Text & Image) -->
-          <div class="flex items-center gap-1 pr-2 border-r border-slate-800">
+          <div class="flex items-center gap-1.5 pr-3 border-r border-slate-800 shrink-0">
             <button
               type="button"
               on:click={sendLocalClipboardToHost}
-              class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1 cursor-pointer"
+              class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap font-medium"
               title="Send your local clipboard (Text or Image) to Host PC"
             >
-              <ArrowUpFromLine class="w-3.5 h-3.5 text-cyan-400" />
-              <span class="hidden sm:inline">Send Clipboard</span>
+              <ArrowUpFromLine class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span>Send Clipboard</span>
             </button>
             <button
               type="button"
               on:click={requestClipboardFromHost}
-              class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1 cursor-pointer"
+              class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap font-medium"
               title="Get clipboard contents from Host PC to your local computer"
             >
-              <ArrowDownToLine class="w-3.5 h-3.5 text-indigo-400" />
-              <span class="hidden sm:inline">Get Clipboard</span>
+              <ArrowDownToLine class="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span>Get Clipboard</span>
             </button>
           </div>
 
           <!-- Shortcuts Dropdown / Quick Buttons -->
-          <div class="flex items-center gap-1 pr-2 border-r border-slate-800">
+          <div class="flex items-center gap-1 pr-3 border-r border-slate-800 shrink-0">
             <button
               type="button"
               on:click={() => sendShortcutToHost("win_d")}
@@ -513,28 +475,12 @@
           </div>
 
           <!-- Display & Window Controls -->
-          <div class="flex items-center gap-1">
-            <!-- Pin Toolbar Button -->
-            <button
-              type="button"
-              on:click={() => (isToolbarPinned = !isToolbarPinned)}
-              class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-              title={isToolbarPinned
-                ? "Unpin toolbar (Auto-hide)"
-                : "Pin toolbar (Always visible)"}
-            >
-              <Pin
-                class="w-3.5 h-3.5 {isToolbarPinned
-                  ? 'text-cyan-400 fill-cyan-400'
-                  : ''}"
-              />
-            </button>
-
+          <div class="flex items-center gap-1.5 shrink-0">
             <!-- Fullscreen Button -->
             <button
               type="button"
               on:click={toggleFullscreen}
-              class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
               title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             >
               {#if isFullscreen}
@@ -548,11 +494,21 @@
             <button
               type="button"
               on:click={disconnectRemoteSession}
-              class="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95"
+              class="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
               title="Disconnect Remote Session"
             >
-              <LogOut class="w-3.5 h-3.5" />
+              <LogOut class="w-3.5 h-3.5 shrink-0" />
               <span>Disconnect</span>
+            </button>
+
+            <!-- Collapse Toolbar Button -->
+            <button
+              type="button"
+              on:click={() => (showToolbar = false)}
+              class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition ml-0.5 cursor-pointer"
+              title="Hide toolbar"
+            >
+              <ChevronUp class="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
