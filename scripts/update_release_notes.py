@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.33"
+    tag = clean_args[0] if clean_args else "v1.2.34"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Ultra-Clean Icon Navigation & Guaranteed Profile Visibility"
+    title = f"Raydrop {tag}: Responsive Client Cursor & Zero-Freeze Background Remote"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Ultra-Clean Icon Navigation & Guaranteed Profile Visibility</h2>
+<h2 align="center">Raydrop {tag}: Responsive Client Cursor & Zero-Freeze Background Remote</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,10 +126,12 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🎨 Ultra-Clean Icon Navigation & Compact Header Layout
-- **Icon-Only Center Navigation Tabs:** Converted bulky text navigation buttons into sleek, space-efficient icon buttons (`Zap`, `Chat`, `Meeting`, `Remote`, `Radar`, `Devices`, `Contacts`) with informative hover tooltips (`title="..."`) and floating badges.
-- **Zero Multi-Line Text Wrapping:** Completely eliminated unsightly 2-line wraps (such as "LAN Radar" and "My Devices" breaking lines on compact desktop displays).
-- **Guaranteed Profile & Settings Visibility:** Shrunk header width footprint by >500px, ensuring the profile avatar, quick identity indicator, and settings gear button are 100% visible and never pushed off-screen.
-- **Streamlined Right Controls:** Replaced wide buttons with polished icon pills for WAN connection status, discovery toggles, and authentication state.
+#### 🖱️ Responsive 0ms Client Mouse Cursor (No Heavy Lag)
+- **Natural Client OS Cursor:** Set native client pointer (`cursor-default`) as default, rendering locally with 0ms latency and high-refresh-rate hardware acceleration. Mouse movement feels completely lightweight, crisp, and snappy.
+- **Eliminated Double Cursor:** Kept `cursor: 'never'` on the host capture stream so the host pointer is never burned into the video feed, preventing ghost double cursors.
+
+#### 🛡️ Zero-Freeze Host Screen Capture on Minimize
+- **Disabled Windows Native Occlusion & Background Throttling:** Added Chromium & WebView2 CLI switches (`--disable-background-timer-throttling`, `--disable-backgrounding-occluded-windows`, `--disable-renderer-backgrounding`, and `--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling`). Minimizing Raydrop on the host PC no longer halts screen capture or throttles WebRTC pipelines.
+- **Silent Audio Keepalive:** Embedded an inaudible background keepalive that notifies the Windows multimedia scheduler to keep WebRTC capture and data channels 100% active when the host window is minimized.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

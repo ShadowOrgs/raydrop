@@ -72,7 +72,7 @@
   let viewerContainerEl: HTMLDivElement | null = null;
   let isFullscreen = false;
   let showToolbar = false;
-  let hideLocalCursor = true;
+  let hideLocalCursor = false;
   let lastMouseMoveTime = 0;
 
   $: isClientConnected =
@@ -494,16 +494,16 @@
 
           <!-- Display & Window Controls -->
           <div class="flex items-center gap-1.5 shrink-0">
-            <!-- Toggle Local Cursor Mode (Single Host Cursor vs Local Cursor) -->
+            <!-- Toggle Local Cursor Mode (Client Cursor vs Hidden) -->
             <button
               type="button"
               on:click={() => (hideLocalCursor = !hideLocalCursor)}
-              class="p-1 rounded-lg transition cursor-pointer {hideLocalCursor
+              class="p-1 rounded-lg transition cursor-pointer {!hideLocalCursor
                 ? 'text-cyan-400 bg-slate-800 border border-cyan-500/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'}"
-              title={hideLocalCursor
-                ? "Single Cursor Mode (Local cursor hidden, no double cursor)"
-                : "Show Local Cursor"}
+              title={!hideLocalCursor
+                ? "Client Cursor Active (Responsive 0ms local pointer)"
+                : "Client Cursor Hidden"}
             >
               <MousePointer class="w-3.5 h-3.5" />
             </button>

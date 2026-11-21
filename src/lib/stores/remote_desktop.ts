@@ -165,10 +165,40 @@ export function initRemoteDesktopListener() {
 
 // ----------------- Host Handling Logic -----------------
 
+let silentAudioKeepAlive: AudioContext | null = null;
+
+export function startBackgroundKeepAlive() {
+  if (silentAudioKeepAlive) return;
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.00001; // Inaudible, prevents Windows & Chromium background throttling/freeze on minimize
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    silentAudioKeepAlive = ctx;
+  } catch (err) {
+    console.warn('Could not initialize silent audio keepalive:', err);
+  }
+}
+
+export function stopBackgroundKeepAlive() {
+  if (silentAudioKeepAlive) {
+    try {
+      silentAudioKeepAlive.close();
+    } catch (_) {}
+    silentAudioKeepAlive = null;
+  }
+}
+
 // Helper to acquire monitor screen stream safely without host cursor
 export async function acquireHostScreenStream(): Promise<MediaStream | null> {
   let stream = get(hostScreenStream);
   if (stream && stream.getVideoTracks().length > 0 && stream.getVideoTracks()[0].readyState === 'live') {
+    startBackgroundKeepAlive();
     return stream;
   }
 
@@ -219,6 +249,7 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
 
   hostScreenStream.set(stream);
   isHostSharingScreen.set(true);
+  startBackgroundKeepAlive();
   return stream;
 }
 
@@ -742,6 +773,7 @@ export function sendShortcutToHost(shortcut: string) {
 // ----------------- Cleanup & Teardown -----------------
 
 export function stopHostScreenCapture() {
+  stopBackgroundKeepAlive();
   const stream = get(hostScreenStream);
   if (stream) {
     stream.getTracks().forEach((t) => t.stop());
@@ -773,6 +805,7 @@ function cleanupPeerConnection() {
 }
 
 export function disconnectRemoteSession() {
+  stopBackgroundKeepAlive();
   clearAuthTimer();
   const session = get(activeRemoteSession);
   if (session) {
