@@ -471,6 +471,7 @@ pub fn run() {
             commands::simulate_remote_mouse_wheel,
             commands::simulate_remote_keyboard_key,
             commands::simulate_remote_shortcut,
+            commands::release_remote_modifiers,
             commands::get_host_screen_size,
         ])
         .run(tauri::generate_context!())

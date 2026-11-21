@@ -3342,8 +3342,18 @@ pub async fn simulate_remote_mouse_move(
 pub async fn simulate_remote_mouse_click(
     button: String,
     action: String,
+    alt: Option<bool>,
+    ctrl: Option<bool>,
+    shift: Option<bool>,
+    meta: Option<bool>,
 ) -> Result<(), String> {
-    crate::remote_input::simulate_mouse_click(&button, &action)
+    crate::remote_input::simulate_mouse_click(&button, &action, alt, ctrl, shift, meta)
+}
+
+#[tauri::command]
+pub async fn release_remote_modifiers() -> Result<(), String> {
+    crate::remote_input::release_all_modifiers();
+    Ok(())
 }
 
 #[tauri::command]

@@ -22,6 +22,7 @@
     Sparkles,
     ChevronDown,
     ChevronUp,
+    MousePointer,
   } from "lucide-svelte";
   import {
     remoteHostSettings,
@@ -71,6 +72,7 @@
   let viewerContainerEl: HTMLDivElement | null = null;
   let isFullscreen = false;
   let showToolbar = false;
+  let hideLocalCursor = true;
   let lastMouseMoveTime = 0;
 
   $: isClientConnected =
@@ -305,6 +307,10 @@
       t: "mc",
       b: button,
       a: "down",
+      alt: e.altKey,
+      ctrl: e.ctrlKey,
+      shift: e.shiftKey,
+      meta: e.metaKey,
     });
   }
 
@@ -316,6 +322,18 @@
       t: "mc",
       b: button,
       a: "up",
+      alt: e.altKey,
+      ctrl: e.ctrlKey,
+      shift: e.shiftKey,
+      meta: e.metaKey,
+    });
+  }
+
+  function handleWindowBlur() {
+    if (!isClientConnected) return;
+    // Release all modifiers when viewer window loses focus so Alt/Ctrl never get stuck on host
+    sendInputToHost({
+      t: "release_modifiers",
     });
   }
 
@@ -373,7 +391,7 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeyDown} on:keyup={handleKeyUp} />
+<svelte:window on:keydown={handleKeyDown} on:keyup={handleKeyUp} on:blur={handleWindowBlur} />
 
 <div
   class="h-full w-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden relative select-none"
@@ -476,6 +494,20 @@
 
           <!-- Display & Window Controls -->
           <div class="flex items-center gap-1.5 shrink-0">
+            <!-- Toggle Local Cursor Mode (Single Host Cursor vs Local Cursor) -->
+            <button
+              type="button"
+              on:click={() => (hideLocalCursor = !hideLocalCursor)}
+              class="p-1 rounded-lg transition cursor-pointer {hideLocalCursor
+                ? 'text-cyan-400 bg-slate-800 border border-cyan-500/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'}"
+              title={hideLocalCursor
+                ? "Single Cursor Mode (Local cursor hidden, no double cursor)"
+                : "Show Local Cursor"}
+            >
+              <MousePointer class="w-3.5 h-3.5" />
+            </button>
+
             <!-- Fullscreen Button -->
             <button
               type="button"
@@ -517,7 +549,9 @@
       <!-- Main Video Display Canvas -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
-        class="flex-1 w-full h-full flex items-center justify-center bg-black overflow-hidden relative cursor-default"
+        class="flex-1 w-full h-full flex items-center justify-center bg-black overflow-hidden relative {hideLocalCursor
+          ? 'cursor-none'
+          : 'cursor-default'}"
         on:mousemove={handleMouseMove}
         on:mousedown={handleMouseDown}
         on:mouseup={handleMouseUp}

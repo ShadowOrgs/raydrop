@@ -92,16 +92,16 @@
   class="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-xl px-3 sm:px-5 pt-8 pb-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 z-20 shrink-0"
 >
   <!-- Brand & Identity (Left) -->
-  <div class="flex items-center gap-2 sm:gap-3 shrink min-w-0">
+  <div class="flex items-center gap-2 sm:gap-3 shrink-0">
     <img
       src="/icon.png"
       alt="Raydrop Icon"
       class="w-7 h-7 sm:w-9 sm:h-9 rounded-xl shadow-lg shadow-cyan-500/20 object-contain p-0.5 bg-slate-900 border border-cyan-500/30 shrink-0"
     />
-    <div class="min-w-0">
+    <div>
       <div class="flex items-center gap-1.5 sm:gap-2">
         <h1
-          class="text-sm sm:text-base font-extrabold tracking-tight text-white font-display truncate"
+          class="text-sm sm:text-base font-extrabold tracking-tight text-white font-display whitespace-nowrap"
         >
           Raydrop
         </h1>
@@ -125,7 +125,7 @@
           {#if $updateChecking}
             <RefreshCw class="w-2.5 h-2.5 animate-spin text-cyan-400" />
           {/if}
-          <span>v1.2.31</span>
+          <span>v1.2.32</span>
         </button>
 
         {#if $updateInfo?.has_update}
@@ -146,13 +146,13 @@
         {#if $appSettings.user_email}
           <Mail class="w-3 h-3 text-cyan-400 shrink-0" />
           <span
-            class="text-xs font-mono text-cyan-300 truncate max-w-[130px]"
+            class="text-xs font-mono text-cyan-300 truncate max-w-[130px] lg:max-w-[170px]"
             title={$appSettings.user_email}
           >
             {$appSettings.user_email}
           </span>
         {:else}
-          <span class="text-xs font-mono text-slate-400 truncate max-w-[130px]"
+          <span class="text-xs font-mono text-slate-400 truncate max-w-[130px] lg:max-w-[170px]"
             >{$appSettings.device_id}</span
           >
         {/if}
@@ -173,13 +173,13 @@
 
   <!-- Center Segmented Navigation Tabs (Desktop only) -->
   <nav
-    class="hidden md:flex items-center gap-1 bg-slate-950/80 p-1 rounded-2xl border border-slate-800/80 shadow-inner"
+    class="hidden md:flex items-center gap-0.5 lg:gap-1 bg-slate-950/80 p-1 rounded-2xl border border-slate-800/80 shadow-inner"
   >
     <!-- 1. Transfers & Streams (Default Active Full Tab) -->
     <button
       type="button"
       on:click={() => activeMainTab.set("transfers")}
-      class="flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all {$activeMainTab ===
+      class="flex items-center gap-1.5 px-2.5 lg:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all {$activeMainTab ===
       'transfers'
         ? 'bg-gradient-to-r from-cyan-500/25 to-indigo-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
@@ -203,7 +203,7 @@
     <button
       type="button"
       on:click={() => activeMainTab.set("chat")}
-      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      class="flex items-center gap-1.5 px-2.5 lg:px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
       'chat'
         ? 'bg-gradient-to-r from-cyan-500/25 to-indigo-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
@@ -227,7 +227,7 @@
     <button
       type="button"
       on:click={() => activeMainTab.set("meeting")}
-      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      class="flex items-center gap-1.5 px-2.5 lg:px-3 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
       'meeting'
         ? 'bg-gradient-to-r from-indigo-500/25 to-sky-500/25 text-indigo-300 border border-indigo-500/40 shadow-sm shadow-indigo-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
@@ -244,7 +244,7 @@
     <button
       type="button"
       on:click={() => activeMainTab.set("remote")}
-      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      class="flex items-center gap-1.5 px-2.5 lg:px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
       'remote'
         ? 'bg-gradient-to-r from-cyan-500/25 to-blue-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
@@ -258,11 +258,11 @@
       <span>Remote</span>
     </button>
 
-    <!-- 4. LAN Radar (Inactive Tab) -->
+    <!-- 5. LAN Radar (Inactive Tab) -->
     <button
       type="button"
       on:click={() => activeMainTab.set("lan")}
-      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      class="flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
       'lan'
         ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
@@ -272,7 +272,8 @@
           ? 'text-cyan-400'
           : 'text-slate-400'}"
       />
-      <span>LAN Radar</span>
+      <span class="hidden xl:inline">LAN Radar</span>
+      <span class="xl:hidden">LAN</span>
       {#if $lanContacts.length > 0}
         <span
           class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-cyan-300 font-mono"
@@ -282,11 +283,11 @@
       {/if}
     </button>
 
-    <!-- 4. My Devices (Inactive Tab) -->
+    <!-- 6. My Devices (Inactive Tab) -->
     <button
       type="button"
       on:click={() => activeMainTab.set("devices")}
-      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      class="flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
       'devices'
         ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
@@ -296,7 +297,8 @@
           ? 'text-cyan-400'
           : 'text-slate-400'}"
       />
-      <span>My Devices</span>
+      <span class="hidden xl:inline">My Devices</span>
+      <span class="xl:hidden">Devices</span>
       {#if $cloudMyDevices.length > 0}
         <span
           class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono"
@@ -306,11 +308,11 @@
       {/if}
     </button>
 
-    <!-- 5. Contacts (Inactive Tab) -->
+    <!-- 7. Contacts (Inactive Tab) -->
     <button
       type="button"
       on:click={() => activeMainTab.set("contacts")}
-      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      class="flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
       'contacts'
         ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
@@ -347,7 +349,9 @@
           ? 'text-emerald-400'
           : 'text-slate-500'}"
       />
-      <span>{$networkInfo.signalingConnected ? "Online" : "Standby"}</span>
+      <span class="hidden xl:inline"
+        >{$networkInfo.signalingConnected ? "Online" : "Standby"}</span
+      >
     </div>
 
     <!-- Discoverability Toggle (Compact on mobile) -->
@@ -364,7 +368,7 @@
           ? 'bg-cyan-400 animate-pulse'
           : 'bg-slate-500'}"
       ></span>
-      <span class="hidden sm:inline"
+      <span class="hidden xl:inline"
         >{$appSettings.discoverable ? "Visible" : "Hidden"}</span
       >
     </button>
@@ -412,7 +416,8 @@
       title="Select multiple files to send"
     >
       <Plus class="w-3.5 h-3.5 stroke-[2.5]" />
-      <span class="hidden sm:inline">Send Files</span>
+      <span class="hidden xl:inline">Send Files</span>
+      <span class="hidden sm:inline xl:hidden">Send</span>
     </button>
 
     <!-- User Avatar Upload / Profile Button -->

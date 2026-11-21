@@ -320,6 +320,9 @@ async function proceedHostAcceptRemote(
     hostAlias: myAlias,
   });
 
+  // Reset any stuck modifier keys from previous session
+  raydropApi.releaseRemoteModifiers().catch(() => {});
+
   // Setup WebRTC Host Peer Connection
   await setupHostPeerConnection(clientDeviceId, sessionId, stream);
 }
@@ -447,7 +450,22 @@ function setupHostDataChannel(dc: RTCDataChannel) {
 
       // Mouse Click
       if (data.t === 'mc') {
-        raydropApi.simulateRemoteMouseClick(data.b, data.a).catch(() => {});
+        raydropApi
+          .simulateRemoteMouseClick(
+            data.b,
+            data.a,
+            data.alt,
+            data.ctrl,
+            data.shift,
+            data.meta
+          )
+          .catch(() => {});
+        return;
+      }
+
+      // Explicit release modifiers
+      if (data.t === 'release_modifiers') {
+        raydropApi.releaseRemoteModifiers().catch(() => {});
         return;
       }
 

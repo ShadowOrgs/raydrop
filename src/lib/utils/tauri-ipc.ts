@@ -558,14 +558,23 @@ export const raydropApi = {
     invoke<boolean>('verify_remote_desktop_pin', { pin }),
   simulateRemoteMouseMove: (normX: number, normY: number) =>
     invoke<void>('simulate_remote_mouse_move', { normX, normY }),
-  simulateRemoteMouseClick: (button: string, action: string) =>
-    invoke<void>('simulate_remote_mouse_click', { button, action }),
+  simulateRemoteMouseClick: (
+    button: string,
+    action: string,
+    alt?: boolean,
+    ctrl?: boolean,
+    shift?: boolean,
+    meta?: boolean
+  ) =>
+    invoke<void>('simulate_remote_mouse_click', { button, action, alt, ctrl, shift, meta }),
   simulateRemoteMouseWheel: (deltaY: number) =>
     invoke<void>('simulate_remote_mouse_wheel', { deltaY }),
   simulateRemoteKeyboardKey: (key: string, code: string, action: string) =>
     invoke<void>('simulate_remote_keyboard_key', { key, code, action }),
   simulateRemoteShortcut: (shortcut: string) =>
     invoke<void>('simulate_remote_shortcut', { shortcut }),
+  releaseRemoteModifiers: () =>
+    invoke<void>('release_remote_modifiers'),
   getHostScreenSize: () =>
     invoke<[number, number]>('get_host_screen_size'),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>
