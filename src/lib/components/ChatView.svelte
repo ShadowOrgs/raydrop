@@ -86,6 +86,7 @@
     type GroupMember
   } from '../utils/tauri-ipc';
   import { renderMarkdown } from '../utils/markdown';
+  import { formatLastOnline } from '../utils/time';
 
   let messageInput = '';
   let searchQuery = '';
@@ -353,6 +354,7 @@
         email: c.user_email || '',
         osType: c.os_type || 'windows',
         isOnline: c.is_online,
+        lastSeenAt: c.last_seen_at || 0,
         networkType: c.network_type || 'wan',
         isOwnDevice: c.is_own_device,
         trustLevel: c.trust_level || 'ask',
@@ -370,6 +372,7 @@
           email: dev.user_email || '',
           osType: dev.os_type || 'windows',
           isOnline: dev.is_online,
+          lastSeenAt: dev.last_seen_at || 0,
           networkType: 'wan',
           isOwnDevice: true,
           trustLevel: 'trusted_auto_accept',
@@ -377,6 +380,7 @@
       } else {
         const existing = peerMap.get(dev.device_id);
         existing.isOnline = existing.isOnline || dev.is_online;
+        existing.lastSeenAt = Math.max(existing.lastSeenAt || 0, dev.last_seen_at || 0);
       }
     }
 
@@ -391,6 +395,7 @@
             email: group.email || '',
             osType: dev.os_type || 'windows',
             isOnline: dev.is_online,
+            lastSeenAt: dev.last_seen_at || 0,
             networkType: 'wan',
             isOwnDevice: false,
             trustLevel: group.trust_level || 'ask',
@@ -398,6 +403,7 @@
         } else {
           const existing = peerMap.get(dev.device_id);
           existing.isOnline = existing.isOnline || dev.is_online;
+          existing.lastSeenAt = Math.max(existing.lastSeenAt || 0, dev.last_seen_at || 0);
         }
       }
     }
@@ -550,6 +556,7 @@
         email: `${activeGroup.members.length} members`,
         osType: 'windows',
         isOnline: true,
+        lastSeenAt: 0,
         networkType: 'group',
         isOwnDevice: false,
         trustLevel: 'trusted',
@@ -562,6 +569,7 @@
             email: '',
             osType: 'windows',
             isOnline: false,
+            lastSeenAt: 0,
             networkType: 'wan',
             isOwnDevice: false,
             trustLevel: 'ask',
@@ -1334,8 +1342,8 @@
                     <span>WAN</span>
                   {/if}
                   <span>•</span>
-                  <span class={peer.isOnline ? 'text-emerald-400' : 'text-slate-500'}>
-                    {peer.isOnline ? 'Online' : 'Offline'}
+                  <span class={peer.isOnline ? 'text-emerald-400 font-medium' : 'text-slate-500'}>
+                    {peer.isOnline ? 'Online' : formatLastOnline(peer.lastSeenAt, false)}
                   </span>
                 </div>
               </div>
@@ -1432,6 +1440,8 @@
               {/if}
               {#if activePeer.isOnline}
                 <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-emerald-500 border-2 border-slate-950 shadow-sm shadow-emerald-500/50"></span>
+              {:else}
+                <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-slate-600 border-2 border-slate-950"></span>
               {/if}
             </div>
 
@@ -1475,6 +1485,11 @@
                 {#if isPeerBlocked}
                   <span class="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 font-mono font-bold">
                     BLOCKED
+                  </span>
+                {:else}
+                  <span class="text-[10px] sm:text-[11px] {activePeer.isOnline ? 'text-emerald-400 font-medium' : 'text-slate-400'} flex items-center gap-1 font-sans">
+                    <span class="w-1.5 h-1.5 rounded-full {activePeer.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}"></span>
+                    {activePeer.isOnline ? 'Online' : formatLastOnline(activePeer.lastSeenAt, false)}
                   </span>
                 {/if}
               </div>

@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.38"
+    tag = clean_args[0] if clean_args else "v1.2.39"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Full Device Grid UI, Quick-Enter PIN Modal & Host Settings Popup"
+    title = f"Raydrop {tag}: Live 'Last Online' Status Across Remote, WAN, LAN & Chat"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Full Device Grid UI, Quick-Enter PIN Modal & Host Settings Popup</h2>
+<h2 align="center">Raydrop {tag}: Live "Last Online" Status Across Remote, WAN, LAN & Chat</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,16 +126,11 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 📱 Full-Page Device List UI with User Avatars
-- **Full-Width Device Grid:** Redesigned the Remote Desktop dashboard into a clean, modern full-page grid displaying all reachable devices across Cloud, LAN, and Contacts.
-- **User Avatar Display:** Each device card showcases the user's avatar icon, live online/offline indicator badge, device name, device type, and ID.
-- **Search & Category Filtering:** Easily filter reachable devices by typing in the search bar or toggling pills (All, Cloud Devices, LAN Radar, Contacts).
-
-#### ⚡ Quick-Enter PIN Modal (No-Click Connect)
-- **Instant Connection on Enter:** Clicking any device card opens a streamlined PIN dialog. Typing the 6-digit security PIN and pressing `Enter` instantly initiates unattended connection without requiring a manual mouse click.
-- **Manual Device ID Connection:** Added quick `+ Connect by ID` modal for connecting to unlisted devices directly by ID.
-
-#### 🛡️ Dedicated Host Settings Popup Modal
-- **Decoupled Host Controls:** Moved host configuration (Allow Remote Access toggle, Host Device ID copy, Change PIN, and Screen Capture control) into an organized popup modal, keeping the main interface clean and focused.
+#### 🕒 Live "Last Online" Presence Across All Device Views
+- **Remote Desktop Grid:** Discovered remote device cards now prominently show accurate real-time online state: "Online now" with an active green beacon, or relative last-seen timestamps (e.g. "Last online 5m ago", "Last online 2h ago", "Last online yesterday", or specific date).
+- **Remote Connect PIN Modal:** Device details in the PIN connection modal display the target device's latest online presence before connecting.
+- **WAN & Cloud Devices:** The My Devices and Cloud Contacts sections in the Contacts list now show accurate "Last online" status alongside device IP and OS type.
+- **LAN Radar:** Discovered local network peers clearly display active presence and last-seen timestamps.
+- **P2P Chat Header & Peer List:** Chat conversation headers and the left sidebar contact list now display live presence ("Online" or "Last online Xm ago"), keeping you informed of your peer's availability at a glance.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

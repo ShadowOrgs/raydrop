@@ -42,6 +42,7 @@
   } from "lucide-svelte";
   import RemoteExplorerModal from "./RemoteExplorerModal.svelte";
   import { createMeetingRoom, inviteContactToMeeting } from "../stores/meeting";
+  import { formatLastOnline } from "../utils/time";
 
   let remoteBrowserTarget: { deviceId: string; alias: string } | null = null;
   let myDirectAddr: { ip: string; port: number } | null = null;
@@ -532,12 +533,17 @@
                     </span>
                   </div>
                 {/if}
-                <p class="text-xs font-mono text-slate-400 truncate mt-0.5">
-                  {dev.device_id}
+                <div class="flex items-center gap-1.5 text-xs font-mono text-slate-400 truncate mt-0.5 flex-wrap">
+                  <span class="truncate">{dev.device_id}</span>
+                  <span class="text-slate-600">•</span>
+                  <span class="{dev.is_online || isThisDevice ? 'text-emerald-400 font-sans font-medium' : 'text-slate-400 font-sans'}">
+                    {isThisDevice ? 'Online (This Device)' : formatLastOnline(dev.last_seen_at, dev.is_online)}
+                  </span>
                   {#if dev.last_ip}
-                    <span class="text-slate-500">• {dev.last_ip}</span>
+                    <span class="text-slate-600">•</span>
+                    <span class="text-slate-500">{dev.last_ip}</span>
                   {/if}
-                </p>
+                </div>
               </div>
             </div>
 
@@ -845,10 +851,10 @@
                               {/if}
                               <span
                                 class={cdev.is_online
-                                  ? "text-emerald-400"
-                                  : "text-slate-500"}
+                                  ? "text-emerald-400 font-sans font-medium"
+                                  : "text-slate-400 font-sans"}
                               >
-                                • {cdev.is_online ? "Online" : "Offline"}</span
+                                • {formatLastOnline(cdev.last_seen_at, cdev.is_online)}</span
                               >
                             </p>
                           </div>
@@ -1011,10 +1017,10 @@
                         {peer.user_email || peer.device_id}
                         <span
                           class={peer.is_online
-                            ? "text-emerald-400"
-                            : "text-slate-500"}
+                            ? "text-emerald-400 font-sans font-medium"
+                            : "text-slate-400 font-sans"}
                         >
-                          • {peer.is_online ? "Online" : "Offline"}</span
+                          • {formatLastOnline(peer.last_seen_at, peer.is_online)}</span
                         >
                       </p>
                     </div>
@@ -1216,6 +1222,7 @@
               {/if}
               <p class="text-xs font-mono text-slate-400 truncate mt-0.5">
                 {peer.device_id}
+                <span class="text-emerald-400 font-sans font-medium">• {formatLastOnline(peer.last_seen_at, peer.is_online)}</span>
                 {#if peer.last_known_ip}
                   <span class="text-slate-500">• {peer.last_known_ip}</span>
                 {/if}

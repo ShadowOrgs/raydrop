@@ -55,6 +55,7 @@
   import { contacts, lanContacts } from "../stores/contacts";
   import { cloudMyDevices, appSettings } from "../stores/state";
   import { peerAvatars, loadPeerAvatar } from "../stores/avatars";
+  import { formatLastOnline, formatLastOnlineCompact } from "../utils/time";
 
   let selectedTargetDeviceId = "";
   let inputPin = "";
@@ -69,6 +70,7 @@
     name: string;
     type: string;
     isOnline: boolean;
+    lastSeenAt?: number;
   } | null = null;
   let searchQuery = "";
   let filterType: "all" | "cloud" | "lan" | "contacts" = "all";
@@ -172,6 +174,7 @@
       name: string;
       type: string;
       isOnline: boolean;
+      lastSeenAt: number;
     }[] = [];
     const seen = new Set<string>();
     const myDevId = $appSettings.device_id;
@@ -184,6 +187,7 @@
         name: d.device_name || "My Cloud Device",
         type: "My Cloud Device",
         isOnline: d.is_online,
+        lastSeenAt: d.last_seen_at || 0,
       });
     }
 
@@ -195,6 +199,7 @@
         name: c.custom_name || c.alias_name || "Contact",
         type: "Contact",
         isOnline: c.is_online,
+        lastSeenAt: c.last_seen_at || 0,
       });
     }
 
@@ -206,6 +211,7 @@
         name: l.alias_name || "LAN Peer",
         type: "LAN Peer",
         isOnline: true,
+        lastSeenAt: l.last_seen_at || 0,
       });
     }
 
@@ -237,6 +243,7 @@
     name: string;
     type: string;
     isOnline: boolean;
+    lastSeenAt?: number;
   }) {
     selectedPeer = peer;
     selectedTargetDeviceId = peer.id;
@@ -950,9 +957,10 @@
                   <span
                     class="px-2 py-0.5 rounded-md text-[10px] font-semibold border {peer.isOnline
                       ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                      : 'bg-slate-800 text-slate-400 border-slate-700'}"
+                      : 'bg-slate-800 text-slate-300 border-slate-700'}"
+                    title={peer.isOnline ? "Online now" : formatLastOnline(peer.lastSeenAt, false)}
                   >
-                    {peer.isOnline ? "Online" : "Offline"}
+                    {peer.isOnline ? "Online" : formatLastOnlineCompact(peer.lastSeenAt, false)}
                   </span>
                   <span
                     class="text-[10px] text-slate-400 flex items-center gap-1"
@@ -969,7 +977,7 @@
                 </div>
               </div>
 
-              <!-- Card Middle: Device Name & ID -->
+              <!-- Card Middle: Device Name, ID & Last Online -->
               <div class="space-y-1">
                 <h4
                   class="text-sm font-bold text-white group-hover:text-cyan-300 transition truncate"
@@ -977,12 +985,19 @@
                 >
                   {peer.name}
                 </h4>
-                <p
-                  class="text-[11px] font-mono text-slate-400 group-hover:text-slate-300 transition truncate"
-                  title={peer.id}
-                >
-                  {peer.id}
-                </p>
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <p
+                    class="font-mono text-slate-400 group-hover:text-slate-300 transition truncate"
+                    title={peer.id}
+                  >
+                    {peer.id}
+                  </p>
+                  <span
+                    class="text-[10px] {peer.isOnline ? 'text-emerald-400' : 'text-slate-400'} shrink-0 truncate font-sans"
+                  >
+                    {peer.isOnline ? "Online now" : formatLastOnline(peer.lastSeenAt, false)}
+                  </span>
+                </div>
               </div>
 
               <!-- Card Bottom: Connect Action -->
@@ -1043,6 +1058,11 @@
               >
                 {selectedPeer?.id || selectedTargetDeviceId}
               </p>
+              {#if selectedPeer}
+                <p class="text-[10px] {selectedPeer.isOnline ? 'text-emerald-400 font-medium' : 'text-slate-400'} truncate">
+                  {selectedPeer.isOnline ? "🟢 Online now" : `⚪ ${formatLastOnline(selectedPeer.lastSeenAt, false)}`}
+                </p>
+              {/if}
             </div>
           </div>
           <button
