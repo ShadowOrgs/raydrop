@@ -182,6 +182,9 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
         height: { ideal: 1080, max: 1440 },
       },
       audio: false,
+      selfBrowserSurface: 'exclude',
+      surfaceSwitching: 'exclude',
+      systemAudio: 'exclude',
     });
   } catch (err) {
     console.warn('Standard monitor displayMedia failed, trying fallback:', err);
@@ -189,6 +192,7 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
       stream = await (navigator.mediaDevices as any).getDisplayMedia({
         video: {
           cursor: 'never',
+          displaySurface: 'monitor',
         },
         audio: false,
       });
