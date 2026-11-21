@@ -13,7 +13,7 @@ pub fn start_host_audio_loopback(app: AppHandle) -> Result<(), String> {
         return Ok(()); // Already running
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         std::thread::spawn(move || {
             if let Err(e) = run_loopback_thread(app) {
@@ -24,11 +24,11 @@ pub fn start_host_audio_loopback(app: AppHandle) -> Result<(), String> {
         Ok(())
     }
 
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let _ = app;
         AUDIO_CAPTURE_ACTIVE.store(false, Ordering::SeqCst);
-        Err("System audio loopback capture is only supported on desktop hosts".to_string())
+        Err("System audio loopback capture is only supported on Windows/macOS hosts".to_string())
     }
 }
 
@@ -36,7 +36,7 @@ pub fn stop_host_audio_loopback() {
     AUDIO_CAPTURE_ACTIVE.store(false, Ordering::SeqCst);
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn run_loopback_thread(app: AppHandle) -> Result<(), String> {
     use base64::Engine;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
