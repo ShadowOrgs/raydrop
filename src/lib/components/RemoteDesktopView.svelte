@@ -1149,13 +1149,62 @@
             <Monitor class="w-6 h-6 stroke-[1.8]" />
           </div>
           <div>
-            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+            <h2 class="text-lg font-bold text-white flex items-center gap-2 flex-wrap">
               <span>Raydrop Remote Desktop</span>
               <span
                 class="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[10px] border border-cyan-500/30"
               >
                 P2P Ultra-Low Latency
               </span>
+              <!-- Host Ready / Disabled Badge -->
+              <button
+                type="button"
+                on:click={() => (isHostSettingsModalOpen = true)}
+                class="px-2 py-0.5 rounded-full text-[10px] font-semibold border transition cursor-pointer flex items-center gap-1 {hostEnabled
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
+                  : 'bg-rose-500/15 text-rose-300 border-rose-500/30 hover:bg-rose-500/25'}"
+                title="Click to configure Host Remote Access & PIN"
+              >
+                <span class="w-1.5 h-1.5 rounded-full {hostEnabled ? 'bg-emerald-400' : 'bg-rose-400'}"></span>
+                <span>
+                  {hostEnabled
+                    ? $remoteHostSettings.pin
+                      ? 'Host Ready • PIN Set'
+                      : 'Host Ready • Approval'
+                    : 'Host Disabled'}
+                </span>
+              </button>
+              <!-- Pre-Login Service Active Badge -->
+              {#if windowsServiceStatus === "running"}
+                <span
+                  class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold flex items-center gap-1"
+                  title="Raydrop Windows Service is running: pre-login PIN screen remote access is active"
+                >
+                  <Shield class="w-3 h-3 text-emerald-400" />
+                  <span>Pre-Login Active</span>
+                </span>
+              {/if}
+              <!-- Admin / UIPI Elevated Control Badge -->
+              {#if windowsServiceStatus !== "unsupported"}
+                {#if isBootServiceInstalled}
+                  <span
+                    class="px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 text-[10px] font-semibold"
+                    title="Elevated UIPI task is installed: can control Admin apps & Task Manager"
+                  >
+                    Admin/UIPI Active
+                  </span>
+                {:else}
+                  <button
+                    type="button"
+                    disabled={isInstallingBootService}
+                    on:click={handleInstallBootService}
+                    class="px-2 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/35 text-[10px] font-semibold transition cursor-pointer disabled:opacity-60"
+                    title="Click to enable Admin/UIPI privileges so remote sessions can control Task Manager & elevated apps"
+                  >
+                    {isInstallingBootService ? "Enabling Admin..." : "+ Enable Admin Control"}
+                  </button>
+                {/if}
+              {/if}
             </h2>
             <p class="text-xs text-slate-400 mt-0.5">
               Click any device below to connect with PIN or request access.
@@ -1226,6 +1275,47 @@
           </button>
         </div>
       </div>
+
+      <!-- Windows System Service Install Prompt Banner (shown when service is not running on Windows) -->
+      {#if windowsServiceStatus !== "running" && windowsServiceStatus !== "unsupported"}
+        <div
+          class="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-lg"
+        >
+          <div class="flex items-start sm:items-center gap-2.5">
+            <Shield class="w-4 h-4 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+            <div class="space-y-0.5">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-semibold text-amber-200">
+                  Windows System Service
+                </span>
+                <span
+                  class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                >
+                  {windowsServiceStatus === "stopped" ? "Stopped" : "Not Installed"}
+                </span>
+              </div>
+              <p class="text-[11px] text-amber-200/80">
+                Install the Windows System Service so this PC can be remoted directly on the Windows PIN / Lock screen right after restart.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={isManagingWinService}
+            on:click={handleInstallWindowsService}
+            class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-bold text-xs transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer active:scale-95 shadow-sm"
+          >
+            <Shield class="w-3.5 h-3.5" />
+            <span>
+              {isManagingWinService
+                ? "Installing..."
+                : windowsServiceStatus === "stopped"
+                  ? "Start / Reinstall Service"
+                  : "Install Service"}
+            </span>
+          </button>
+        </div>
+      {/if}
 
       <!-- Error Alert Banner -->
       {#if $remoteErrorMessage}

@@ -605,6 +605,8 @@ export const raydropApi = {
     invoke<void>('stop_native_screen_capture'),
   ackNativeScreenFrame: () =>
     invoke<void>('ack_native_screen_frame'),
+  isSecureDesktopActive: () =>
+    invoke<boolean>('is_secure_desktop_active'),
   checkUnattendedBootService: () =>
     invoke<boolean>('check_unattended_boot_service'),
   installUnattendedBootService: () =>

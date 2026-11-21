@@ -540,6 +540,7 @@ pub fn run() {
             commands::start_native_screen_capture,
             commands::stop_native_screen_capture,
             commands::ack_native_screen_frame,
+            commands::is_secure_desktop_active,
             commands::check_unattended_boot_service,
             commands::install_unattended_boot_service,
             commands::check_windows_service_status,

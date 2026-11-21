@@ -130,7 +130,45 @@ mod win32 {
         pub fn SetThreadDesktop(h_desktop: Hdesk) -> Bool;
         pub fn CloseDesktop(h_desktop: Hdesk) -> Bool;
         pub fn GetThreadDesktop(dw_thread_id: Dword) -> Hdesk;
+        pub fn GetUserObjectInformationW(
+            h_obj: Hdesk,
+            n_index: i32,
+            pv_info: *mut c_void,
+            n_length: Dword,
+            lpn_length_needed: *mut Dword,
+        ) -> Bool;
     }
+}
+
+/// Returns true if the current process is `--system-agent` OR if Windows is currently
+/// showing the secure `Winlogon` desktop (Lock / PIN / UAC screen), where browser
+/// `getDisplayMedia()` only produces black frames.
+pub fn is_winlogon_or_system_agent() -> bool {
+    if std::env::args().any(|a| a == "--system-agent") {
+        return true;
+    }
+    #[cfg(target_os = "windows")]
+    unsafe {
+        let h_desk = win32::OpenInputDesktop(0, 0, 0x0001); // DESKTOP_READOBJECTS
+        if h_desk != 0 {
+            let mut buf = [0u16; 64];
+            let mut needed: win32::Dword = 0;
+            let ok = win32::GetUserObjectInformationW(
+                h_desk,
+                2, // UOI_NAME
+                buf.as_mut_ptr() as *mut std::ffi::c_void,
+                (buf.len() * 2) as win32::Dword,
+                &mut needed,
+            );
+            let _ = win32::CloseDesktop(h_desk);
+            if ok != 0 {
+                let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+                let name = String::from_utf16_lossy(&buf[..len]);
+                return name.eq_ignore_ascii_case("Winlogon");
+            }
+        }
+    }
+    false
 }
 
 /// Switches the calling thread's desktop to the currently active input desktop
@@ -139,7 +177,11 @@ mod win32 {
 pub fn switch_to_active_input_desktop() {
     #[cfg(target_os = "windows")]
     unsafe {
-        let h_desk = win32::OpenInputDesktop(0, 0, win32::DESKTOP_ALL_ACCESS);
+        let mut h_desk = win32::OpenInputDesktop(0, 0, win32::DESKTOP_ALL_ACCESS);
+        if h_desk == 0 {
+            // Fallback access mask if full access is restricted
+            h_desk = win32::OpenInputDesktop(0, 0, 0x0101 | 0x0002);
+        }
         if h_desk != 0 {
             let _ = win32::SetThreadDesktop(h_desk);
             let _ = win32::CloseDesktop(h_desk);

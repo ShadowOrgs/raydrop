@@ -51,6 +51,15 @@
     appSettings.update((s) => ({ ...s, discoverable: res }));
   }
 
+  async function enableAutostartQuick() {
+    try {
+      const res = await raydropApi.toggleAutostart(true);
+      appSettings.update((s) => ({ ...s, autostart: res }));
+    } catch (err) {
+      console.warn("Failed to enable autostart:", err);
+    }
+  }
+
   async function copyIdentity() {
     const text = $appSettings.user_email || $appSettings.device_id;
     await navigator.clipboard.writeText(text);
@@ -125,7 +134,7 @@
           {#if $updateChecking}
             <RefreshCw class="w-2.5 h-2.5 animate-spin text-cyan-400" />
           {/if}
-          <span>v1.2.47</span>
+          <span>v1.2.48</span>
         </button>
 
         {#if $updateInfo?.has_update}
@@ -332,38 +341,57 @@
 
   <!-- Status Badges & Quick Action Controls (Right - Compact & Profile Always Visible) -->
   <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-    <!-- WAN STUN Status Icon Pill -->
+    <!-- Auto-Start OFF Warning Pill (clickable to turn ON) -->
+    {#if !$appSettings.autostart}
+      <button
+        type="button"
+        on:click={enableAutostartQuick}
+        class="hidden lg:flex items-center gap-1.5 px-2 py-1.5 rounded-xl border bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300 text-[11px] font-semibold transition cursor-pointer"
+        title="Auto-Start at Boot is OFF — click to enable so Raydrop starts automatically after restart"
+      >
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+        <span>Autostart OFF</span>
+      </button>
+    {/if}
+
+    <!-- WAN STUN Status Pill -->
     <div
-      class="flex items-center justify-center p-2 rounded-xl border text-xs {$networkInfo.signalingConnected
+      class="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl border text-[11px] font-semibold {$networkInfo.signalingConnected
         ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-        : 'bg-slate-800/70 border-slate-700/60 text-slate-400'}"
+        : 'bg-amber-500/10 border-amber-500/30 text-amber-300'}"
       title={$networkInfo.signalingConnected
         ? `WAN Online (NAT: ${$networkInfo.wanReflexiveAddr || 'Connected'})`
-        : "WAN Signaling Standby"}
+        : "WAN Signaling Offline — LAN Only"}
     >
       <Globe
-        class="w-4 h-4 {$networkInfo.signalingConnected
+        class="w-3.5 h-3.5 {$networkInfo.signalingConnected
           ? 'text-emerald-400'
-          : 'text-slate-500'}"
+          : 'text-amber-400'}"
       />
+      <span class="hidden lg:inline">
+        {$networkInfo.signalingConnected ? "WAN Online" : "LAN Only"}
+      </span>
     </div>
 
-    <!-- Discoverability Toggle Icon Pill -->
+    <!-- Discoverability Toggle Pill -->
     <button
       type="button"
       on:click={toggleDiscoverable}
-      class="flex items-center justify-center p-2 rounded-xl border text-xs transition-all cursor-pointer {$appSettings.discoverable
-        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
-        : 'bg-slate-800/60 border-slate-700 text-slate-400'}"
+      class="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer {$appSettings.discoverable
+        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25'
+        : 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25'}"
       title={$appSettings.discoverable
-        ? "Device Discovery: Visible to nearby peers"
-        : "Device Discovery: Hidden"}
+        ? "Device Discovery: Visible to nearby peers (Click to hide)"
+        : "Device Discovery: Hidden Mode — click to make visible"}
     >
       <span
-        class="w-2.5 h-2.5 rounded-full {$appSettings.discoverable
+        class="w-2 h-2 rounded-full {$appSettings.discoverable
           ? 'bg-cyan-400 animate-pulse'
-          : 'bg-slate-500'}"
+          : 'bg-amber-400'}"
       ></span>
+      <span class="hidden lg:inline">
+        {$appSettings.discoverable ? "Visible" : "Hidden"}
+      </span>
     </button>
 
     <!-- Account Sign In / Out -->

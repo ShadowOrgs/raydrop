@@ -3509,6 +3509,11 @@ pub async fn ack_native_screen_frame() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn is_secure_desktop_active() -> Result<bool, String> {
+    Ok(crate::win_service::is_winlogon_or_system_agent())
+}
+
+#[tauri::command]
 pub async fn check_unattended_boot_service() -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {

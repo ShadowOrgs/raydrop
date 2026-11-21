@@ -164,7 +164,7 @@ export function initRemoteDesktopListener() {
     // 8. Fallback signaling channel for clipboard read reply
     if (payload.type === 'remote_clip_read_res') {
       if (payload.content) {
-        await raydropApi.writeSystemClipboard(payload.content).catch(() => {});
+        await raydropApi.writeSystemClipboard(payload.content).catch(() => { });
       }
     }
   });
@@ -175,7 +175,7 @@ export function initRemoteDesktopListener() {
     if (sess?.isHost && activeDataChannel && activeDataChannel.readyState === 'open' && b64) {
       try {
         activeDataChannel.send(JSON.stringify({ t: 'aud', d: b64 }));
-      } catch (_) {}
+      } catch (_) { }
     }
   });
 }
@@ -206,7 +206,7 @@ export function stopBackgroundKeepAlive() {
   if (silentAudioKeepAlive) {
     try {
       silentAudioKeepAlive.close();
-    } catch (_) {}
+    } catch (_) { }
     silentAudioKeepAlive = null;
   }
 }
@@ -232,7 +232,7 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
       isNativeFrameListenerSet = true;
       await raydropApi.listenEvent<string>('host_screen_frame', (b64) => {
         if (!nativeCanvasEl || pendingFrameDraw || !b64) {
-          raydropApi.ackNativeScreenFrame().catch(() => {});
+          raydropApi.ackNativeScreenFrame().catch(() => { });
           return;
         }
         pendingFrameDraw = true;
@@ -249,11 +249,11 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
             }
           }
           pendingFrameDraw = false;
-          raydropApi.ackNativeScreenFrame().catch(() => {});
+          raydropApi.ackNativeScreenFrame().catch(() => { });
         };
         img.onerror = () => {
           pendingFrameDraw = false;
-          raydropApi.ackNativeScreenFrame().catch(() => {});
+          raydropApi.ackNativeScreenFrame().catch(() => { });
         };
         img.src = 'data:image/jpeg;base64,' + b64;
       });
@@ -270,8 +270,8 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
 }
 
 // Helper to acquire monitor screen stream safely without host cursor:
-// 1. Primary: GPU-accelerated zero-prompt getDisplayMedia (DXGI/WGC, ~2% CPU, 60fps, no cursor blink/UI freeze)
-// 2. Fallback: Native Windows GDI Capture (for pre-login Winlogon/Lock screen when getDisplayMedia is unavailable)
+// 1. Pre-login / Winlogon Lock Screen (--system-agent): Native Windows GDI Capture (switches thread to Winlogon desktop)
+// 2. Normal Logged-in Desktop: GPU-accelerated zero-prompt getDisplayMedia (DXGI/WGC, ~2% CPU, 60fps, no cursor blink)
 export async function acquireHostScreenStream(): Promise<MediaStream | null> {
   let stream = get(hostScreenStream);
   if (stream && stream.getVideoTracks().length > 0 && stream.getVideoTracks()[0].readyState === 'live') {
@@ -279,7 +279,22 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
     return stream;
   }
 
-  // 1. Try GPU-accelerated Browser displayMedia first (zero-prompt on Windows via WebView2 flags)
+  const requireNativeWinlogonCapture = await raydropApi.isSecureDesktopActive().catch(() => false);
+  if (requireNativeWinlogonCapture) {
+    const nativeStream = await startNativeCanvasStream();
+    if (nativeStream && nativeStream.getVideoTracks().length > 0) {
+      const track = nativeStream.getVideoTracks()[0];
+      if ('contentHint' in track) {
+        (track as any).contentHint = 'detail';
+      }
+      hostScreenStream.set(nativeStream);
+      isHostSharingScreen.set(true);
+      startBackgroundKeepAlive();
+      return nativeStream;
+    }
+  }
+
+  // Try GPU-accelerated Browser displayMedia (zero-prompt on Windows via WebView2 flags)
   try {
     stream = await (navigator.mediaDevices as any).getDisplayMedia({
       video: {
@@ -465,15 +480,15 @@ async function proceedHostAcceptRemote(
   remoteConnectionStatus.set('connected');
 
   // Hide host OS cursor so screen capture frames have zero baked cursor (no double cursor on client)
-  raydropApi.setHostCursorHidden(true).catch(() => {});
+  raydropApi.setHostCursorHidden(true).catch(() => { });
 
   // Reset any stuck modifier keys from previous session
-  raydropApi.releaseRemoteModifiers().catch(() => {});
+  raydropApi.releaseRemoteModifiers().catch(() => { });
 
   // Auto-minimize Host Raydrop window so client sees a clean desktop immediately
   try {
-    getCurrentWindow().minimize().catch(() => {});
-  } catch (_) {}
+    getCurrentWindow().minimize().catch(() => { });
+  } catch (_) { }
 
   // Setup WebRTC Host Peer Connection
   await setupHostPeerConnection(clientDeviceId, sessionId, stream);
@@ -578,8 +593,8 @@ async function setupHostPeerConnection(
       disconnectRemoteSession();
     } else if (pc.connectionState === 'disconnected') {
       // Restore host cursor immediately on connection drop so host isn't stuck with hidden cursor
-      raydropApi.setHostCursorHidden(false).catch(() => {});
-      raydropApi.releaseRemoteModifiers().catch(() => {});
+      raydropApi.setHostCursorHidden(false).catch(() => { });
+      raydropApi.releaseRemoteModifiers().catch(() => { });
     }
   };
 
@@ -608,8 +623,8 @@ function setupHostDataChannel(dc: RTCDataChannel) {
       const sess = get(activeRemoteSession);
       if (sess?.isHost && Date.now() - lastClientPingAt > 8000) {
         // Client stopped pinging (frozen/disconnected) -> restore cursor immediately
-        raydropApi.setHostCursorHidden(false).catch(() => {});
-        raydropApi.releaseRemoteModifiers().catch(() => {});
+        raydropApi.setHostCursorHidden(false).catch(() => { });
+        raydropApi.releaseRemoteModifiers().catch(() => { });
       }
     }, 3000);
 
@@ -618,7 +633,7 @@ function setupHostDataChannel(dc: RTCDataChannel) {
       if (dc.readyState === 'open') {
         dc.send(JSON.stringify({ t: 'monitors_list', monitors }));
       }
-    } catch (_) {}
+    } catch (_) { }
     // Start native WASAPI loopback audio streaming from host PC
     raydropApi.startHostAudioLoopback().catch((err) => {
       console.warn('Native host audio loopback start warning:', err);
@@ -630,8 +645,8 @@ function setupHostDataChannel(dc: RTCDataChannel) {
       clearInterval(hostWatchdogInterval);
       hostWatchdogInterval = null;
     }
-    raydropApi.setHostCursorHidden(false).catch(() => {});
-    raydropApi.releaseRemoteModifiers().catch(() => {});
+    raydropApi.setHostCursorHidden(false).catch(() => { });
+    raydropApi.releaseRemoteModifiers().catch(() => { });
   };
 
   dc.onmessage = async (event) => {
@@ -642,7 +657,7 @@ function setupHostDataChannel(dc: RTCDataChannel) {
 
       // Mouse Move
       if (data.t === 'mm') {
-        raydropApi.simulateRemoteMouseMove(data.x, data.y).catch(() => {});
+        raydropApi.simulateRemoteMouseMove(data.x, data.y).catch(() => { });
         return;
       }
 
@@ -657,38 +672,38 @@ function setupHostDataChannel(dc: RTCDataChannel) {
             data.shift,
             data.meta
           )
-          .catch(() => {});
+          .catch(() => { });
         return;
       }
 
       // Explicit release modifiers
       if (data.t === 'release_modifiers') {
-        raydropApi.releaseRemoteModifiers().catch(() => {});
+        raydropApi.releaseRemoteModifiers().catch(() => { });
         return;
       }
 
       // Mouse Wheel
       if (data.t === 'mw') {
-        raydropApi.simulateRemoteMouseWheel(data.dy).catch(() => {});
+        raydropApi.simulateRemoteMouseWheel(data.dy).catch(() => { });
         return;
       }
 
       // Keyboard Key
       if (data.t === 'kk') {
-        raydropApi.simulateRemoteKeyboardKey(data.k, data.c, data.a).catch(() => {});
+        raydropApi.simulateRemoteKeyboardKey(data.k, data.c, data.a).catch(() => { });
         return;
       }
 
       // Shortcut
       if (data.t === 'sc') {
-        raydropApi.simulateRemoteShortcut(data.s).catch(() => {});
+        raydropApi.simulateRemoteShortcut(data.s).catch(() => { });
         return;
       }
 
       // Clipboard Write from Remote Client (Text or Data URL Image)
       if (data.t === 'clip_write') {
         if (data.content) {
-          await raydropApi.writeSystemClipboard(data.content).catch(() => {});
+          await raydropApi.writeSystemClipboard(data.content).catch(() => { });
         }
         return;
       }
@@ -700,7 +715,7 @@ function setupHostDataChannel(dc: RTCDataChannel) {
           if (content && dc.readyState === 'open') {
             dc.send(JSON.stringify({ t: 'clip_read_res', content }));
           }
-        } catch (_) {}
+        } catch (_) { }
         return;
       }
 
@@ -714,16 +729,16 @@ function setupHostDataChannel(dc: RTCDataChannel) {
 
       // Switch Target Monitor Bounds
       if (data.t === 'switch_monitor') {
-        raydropApi.setHostTargetMonitor(data.monitorIndex ?? 0).catch(() => {});
+        raydropApi.setHostTargetMonitor(data.monitorIndex ?? 0).catch(() => { });
         return;
       }
 
       // Remote Power Management Action (lock, sleep, restart, shutdown)
       if (data.t === 'power_action' && data.action) {
-        raydropApi.executeRemotePowerAction(data.action).catch(() => {});
+        raydropApi.executeRemotePowerAction(data.action).catch(() => { });
         return;
       }
-    } catch (_) {}
+    } catch (_) { }
   };
 }
 
@@ -836,7 +851,7 @@ async function handleIncomingOffer(
   for (const c of pendingIceCandidates) {
     try {
       await pc.addIceCandidate(new RTCIceCandidate(c));
-    } catch (_) {}
+    } catch (_) { }
   }
   pendingIceCandidates = [];
 
@@ -860,7 +875,7 @@ async function handleIncomingAnswer(sdp: RTCSessionDescriptionInit) {
   for (const c of pendingIceCandidates) {
     try {
       await activePeerConnection.addIceCandidate(new RTCIceCandidate(c));
-    } catch (_) {}
+    } catch (_) { }
   }
   pendingIceCandidates = [];
 }
@@ -899,9 +914,9 @@ export function resumeClientAudio() {
       }
     }
     if (clientAudioCtx && clientAudioCtx.state === 'suspended') {
-      clientAudioCtx.resume().catch(() => {});
+      clientAudioCtx.resume().catch(() => { });
     }
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function playIncomingPcmChunk(b64: string) {
@@ -915,7 +930,7 @@ function playIncomingPcmChunk(b64: string) {
     }
     if (clientAudioCtx.state === 'suspended') {
       // Auto-resume if user has interacted
-      clientAudioCtx.resume().catch(() => {});
+      clientAudioCtx.resume().catch(() => { });
       if (clientAudioCtx.state === 'suspended') return;
     }
 
@@ -944,7 +959,7 @@ function playIncomingPcmChunk(b64: string) {
     }
     src.start(nextAudioPlayTime);
     nextAudioPlayTime += audioBuf.duration;
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function setupClientDataChannel(dc: RTCDataChannel) {
@@ -973,7 +988,7 @@ function setupClientDataChannel(dc: RTCDataChannel) {
 
       // Received clipboard from Host
       if (data.t === 'clip_read_res' && data.content) {
-        await raydropApi.writeSystemClipboard(data.content).catch(() => {});
+        await raydropApi.writeSystemClipboard(data.content).catch(() => { });
         alert('📋 Host clipboard contents copied to your local clipboard!');
         return;
       }
@@ -991,7 +1006,7 @@ function setupClientDataChannel(dc: RTCDataChannel) {
         playIncomingPcmChunk(data.d);
         return;
       }
-    } catch (_) {}
+    } catch (_) { }
   };
 
   dc.onclose = () => {
@@ -1061,8 +1076,8 @@ export function sendPowerActionToHost(action: 'lock' | 'sleep' | 'restart' | 'sh
 // ----------------- Cleanup & Teardown -----------------
 
 export function stopHostScreenCapture() {
-  raydropApi.setHostCursorHidden(false).catch(() => {});
-  raydropApi.stopNativeScreenCapture().catch(() => {});
+  raydropApi.setHostCursorHidden(false).catch(() => { });
+  raydropApi.stopNativeScreenCapture().catch(() => { });
   stopBackgroundKeepAlive();
   const stream = get(hostScreenStream);
   if (stream) {
@@ -1074,9 +1089,9 @@ export function stopHostScreenCapture() {
 
 function cleanupPeerConnection() {
   clearAuthTimer();
-  raydropApi.setHostCursorHidden(false).catch(() => {});
-  raydropApi.releaseRemoteModifiers().catch(() => {});
-  raydropApi.stopHostAudioLoopback().catch(() => {});
+  raydropApi.setHostCursorHidden(false).catch(() => { });
+  raydropApi.releaseRemoteModifiers().catch(() => { });
+  raydropApi.stopHostAudioLoopback().catch(() => { });
   if (hostWatchdogInterval) {
     clearInterval(hostWatchdogInterval);
     hostWatchdogInterval = null;
@@ -1084,7 +1099,7 @@ function cleanupPeerConnection() {
   if (clientAudioCtx) {
     try {
       clientAudioCtx.close();
-    } catch (_) {}
+    } catch (_) { }
     clientAudioCtx = null;
     nextAudioPlayTime = 0;
   }
@@ -1095,13 +1110,13 @@ function cleanupPeerConnection() {
   if (activeDataChannel) {
     try {
       activeDataChannel.close();
-    } catch (_) {}
+    } catch (_) { }
     activeDataChannel = null;
   }
   if (activePeerConnection) {
     try {
       activePeerConnection.close();
-    } catch (_) {}
+    } catch (_) { }
     activePeerConnection = null;
   }
   activeVideoSender = null;
@@ -1110,7 +1125,7 @@ function cleanupPeerConnection() {
 }
 
 export function disconnectRemoteSession() {
-  raydropApi.setHostCursorHidden(false).catch(() => {});
+  raydropApi.setHostCursorHidden(false).catch(() => { });
   stopBackgroundKeepAlive();
   clearAuthTimer();
   const session = get(activeRemoteSession);
