@@ -48,6 +48,7 @@ export const remoteQualityMode = writable<'60fps' | 'balanced' | 'low_bandwidth'
 
 let activePeerConnection: RTCPeerConnection | null = null;
 let activeDataChannel: RTCDataChannel | null = null;
+let activeVideoSender: RTCRtpSender | null = null;
 let pingInterval: any = null;
 let pendingIceCandidates: RTCIceCandidateInit[] = [];
 let isListenerInitialized = false;
@@ -284,6 +285,7 @@ async function handleIncomingAuthRequest(
   payload: any
 ) {
   const settings = get(remoteHostSettings);
+  const myAlias = get(appSettings).alias_name || 'Raydrop Host';
 
   // Check if remote control is enabled
   if (!settings.enabled) {
@@ -297,8 +299,12 @@ async function handleIncomingAuthRequest(
   const enteredPin = (payload.pin || '').trim();
   const hostPin = (settings.pin || '').trim();
 
-  // 1. PIN matches -> Auto connect directly! No approval needed on host.
+  // 1. PIN matches -> Send immediate acknowledgment so client clears timeout, then start session
   if (enteredPin && enteredPin === hostPin) {
+    sendRemoteSignal(clientDeviceId, sessionId, {
+      type: 'remote_auth_accepted',
+      hostAlias: myAlias,
+    });
     await proceedHostAcceptRemote(clientDeviceId, sessionId, payload.fromAlias || 'Remote Client');
     return;
   }
@@ -325,6 +331,11 @@ export async function acceptPendingRemoteRequest() {
   const req = get(pendingRemoteAuthRequest);
   if (!req) return;
   pendingRemoteAuthRequest.set(null);
+  const myAlias = get(appSettings).alias_name || 'Raydrop Host';
+  sendRemoteSignal(req.clientDeviceId, req.sessionId, {
+    type: 'remote_auth_accepted',
+    hostAlias: myAlias,
+  });
   await proceedHostAcceptRemote(req.clientDeviceId, req.sessionId, req.fromAlias);
 }
 
@@ -344,8 +355,6 @@ async function proceedHostAcceptRemote(
   sessionId: string,
   clientAlias: string
 ) {
-  const myAlias = get(appSettings).alias_name || 'Raydrop Host';
-
   // Ensure host screen stream is ready (auto-selects screen with cursor: 'never')
   const stream = await acquireHostScreenStream();
   if (!stream) {
@@ -356,7 +365,7 @@ async function proceedHostAcceptRemote(
     return;
   }
 
-  // Accept auth and set active session
+  // Set active session
   activeRemoteSession.set({
     isHost: true,
     isClient: false,
@@ -366,11 +375,6 @@ async function proceedHostAcceptRemote(
   });
   remoteConnectionStatus.set('connected');
 
-  sendRemoteSignal(clientDeviceId, sessionId, {
-    type: 'remote_auth_accepted',
-    hostAlias: myAlias,
-  });
-
   // Reset any stuck modifier keys from previous session
   raydropApi.releaseRemoteModifiers().catch(() => {});
 
@@ -378,8 +382,8 @@ async function proceedHostAcceptRemote(
   await setupHostPeerConnection(clientDeviceId, sessionId, stream);
 }
 
-// Utility to boost SDP bitrate, preventing pixelation and macroblocks on window/app switches
-function boostSdpBitrate(sdp: string, kbps: number = 15000): string {
+// Utility to tune SDP bitrate: smooth 500kbps-8Mbps adaptive bandwidth for WAN & LAN without bufferbloat
+function boostSdpBitrate(sdp: string, kbps: number = 8000): string {
   if (!sdp) return sdp;
   const bps = kbps * 1000;
   const lines = sdp.split(/\r\n|\n/);
@@ -411,7 +415,7 @@ function boostSdpBitrate(sdp: string, kbps: number = 15000): string {
 
     if (inVideo && line.startsWith('a=fmtp:')) {
       if (!line.includes('x-google-min-bitrate')) {
-        result.push(`${line};x-google-min-bitrate=2500;x-google-max-bitrate=${kbps};x-google-start-bitrate=6000`);
+        result.push(`${line};x-google-min-bitrate=500;x-google-max-bitrate=${kbps};x-google-start-bitrate=2500`);
         continue;
       }
     }
@@ -443,14 +447,15 @@ async function setupHostPeerConnection(
     (videoTrack as any).contentHint = 'detail';
   }
   const sender = pc.addTrack(videoTrack, stream);
+  activeVideoSender = sender;
 
-  // Set degradationPreference to maintain resolution for crisp text & 15Mbps stream!
+  // Set degradationPreference to maintain resolution with adaptive 500k-8M bitrate
   try {
     const params = sender.getParameters();
     (params as any).degradationPreference = 'maintain-resolution';
     if (params.encodings && params.encodings.length > 0) {
-      params.encodings[0].maxBitrate = 15_000_000;
-      params.encodings[0].minBitrate = 2_500_000;
+      params.encodings[0].maxBitrate = 8_000_000;
+      params.encodings[0].minBitrate = 500_000;
       params.encodings[0].maxFramerate = 60;
     }
     await sender.setParameters(params);
@@ -477,7 +482,7 @@ async function setupHostPeerConnection(
   const offer = await pc.createOffer();
   const boostedOffer = {
     type: offer.type,
-    sdp: boostSdpBitrate(offer.sdp || '', 15000),
+    sdp: boostSdpBitrate(offer.sdp || '', 8000),
   };
   await pc.setLocalDescription(boostedOffer);
 
@@ -596,8 +601,8 @@ export async function connectToRemoteHost(targetDeviceId: string, pin: string) {
     sessionId,
   });
 
-  // Timeout guard (30 seconds for manual approval, 15 seconds for PIN): If host is unreachable or not responding, abort cleanly
-  const timeoutMs = pin.trim() ? 15000 : 30000;
+  // Timeout guard (45 seconds for manual approval, 35 seconds for PIN): If host is unreachable or not responding, abort cleanly
+  const timeoutMs = pin.trim() ? 35000 : 45000;
   authTimeoutTimer = setTimeout(() => {
     const status = get(remoteConnectionStatus);
     if (status === 'verifying_pin' || status === 'connecting') {
@@ -820,6 +825,7 @@ function cleanupPeerConnection() {
     } catch (_) {}
     activePeerConnection = null;
   }
+  activeVideoSender = null;
   clientRemoteStream.set(null);
   pendingIceCandidates = [];
 }

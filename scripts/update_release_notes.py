@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.35"
+    tag = clean_args[0] if clean_args else "v1.2.36"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Unfrozen Video on Maximize/Minimize & Entire Screen Enforcement"
+    title = f"Raydrop {tag}: Instant PIN Auth & Adaptive Anti-Freeze WebRTC Bitrate"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Unfrozen Video on Maximize/Minimize & Entire Screen Enforcement</h2>
+<h2 align="center">Raydrop {tag}: Instant PIN Auth & Adaptive Anti-Freeze WebRTC Bitrate</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,12 +126,12 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 📺 Unfrozen Video Stream on Maximize, Minimize, & Resize
-- **Auto-Resuming Video Playback:** Added auto-resume handlers for HTML5 video element `pause`, window `resize`, window `focus`, and `visibilitychange`. Maximizing or unmaximizing the Raydrop app now immediately triggers video playback recovery rather than leaving the canvas frozen on a stalled frame.
-- **Track Mute & Unmute Lifecycle:** Handled operating-system-level track mute/unmute events when display surface dimensions change.
+#### ⚡ Instant PIN Authorization & Extended Timeout
+- **Immediate PIN Acknowledgment:** Host immediately sends `remote_auth_accepted` upon verifying the security PIN, clearing the client's timeout timer so clients never experience "Connection timed out" while host prepares screen streams.
+- **Extended Connection Timeout:** Relaxed client-side handshake timeout to 35-45 seconds for seamless WAN connections.
+- **Background Capture Warm-up:** Host auto-prepares screen sharing in background when remote access is enabled, making incoming PIN connects instantaneous.
 
-#### 🖥️ Enforce 'Entire Screen' Capture (No Single-Window Freeze)
-- **Pre-Selected 'Entire Screen' Tab:** Instructs the browser picker to prioritize whole-monitor screen capture (`monitorTypeSurfaces: 'include'`).
-- **Validation Guard:** Prevents users from accidentally selecting only the "Raydrop" application window (which causes Windows DWM to halt rendering and freeze whenever that specific window is minimized or maximized). Prompts the user to select Entire Screen so all apps can be remoted seamlessly.
+#### 🌊 Adaptive Anti-Freeze WebRTC Bitrate (500kbps - 8Mbps)
+- **Eliminated WAN Bufferbloat:** Replaced rigid 15Mbps stream ceiling with dynamic 8Mbps max and 500kbps min (`x-google-min-bitrate=500`). When WAN connections experience brief network jitter or packet loss, the stream dynamically downscales instead of freezing frames.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

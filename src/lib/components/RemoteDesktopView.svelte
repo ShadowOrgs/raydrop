@@ -195,6 +195,11 @@
     hostPin = $remoteHostSettings.pin;
     hostUnattended = $remoteHostSettings.unattended;
 
+    if (hostEnabled && !$isHostSharingScreen) {
+      // Warm up host screen capture in background so unattended access is instant
+      startHostScreenCapture().catch(() => {});
+    }
+
     document.addEventListener("fullscreenchange", handleFullscreenChange);
   });
 
