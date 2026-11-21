@@ -1,8 +1,42 @@
 //! Raydrop Remote Desktop Input Simulation Engine
 //! Provides native low-overhead mouse and keyboard injection for remote control.
 
+use std::sync::Mutex;
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct MonitorInfo {
+    pub index: usize,
+    pub name: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub is_primary: bool,
+}
+
+static TARGET_MONITOR_BOUNDS: Mutex<Option<(i32, i32, i32, i32)>> = Mutex::new(None);
+
 #[cfg(target_os = "windows")]
 mod win_user32 {
+    #[repr(C)]
+    pub struct RECT {
+        pub left: i32,
+        pub top: i32,
+        pub right: i32,
+        pub bottom: i32,
+    }
+
+    #[repr(C)]
+    pub struct MONITORINFOEXW {
+        pub cb_size: u32,
+        pub rc_monitor: RECT,
+        pub rc_work: RECT,
+        pub dw_flags: u32,
+        pub sz_device: [u16; 32],
+    }
+
+    pub type MonitorEnumProc = unsafe extern "system" fn(isize, isize, *mut RECT, isize) -> i32;
+
     #[link(name = "user32")]
     extern "system" {
         pub fn SetCursorPos(x: i32, y: i32) -> i32;
@@ -11,6 +45,13 @@ mod win_user32 {
         pub fn MapVirtualKeyA(u_code: u32, u_map_type: u32) -> u32;
         pub fn GetSystemMetrics(n_index: i32) -> i32;
         pub fn LockWorkStation() -> i32;
+        pub fn EnumDisplayMonitors(
+            hdc: isize,
+            lprc_clip: *const RECT,
+            lpfn_enum: MonitorEnumProc,
+            dw_data: isize,
+        ) -> i32;
+        pub fn GetMonitorInfoW(hmonitor: isize, lpmi: *mut MONITORINFOEXW) -> i32;
         pub fn CreateCursor(
             h_inst: usize,
             x_hot_spot: i32,
@@ -22,6 +63,122 @@ mod win_user32 {
         ) -> usize;
         pub fn SetSystemCursor(hcur: usize, id: u32) -> i32;
         pub fn SystemParametersInfoA(ui_action: u32, ui_param: u32, pv_param: usize, f_win_ini: u32) -> i32;
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn monitor_enum_callback(
+    hmonitor: isize,
+    _hdc: isize,
+    _lprc: *mut win_user32::RECT,
+    dw_data: isize,
+) -> i32 {
+    let list = &mut *(dw_data as *mut Vec<MonitorInfo>);
+    let mut info = win_user32::MONITORINFOEXW {
+        cb_size: std::mem::size_of::<win_user32::MONITORINFOEXW>() as u32,
+        rc_monitor: win_user32::RECT { left: 0, top: 0, right: 0, bottom: 0 },
+        rc_work: win_user32::RECT { left: 0, top: 0, right: 0, bottom: 0 },
+        dw_flags: 0,
+        sz_device: [0u16; 32],
+    };
+    if win_user32::GetMonitorInfoW(hmonitor, &mut info) != 0 {
+        let len = info.sz_device.iter().position(|&c| c == 0).unwrap_or(32);
+        let raw_name = String::from_utf16_lossy(&info.sz_device[..len]);
+        let idx = list.len();
+        let is_primary = (info.dw_flags & 1) != 0;
+        let label = if is_primary {
+            format!("Display {} (Primary)", idx + 1)
+        } else {
+            format!("Display {}", idx + 1)
+        };
+        let clean_dev = raw_name.trim_start_matches("\\\\.\\");
+        list.push(MonitorInfo {
+            index: idx,
+            name: if clean_dev.is_empty() { label } else { format!("{label} ({clean_dev})") },
+            x: info.rc_monitor.left,
+            y: info.rc_monitor.top,
+            width: info.rc_monitor.right - info.rc_monitor.left,
+            height: info.rc_monitor.bottom - info.rc_monitor.top,
+            is_primary,
+        });
+    }
+    1
+}
+
+/// Lists all active display monitors on the host
+pub fn list_monitors() -> Vec<MonitorInfo> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut monitors: Vec<MonitorInfo> = Vec::new();
+        unsafe {
+            win_user32::EnumDisplayMonitors(
+                0,
+                std::ptr::null(),
+                monitor_enum_callback,
+                &mut monitors as *mut Vec<MonitorInfo> as isize,
+            );
+        }
+        if monitors.is_empty() {
+            let (w, h) = get_screen_size();
+            monitors.push(MonitorInfo {
+                index: 0,
+                name: "Display 1 (Primary)".to_string(),
+                x: 0,
+                y: 0,
+                width: w as i32,
+                height: h as i32,
+                is_primary: true,
+            });
+        }
+        monitors
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        vec![MonitorInfo {
+            index: 0,
+            name: "Display 1 (Primary)".to_string(),
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+            is_primary: true,
+        }]
+    }
+}
+
+/// Sets the active target monitor bounds for mouse coordinate mapping (-1 or None = virtual all screens)
+pub fn set_target_monitor(monitor_index: Option<i32>) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let bounds = match monitor_index {
+            None | Some(-1) => {
+                let vx = unsafe { win_user32::GetSystemMetrics(76) }; // SM_XVIRTUALSCREEN
+                let vy = unsafe { win_user32::GetSystemMetrics(77) }; // SM_YVIRTUALSCREEN
+                let vw = unsafe { win_user32::GetSystemMetrics(78) }; // SM_CXVIRTUALSCREEN
+                let vh = unsafe { win_user32::GetSystemMetrics(79) }; // SM_CYVIRTUALSCREEN
+                if vw > 0 && vh > 0 {
+                    Some((vx, vy, vw, vh))
+                } else {
+                    None
+                }
+            }
+            Some(idx) if idx >= 0 => {
+                let monitors = list_monitors();
+                monitors
+                    .get(idx as usize)
+                    .map(|m| (m.x, m.y, m.width, m.height))
+            }
+            _ => None,
+        };
+        if let Ok(mut guard) = TARGET_MONITOR_BOUNDS.lock() {
+            *guard = bounds;
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = monitor_index;
+        Ok(())
     }
 }
 
@@ -41,13 +198,20 @@ pub fn get_screen_size() -> (u32, u32) {
     }
 }
 
-/// Moves cursor to normalized coordinates [0.0, 1.0]
+/// Moves cursor to normalized coordinates [0.0, 1.0] mapped to active monitor bounds
 pub fn simulate_mouse_move(norm_x: f32, norm_y: f32) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        let (screen_w, screen_h) = get_screen_size();
-        let target_x = ((norm_x * screen_w as f32).round() as i32).clamp(0, screen_w as i32 - 1);
-        let target_y = ((norm_y * screen_h as f32).round() as i32).clamp(0, screen_h as i32 - 1);
+        let active_bounds = TARGET_MONITOR_BOUNDS.lock().ok().and_then(|g| *g);
+        let (ox, oy, screen_w, screen_h) = match active_bounds {
+            Some((x, y, w, h)) if w > 0 && h > 0 => (x, y, w, h),
+            _ => {
+                let (w, h) = get_screen_size();
+                (0, 0, w as i32, h as i32)
+            }
+        };
+        let target_x = ox + ((norm_x * screen_w as f32).round() as i32).clamp(0, screen_w - 1);
+        let target_y = oy + ((norm_y * screen_h as f32).round() as i32).clamp(0, screen_h - 1);
         unsafe {
             win_user32::SetCursorPos(target_x, target_y);
         }
@@ -402,5 +566,85 @@ pub fn simulate_shortcut(shortcut: &str) -> Result<(), String> {
     {
         let _ = shortcut;
         Err("Shortcut simulation currently supported on Windows host".to_string())
+    }
+}
+
+/// Executes system power actions on the host machine (lock, sleep, restart, shutdown)
+pub fn execute_power_action(action: &str) -> Result<(), String> {
+    match action.to_lowercase().as_str() {
+        "lock" => {
+            #[cfg(target_os = "windows")]
+            unsafe {
+                win_user32::LockWorkStation();
+            }
+            #[cfg(target_os = "macos")]
+            {
+                let _ = std::process::Command::new("pmset").arg("displaysleepnow").spawn();
+            }
+            #[cfg(target_os = "linux")]
+            {
+                let _ = std::process::Command::new("loginctl").arg("lock-session").spawn();
+            }
+            Ok(())
+        }
+        "sleep" => {
+            #[cfg(target_os = "windows")]
+            {
+                std::process::Command::new("rundll32.exe")
+                    .args(["powrprof.dll,SetSuspendState", "0,1,0"])
+                    .spawn()
+                    .map_err(|e| format!("Failed to sleep host: {e}"))?;
+            }
+            #[cfg(target_os = "macos")]
+            {
+                std::process::Command::new("pmset")
+                    .arg("sleepnow")
+                    .spawn()
+                    .map_err(|e| format!("Failed to sleep host: {e}"))?;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                std::process::Command::new("systemctl")
+                    .arg("suspend")
+                    .spawn()
+                    .map_err(|e| format!("Failed to sleep host: {e}"))?;
+            }
+            Ok(())
+        }
+        "restart" => {
+            #[cfg(target_os = "windows")]
+            {
+                std::process::Command::new("shutdown")
+                    .args(["/r", "/t", "3", "/c", "Raydrop Remote Restart"])
+                    .spawn()
+                    .map_err(|e| format!("Failed to restart host: {e}"))?;
+            }
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            {
+                std::process::Command::new("shutdown")
+                    .args(["-r", "now"])
+                    .spawn()
+                    .map_err(|e| format!("Failed to restart host: {e}"))?;
+            }
+            Ok(())
+        }
+        "shutdown" => {
+            #[cfg(target_os = "windows")]
+            {
+                std::process::Command::new("shutdown")
+                    .args(["/s", "/t", "3", "/c", "Raydrop Remote Shutdown"])
+                    .spawn()
+                    .map_err(|e| format!("Failed to shutdown host: {e}"))?;
+            }
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            {
+                std::process::Command::new("shutdown")
+                    .args(["-h", "now"])
+                    .spawn()
+                    .map_err(|e| format!("Failed to shutdown host: {e}"))?;
+            }
+            Ok(())
+        }
+        _ => Err(format!("Unsupported power action: {action}")),
     }
 }

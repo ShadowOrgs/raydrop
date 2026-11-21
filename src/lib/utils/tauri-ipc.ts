@@ -579,6 +579,14 @@ export const raydropApi = {
     invoke<void>('set_host_cursor_hidden', { hidden }),
   getHostScreenSize: () =>
     invoke<[number, number]>('get_host_screen_size'),
+  getHostMonitors: () =>
+    invoke<{ index: number; name: string; x: number; y: number; width: number; height: number; is_primary: boolean }[]>('get_host_monitors'),
+  setHostTargetMonitor: (monitorIndex: number | null) =>
+    invoke<void>('set_host_target_monitor', { monitorIndex }),
+  executeRemotePowerAction: (action: string) =>
+    invoke<void>('execute_remote_power_action', { action }),
+  sendWakeOnLan: (macAddress: string) =>
+    invoke<void>('send_wake_on_lan', { macAddress }),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>
     listen<T>(event, (e) => handler(e.payload)),
 };

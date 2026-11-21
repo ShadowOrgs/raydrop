@@ -45,6 +45,11 @@ export const remoteConnectionStatus = writable<
 export const remoteErrorMessage = writable<string | null>(null);
 export const remoteLatencyMs = writable<number>(0);
 export const remoteQualityMode = writable<'60fps' | 'balanced' | 'low_bandwidth'>('60fps');
+export const remoteHostMonitors = writable<
+  { index: number; name: string; x: number; y: number; width: number; height: number; is_primary: boolean }[]
+>([]);
+export const activeMonitorIndex = writable<number>(0);
+export const remoteAudioEnabled = writable<boolean>(true);
 
 let activePeerConnection: RTCPeerConnection | null = null;
 let activeDataChannel: RTCDataChannel | null = null;
@@ -212,14 +217,14 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
         width: { ideal: 1920, max: 2560 },
         height: { ideal: 1080, max: 1440 },
       },
-      audio: false,
+      audio: true,
       selfBrowserSurface: 'exclude',
-      surfaceSwitching: 'exclude',
-      systemAudio: 'exclude',
+      surfaceSwitching: 'include',
+      systemAudio: 'include',
       monitorTypeSurfaces: 'include',
     });
   } catch (err) {
-    console.warn('Standard monitor displayMedia failed, trying fallback:', err);
+    console.warn('Standard monitor displayMedia with audio failed, trying fallback:', err);
     try {
       stream = await (navigator.mediaDevices as any).getDisplayMedia({
         video: {
@@ -444,13 +449,17 @@ async function setupHostPeerConnection(
   activeDataChannel = dc;
   setupHostDataChannel(dc);
 
-  // Add Screen Share Video Track
+  // Add Screen Share Video & System Audio Tracks
   const videoTrack = stream.getVideoTracks()[0];
   if (videoTrack && 'contentHint' in videoTrack) {
     (videoTrack as any).contentHint = 'detail';
   }
   const sender = pc.addTrack(videoTrack, stream);
   activeVideoSender = sender;
+
+  for (const audioTrack of stream.getAudioTracks()) {
+    pc.addTrack(audioTrack, stream);
+  }
 
   // Set degradationPreference to maintain resolution with adaptive 500k-8M bitrate
   try {
@@ -496,6 +505,15 @@ async function setupHostPeerConnection(
 }
 
 function setupHostDataChannel(dc: RTCDataChannel) {
+  dc.onopen = async () => {
+    try {
+      const monitors = await raydropApi.getHostMonitors();
+      if (dc.readyState === 'open') {
+        dc.send(JSON.stringify({ t: 'monitors_list', monitors }));
+      }
+    } catch (_) {}
+  };
+
   dc.onmessage = async (event) => {
     try {
       const data = JSON.parse(event.data);
@@ -570,6 +588,18 @@ function setupHostDataChannel(dc: RTCDataChannel) {
         if (dc.readyState === 'open') {
           dc.send(JSON.stringify({ t: 'pong', time: data.time }));
         }
+        return;
+      }
+
+      // Switch Target Monitor Bounds
+      if (data.t === 'switch_monitor') {
+        raydropApi.setHostTargetMonitor(data.monitorIndex ?? 0).catch(() => {});
+        return;
+      }
+
+      // Remote Power Management Action (lock, sleep, restart, shutdown)
+      if (data.t === 'power_action' && data.action) {
+        raydropApi.executeRemotePowerAction(data.action).catch(() => {});
         return;
       }
     } catch (_) {}
@@ -748,6 +778,14 @@ function setupClientDataChannel(dc: RTCDataChannel) {
         alert('📋 Host clipboard contents copied to your local clipboard!');
         return;
       }
+
+      // Received host monitors list
+      if (data.t === 'monitors_list' && Array.isArray(data.monitors)) {
+        remoteHostMonitors.set(data.monitors);
+        const primary = data.monitors.find((m: any) => m.is_primary);
+        if (primary) activeMonitorIndex.set(primary.index);
+        return;
+      }
     } catch (_) {}
   };
 
@@ -795,6 +833,23 @@ export function sendShortcutToHost(shortcut: string) {
   sendInputToHost({
     t: 'sc',
     s: shortcut,
+  });
+}
+
+// Switch target monitor bounds on Host
+export function switchRemoteMonitor(monitorIndex: number) {
+  activeMonitorIndex.set(monitorIndex);
+  sendInputToHost({
+    t: 'switch_monitor',
+    monitorIndex,
+  });
+}
+
+// Execute Power Action on Host (lock, sleep, restart, shutdown)
+export function sendPowerActionToHost(action: 'lock' | 'sleep' | 'restart' | 'shutdown') {
+  sendInputToHost({
+    t: 'power_action',
+    action,
   });
 }
 

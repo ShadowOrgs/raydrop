@@ -39,3 +39,50 @@
   animation: drift 28s ease-in-out infinite alternate;
 }
 
+/* Syntax Highlighting for Chat Code Blocks */
+.raydrop-code-block .tok-kw {
+  color: #c084fc;
+  font-weight: 600;
+}
+.raydrop-code-block .tok-str {
+  color: #34d399;
+}
+.raydrop-code-block .tok-com {
+  color: #64748b;
+  font-style: italic;
+}
+.raydrop-code-block .tok-num {
+  color: #fbbf24;
+}
+
+/* Custom Theme Overrides */
+:root[data-theme="oled"] body,
+:root[data-theme="oled"] .bg-slate-950,
+:root[data-theme="oled"] .bg-slate-950\/90,
+:root[data-theme="oled"] .bg-slate-950\/60,
+:root[data-theme="oled"] .bg-slate-900 {
+  background-color: #000000 !important;
+}
+
+:root[data-theme="cyberpunk"] body,
+:root[data-theme="cyberpunk"] .bg-slate-950 {
+  background-color: #0c0618 !important;
+}
+:root[data-theme="cyberpunk"] .bg-slate-900,
+:root[data-theme="cyberpunk"] .bg-slate-900\/90,
+:root[data-theme="cyberpunk"] .bg-slate-900\/80 {
+  background-color: rgba(24, 11, 48, 0.92) !important;
+}
+:root[data-theme="cyberpunk"] .border-slate-800 {
+  border-color: rgba(168, 85, 247, 0.35) !important;
+}
+
+:root[data-theme="light"] {
+  filter: invert(0.93) hue-rotate(180deg);
+}
+:root[data-theme="light"] img,
+:root[data-theme="light"] video,
+:root[data-theme="light"] canvas {
+  filter: invert(1) hue-rotate(180deg);
+}
+

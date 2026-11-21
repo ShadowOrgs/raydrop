@@ -11,6 +11,7 @@
   import { raydropApi } from "../utils/tauri-ipc";
   import { browserExtensionModalOpen } from "../stores/torrents";
   import { myAvatar } from "../stores/avatars";
+  import { RAYDROP_THEMES, currentTheme, applyTheme } from "../stores/theme";
   import {
     FolderOpen,
     Terminal,
@@ -28,6 +29,7 @@
     Layers,
     Plus,
     Trash2,
+    Palette,
     HardDrive,
   } from "lucide-svelte";
 
@@ -370,6 +372,53 @@
           {/if}
         </div>
 
+        <!-- Custom Appearance Theme Selector -->
+        <div
+          class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 space-y-3"
+        >
+          <div>
+            <p
+              class="text-xs font-semibold text-slate-200 flex items-center gap-1.5"
+            >
+              <Palette class="w-3.5 h-3.5 text-cyan-400" />
+              <span>Appearance & Custom Theme</span>
+            </p>
+            <p class="text-[11px] text-slate-400 mt-0.5">
+              Personalize Raydrop's interface style across all views.
+            </p>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            {#each RAYDROP_THEMES as theme}
+              <button
+                type="button"
+                on:click={() => applyTheme(theme.id)}
+                class="p-2.5 rounded-xl border text-left transition flex items-center gap-2.5 cursor-pointer {$currentTheme ===
+                theme.id
+                  ? 'border-cyan-500 bg-cyan-500/10 ring-1 ring-cyan-500/30'
+                  : 'border-slate-800 bg-slate-900/80 hover:border-slate-700'}"
+              >
+                <span
+                  class="w-7 h-7 rounded-lg border border-white/15 shrink-0 flex items-center justify-center shadow-inner"
+                  style="background-color: {theme.previewBg}"
+                >
+                  <span
+                    class="w-2.5 h-2.5 rounded-full"
+                    style="background-color: {theme.previewAccent}"
+                  ></span>
+                </span>
+                <div class="min-w-0">
+                  <p class="text-xs font-bold text-slate-100 truncate">
+                    {theme.name}
+                  </p>
+                  <p class="text-[10px] text-slate-400 truncate">
+                    {theme.description}
+                  </p>
+                </div>
+              </button>
+            {/each}
+          </div>
+        </div>
+
         <!-- IDM-style Auto-Categorize Subfolders -->
         <div
           class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex items-center justify-between gap-3"
@@ -651,7 +700,7 @@
               <span
                 class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700"
               >
-                Current: v1.2.39
+                Current: v1.2.40
               </span>
             </div>
             <p class="text-[11px] text-slate-400 mt-0.5">

@@ -39,10 +39,12 @@
     Copy,
     HardDrive,
     Video,
+    Zap,
   } from "lucide-svelte";
   import RemoteExplorerModal from "./RemoteExplorerModal.svelte";
   import { createMeetingRoom, inviteContactToMeeting } from "../stores/meeting";
   import { formatLastOnline } from "../utils/time";
+  import { triggerWakeOnLan } from "../stores/wol";
 
   let remoteBrowserTarget: { deviceId: string; alias: string } | null = null;
   let myDirectAddr: { ip: string; port: number } | null = null;
@@ -562,6 +564,16 @@
               </button>
 
               {#if !isThisDevice}
+                {#if !dev.is_online}
+                  <button
+                    on:click={() => triggerWakeOnLan(dev.device_id, dev.device_name)}
+                    class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/30 text-xs font-semibold transition-all"
+                    title="Wake up device via Wake-on-LAN"
+                  >
+                    <Zap class="w-3.5 h-3.5" />
+                    <span>Wake</span>
+                  </button>
+                {/if}
                 <button
                   on:click={() => openChatWith(dev.device_id)}
                   class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500 text-indigo-300 hover:text-slate-950 border border-indigo-500/30 text-xs font-semibold transition-all"

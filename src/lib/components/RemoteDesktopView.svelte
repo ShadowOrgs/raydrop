@@ -28,7 +28,15 @@
     Tv,
     Smartphone,
     Radio,
+    Volume2,
+    VolumeX,
+    Power,
+    PictureInPicture2,
+    PenTool,
+    Zap,
   } from "lucide-svelte";
+  import AnnotationOverlay from "./AnnotationOverlay.svelte";
+  import { triggerWakeOnLan } from "../stores/wol";
   import {
     remoteHostSettings,
     isHostSharingScreen,
@@ -37,6 +45,8 @@
     remoteConnectionStatus,
     remoteErrorMessage,
     remoteLatencyMs,
+    remoteHostMonitors,
+    activeMonitorIndex,
     loadRemoteDesktopSettings,
     saveRemoteDesktopSettings,
     connectToRemoteHost,
@@ -45,6 +55,8 @@
     sendLocalClipboardToHost,
     requestClipboardFromHost,
     sendShortcutToHost,
+    switchRemoteMonitor,
+    sendPowerActionToHost,
     initRemoteDesktopListener,
     startHostScreenCapture,
     stopHostScreenCapture,
@@ -95,6 +107,12 @@
   let isFullscreen = false;
   let showToolbar = false;
   let hideLocalCursor = false;
+  let isAudioMuted = false;
+  let isPiP = false;
+  let showAnnotation = false;
+  let isSecondDisplayFill = false;
+  let isPowerMenuOpen = false;
+  let pendingPowerAction: "lock" | "sleep" | "restart" | "shutdown" | null = null;
   let lastMouseMoveTime = 0;
 
   $: isClientConnected =
@@ -115,11 +133,12 @@
 
     const playSafe = () => {
       if (node && node.srcObject) {
-        node.muted = true;
+        node.muted = isAudioMuted;
         const playPromise = node.play();
         if (playPromise !== undefined) {
           playPromise.catch(() => {
             node.muted = true;
+            isAudioMuted = true;
             node.play().catch(() => {});
           });
         }
@@ -144,6 +163,8 @@
     };
 
     node.addEventListener("pause", handlePause);
+    node.addEventListener("enterpictureinpicture", () => (isPiP = true));
+    node.addEventListener("leavepictureinpicture", () => (isPiP = false));
     window.addEventListener("resize", handleResume);
     window.addEventListener("focus", handleResume);
     document.addEventListener("visibilitychange", handleResume);
@@ -407,6 +428,43 @@
     }
   }
 
+  function toggleAudioMute() {
+    isAudioMuted = !isAudioMuted;
+    if (videoEl) {
+      videoEl.muted = isAudioMuted;
+    }
+  }
+
+  async function togglePictureInPicture() {
+    if (!videoEl) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+        isPiP = false;
+      } else if ((videoEl as any).requestPictureInPicture) {
+        await (videoEl as any).requestPictureInPicture();
+        isPiP = true;
+      }
+    } catch (err) {
+      console.warn("Picture-in-Picture error:", err);
+    }
+  }
+
+  function requestPowerAction(action: "lock" | "sleep" | "restart" | "shutdown") {
+    isPowerMenuOpen = false;
+    if (action === "lock") {
+      sendPowerActionToHost("lock");
+    } else {
+      pendingPowerAction = action;
+    }
+  }
+
+  function confirmPowerAction() {
+    if (!pendingPowerAction) return;
+    sendPowerActionToHost(pendingPowerAction);
+    pendingPowerAction = null;
+  }
+
   // Mouse & Keyboard Input Event Handlers on Remote Video Canvas
   function handleMouseMove(e: MouseEvent) {
     if (!videoEl || !isClientConnected) return;
@@ -478,6 +536,56 @@
   function handleContextMenu(e: MouseEvent) {
     // Prevent browser default context menu so right-click operates on remote host
     e.preventDefault();
+  }
+
+  let lastTouchY = 0;
+
+  function getNormalizedTouchCoords(touch: Touch): { x: number; y: number } | null {
+    if (!videoEl) return null;
+    const rect = videoEl.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    const x = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (touch.clientY - rect.top) / rect.height));
+    return { x, y };
+  }
+
+  function handleTouchStart(e: TouchEvent) {
+    if (!isClientConnected || !e.touches.length) return;
+    if (e.touches.length === 2) {
+      lastTouchY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      return;
+    }
+    const coords = getNormalizedTouchCoords(e.touches[0]);
+    if (!coords) return;
+    sendInputToHost({ t: "mm", x: coords.x, y: coords.y });
+    sendInputToHost({ t: "mc", b: "left", a: "down", alt: false, ctrl: false, shift: false, meta: false });
+  }
+
+  function handleTouchMove(e: TouchEvent) {
+    if (!isClientConnected || !e.touches.length) return;
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const diff = midY - lastTouchY;
+      if (Math.abs(diff) > 12) {
+        sendInputToHost({ t: "mw", dy: diff > 0 ? -120 : 120 });
+        lastTouchY = midY;
+      }
+      return;
+    }
+    const now = performance.now();
+    if (now - lastMouseMoveTime < 16) return;
+    lastMouseMoveTime = now;
+    const coords = getNormalizedTouchCoords(e.touches[0]);
+    if (!coords) return;
+    sendInputToHost({ t: "mm", x: coords.x, y: coords.y });
+  }
+
+  function handleTouchEnd(e: TouchEvent) {
+    if (!isClientConnected) return;
+    if (e.touches.length === 0) {
+      sendInputToHost({ t: "mc", b: "left", a: "up", alt: false, ctrl: false, shift: false, meta: false });
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -635,6 +743,96 @@
 
           <!-- Display & Window Controls -->
           <div class="flex items-center gap-1.5 shrink-0">
+            <!-- Multi-Monitor Switcher (when host has multiple displays) -->
+            {#if $remoteHostMonitors.length > 1}
+              <div class="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-[11px]">
+                <Monitor class="w-3 h-3 text-cyan-400 shrink-0" />
+                <select
+                  value={$activeMonitorIndex}
+                  on:change={(e) => switchRemoteMonitor(Number(e.currentTarget.value))}
+                  class="bg-transparent text-slate-200 focus:outline-none cursor-pointer pr-1"
+                  title="Switch Target Monitor Bounds"
+                >
+                  {#each $remoteHostMonitors as mon}
+                    <option value={mon.index} class="bg-slate-900 text-white">
+                      {mon.name} ({mon.width}x{mon.height})
+                    </option>
+                  {/each}
+                  <option value={-1} class="bg-slate-900 text-white">
+                    All Displays (Virtual)
+                  </option>
+                </select>
+              </div>
+            {/if}
+
+            <!-- Remote Audio Streaming Toggle (Mute/Unmute) -->
+            <button
+              type="button"
+              on:click={toggleAudioMute}
+              class="p-1 rounded-lg transition cursor-pointer {!isAudioMuted
+                ? 'text-emerald-400 bg-slate-800 border border-emerald-500/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'}"
+              title={isAudioMuted ? "Unmute Host Audio" : "Host Audio Active (Click to Mute)"}
+            >
+              {#if isAudioMuted}
+                <VolumeX class="w-3.5 h-3.5" />
+              {:else}
+                <Volume2 class="w-3.5 h-3.5" />
+              {/if}
+            </button>
+
+            <!-- Remote Power Management Dropdown -->
+            <div class="relative">
+              <button
+                type="button"
+                on:click={() => (isPowerMenuOpen = !isPowerMenuOpen)}
+                class="p-1 rounded-lg transition cursor-pointer {isPowerMenuOpen
+                  ? 'text-amber-400 bg-slate-800 border border-amber-500/30'
+                  : 'text-slate-400 hover:text-amber-300 hover:bg-slate-800'}"
+                title="Remote Power Management (Lock, Sleep, Restart, Shutdown)"
+              >
+                <Power class="w-3.5 h-3.5" />
+              </button>
+              {#if isPowerMenuOpen}
+                <div
+                  class="absolute right-0 mt-2 w-40 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl py-1 z-50 text-xs"
+                >
+                  <button
+                    type="button"
+                    on:click={() => requestPowerAction("lock")}
+                    class="w-full px-3 py-1.5 text-left text-slate-200 hover:bg-slate-800 hover:text-cyan-300 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Lock class="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Lock Screen</span>
+                  </button>
+                  <button
+                    type="button"
+                    on:click={() => requestPowerAction("sleep")}
+                    class="w-full px-3 py-1.5 text-left text-slate-200 hover:bg-slate-800 hover:text-indigo-300 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Minimize class="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Sleep PC</span>
+                  </button>
+                  <button
+                    type="button"
+                    on:click={() => requestPowerAction("restart")}
+                    class="w-full px-3 py-1.5 text-left text-amber-300 hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
+                  >
+                    <RefreshCw class="w-3.5 h-3.5 text-amber-400" />
+                    <span>Restart PC</span>
+                  </button>
+                  <button
+                    type="button"
+                    on:click={() => requestPowerAction("shutdown")}
+                    class="w-full px-3 py-1.5 text-left text-rose-400 hover:bg-rose-950/50 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Power class="w-3.5 h-3.5 text-rose-400" />
+                    <span>Shutdown PC</span>
+                  </button>
+                </div>
+              {/if}
+            </div>
+
             <!-- Toggle Local Cursor Mode (Client Cursor vs Hidden) -->
             <button
               type="button"
@@ -647,6 +845,42 @@
                 : "Client Cursor Hidden"}
             >
               <MousePointer class="w-3.5 h-3.5" />
+            </button>
+
+            <!-- Floating Mini Player / Picture-in-Picture Button -->
+            <button
+              type="button"
+              on:click={togglePictureInPicture}
+              class="p-1 rounded-lg transition cursor-pointer {isPiP
+                ? 'text-cyan-400 bg-slate-800 border border-cyan-500/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'}"
+              title={isPiP ? "Exit Mini Player (PiP)" : "Floating Mini Player (PiP)"}
+            >
+              <PictureInPicture2 class="w-3.5 h-3.5" />
+            </button>
+
+            <!-- Laser Pointer & Screen Annotation Toggle -->
+            <button
+              type="button"
+              on:click={() => (showAnnotation = !showAnnotation)}
+              class="p-1 rounded-lg transition cursor-pointer {showAnnotation
+                ? 'text-rose-400 bg-slate-800 border border-rose-500/40'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'}"
+              title="Laser Pointer & Screen Annotation"
+            >
+              <PenTool class="w-3.5 h-3.5" />
+            </button>
+
+            <!-- Second Display / Tablet Stretch Fill Mode -->
+            <button
+              type="button"
+              on:click={() => (isSecondDisplayFill = !isSecondDisplayFill)}
+              class="p-1 rounded-lg transition cursor-pointer {isSecondDisplayFill
+                ? 'text-indigo-400 bg-slate-800 border border-indigo-500/40'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'}"
+              title={isSecondDisplayFill ? "Fit Aspect Ratio" : "Second Display Mode (Fill Screen)"}
+            >
+              <Tv class="w-3.5 h-3.5" />
             </button>
 
             <!-- Fullscreen Button -->
@@ -698,15 +932,19 @@
         on:mouseup={handleMouseUp}
         on:wheel={handleWheel}
         on:contextmenu={handleContextMenu}
+        on:touchstart={handleTouchStart}
+        on:touchmove={handleTouchMove}
+        on:touchend={handleTouchEnd}
       >
         <video
           bind:this={videoEl}
           use:attachStream={$clientRemoteStream}
           autoplay
           playsinline
-          muted
-          class="max-w-full max-h-full object-contain pointer-events-none select-none shadow-2xl"
+          muted={isAudioMuted}
+          class="{isSecondDisplayFill ? 'w-full h-full object-fill' : 'max-w-full max-h-full object-contain'} pointer-events-none select-none shadow-2xl"
         ></video>
+        <AnnotationOverlay active={showAnnotation} on:close={() => (showAnnotation = false)} />
       </div>
     </div>
   {:else}
@@ -1010,10 +1248,23 @@
                   <Key class="w-3 h-3" />
                   <span>Connect with PIN</span>
                 </span>
-                <div
-                  class="w-7 h-7 rounded-lg bg-cyan-500/10 group-hover:bg-cyan-500 text-cyan-400 group-hover:text-slate-950 flex items-center justify-center transition shadow-sm"
-                >
-                  <Play class="w-3.5 h-3.5 fill-current ml-0.5" />
+                <div class="flex items-center gap-1.5">
+                  {#if !peer.isOnline}
+                    <button
+                      type="button"
+                      on:click|stopPropagation={() => triggerWakeOnLan(peer.id, peer.name)}
+                      class="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[10px] font-semibold flex items-center gap-1 transition cursor-pointer"
+                      title="Send Wake-on-LAN Magic Packet"
+                    >
+                      <Zap class="w-3 h-3" />
+                      <span>Wake</span>
+                    </button>
+                  {/if}
+                  <div
+                    class="w-7 h-7 rounded-lg bg-cyan-500/10 group-hover:bg-cyan-500 text-cyan-400 group-hover:text-slate-950 flex items-center justify-center transition shadow-sm"
+                  >
+                    <Play class="w-3.5 h-3.5 fill-current ml-0.5" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1430,6 +1681,57 @@
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Remote Power Action Confirmation Modal -->
+  {#if pendingPowerAction}
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
+    >
+      <div
+        class="w-full max-w-sm rounded-2xl bg-slate-900 border border-amber-500/40 p-5 shadow-2xl space-y-4"
+      >
+        <div class="flex items-center gap-3 pb-3 border-b border-slate-800">
+          <div
+            class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400"
+          >
+            <Power class="w-5 h-5" />
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white capitalize">
+              Confirm Remote {pendingPowerAction}
+            </h3>
+            <p class="text-xs text-slate-400">
+              Target: {$activeRemoteSession?.peerAlias || "Host PC"}
+            </p>
+          </div>
+        </div>
+
+        <p class="text-xs text-slate-300 leading-relaxed">
+          Are you sure you want to <b>{pendingPowerAction}</b> the remote host computer?
+          {pendingPowerAction === "shutdown" || pendingPowerAction === "sleep"
+            ? "Your active remote desktop session will be disconnected."
+            : "You will need to wait until the computer finishes rebooting to reconnect."}
+        </p>
+
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+          <button
+            type="button"
+            on:click={() => (pendingPowerAction = null)}
+            class="px-3.5 py-1.5 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            on:click={confirmPowerAction}
+            class="px-4 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-bold text-xs shadow transition cursor-pointer active:scale-95 capitalize"
+          >
+            Yes, {pendingPowerAction}
+          </button>
+        </div>
       </div>
     </div>
   {/if}

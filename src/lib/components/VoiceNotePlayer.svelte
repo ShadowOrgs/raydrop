@@ -10,6 +10,15 @@
   let currentTime = 0;
   let duration = 0;
   let progressPct = 0;
+  const SPEEDS = [1, 1.25, 1.5, 2];
+  let speedIndex = 0;
+
+  function cyclePlaybackSpeed() {
+    speedIndex = (speedIndex + 1) % SPEEDS.length;
+    if (audioElement) {
+      audioElement.playbackRate = SPEEDS[speedIndex];
+    }
+  }
 
   function togglePlay() {
     if (!audioElement) return;
@@ -128,6 +137,16 @@
       ></div>
     </button>
   </div>
+
+  <!-- Playback Speed Toggle -->
+  <button
+    type="button"
+    on:click={cyclePlaybackSpeed}
+    class="px-1.5 py-0.5 rounded-md bg-slate-800/90 hover:bg-slate-700 text-[10px] font-mono font-bold text-cyan-300 border border-slate-700 transition cursor-pointer shrink-0"
+    title="Change Playback Speed (1x, 1.25x, 1.5x, 2x)"
+  >
+    {SPEEDS[speedIndex]}x
+  </button>
 
   <!-- Download Voice Note -->
   <button

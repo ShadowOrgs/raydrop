@@ -367,10 +367,35 @@ pub fn run() {
             let state_for_http = state_for_setup.clone();
             tauri::async_runtime::spawn(async move {
                 let mut interval = tokio::time::interval(std::time::Duration::from_millis(1000));
+                let mut recorded_completed = std::collections::HashSet::<String>::new();
                 loop {
                     interval.tick().await;
                     let tasks = state_for_http.http_downloader.list_tasks().await;
                     if !tasks.is_empty() {
+                        for task in &tasks {
+                            if task.status == "completed" && !recorded_completed.contains(&task.id) {
+                                recorded_completed.insert(task.id.clone());
+                                let rec = crate::db::storage::TransferRecord {
+                                    id: format!("http_{}", task.id),
+                                    peer_device_id: "http_accelerator".to_string(),
+                                    peer_alias: "HTTP Accelerator".to_string(),
+                                    direction: "incoming".to_string(),
+                                    network_route: "wan_p2p".to_string(),
+                                    total_files: 1,
+                                    total_bytes: task.total_bytes,
+                                    transferred_bytes: task.downloaded_bytes,
+                                    status: "completed".to_string(),
+                                    target_path: Some(task.save_path.clone()),
+                                    source_paths: Some(
+                                        serde_json::to_string(&vec![&task.save_path])
+                                            .unwrap_or_default(),
+                                    ),
+                                    created_at: crate::db::storage::now_unix_secs(),
+                                };
+                                let _ = state_for_http.db.upsert_transfer(&rec);
+                                let _ = handle_for_http.emit("transfer_state_changed", &rec);
+                            }
+                        }
                         let _ = handle_for_http.emit("http_download_stats_update", &tasks);
                     }
                 }
@@ -486,6 +511,10 @@ pub fn run() {
             commands::release_remote_modifiers,
             commands::get_host_screen_size,
             commands::set_host_cursor_hidden,
+            commands::get_host_monitors,
+            commands::set_host_target_monitor,
+            commands::execute_remote_power_action,
+            commands::send_wake_on_lan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Raydrop Tauri application");

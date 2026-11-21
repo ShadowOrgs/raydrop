@@ -3390,3 +3390,50 @@ pub async fn set_host_cursor_hidden(hidden: bool) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn get_host_monitors() -> Result<Vec<crate::remote_input::MonitorInfo>, String> {
+    Ok(crate::remote_input::list_monitors())
+}
+
+#[tauri::command]
+pub async fn set_host_target_monitor(monitor_index: Option<i32>) -> Result<(), String> {
+    crate::remote_input::set_target_monitor(monitor_index)
+}
+
+#[tauri::command]
+pub async fn execute_remote_power_action(action: String) -> Result<(), String> {
+    crate::remote_input::execute_power_action(&action)
+}
+
+#[tauri::command]
+pub async fn send_wake_on_lan(mac_address: String) -> Result<(), String> {
+    let clean: String = mac_address
+        .chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .collect();
+    if clean.len() != 12 {
+        return Err("Invalid MAC address. Expected 12 hex characters (e.g. AA:BB:CC:DD:EE:FF).".to_string());
+    }
+    let mut mac_bytes = [0u8; 6];
+    for i in 0..6 {
+        mac_bytes[i] = u8::from_str_radix(&clean[i * 2..i * 2 + 2], 16)
+            .map_err(|_| "Invalid hex byte in MAC address".to_string())?;
+    }
+
+    let mut packet = Vec::with_capacity(102);
+    packet.extend_from_slice(&[0xFFu8; 6]);
+    for _ in 0..16 {
+        packet.extend_from_slice(&mac_bytes);
+    }
+
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0")
+        .map_err(|e| format!("Failed to bind UDP socket for WoL: {e}"))?;
+    socket
+        .set_broadcast(true)
+        .map_err(|e| format!("Failed to enable UDP broadcast: {e}"))?;
+
+    let _ = socket.send_to(&packet, "255.255.255.255:9");
+    let _ = socket.send_to(&packet, "255.255.255.255:7");
+    Ok(())
+}
+

@@ -17,9 +17,15 @@
   import MeetingInviteModal from "./lib/components/MeetingInviteModal.svelte";
   import RemoteDesktopView from "./lib/components/RemoteDesktopView.svelte";
   import { setupMeetingSignalListener } from "./lib/stores/meeting";
-  import { initRemoteDesktopListener, loadRemoteDesktopSettings } from "./lib/stores/remote_desktop";
+  import {
+    initRemoteDesktopListener,
+    loadRemoteDesktopSettings,
+    activeRemoteSession,
+    remoteConnectionStatus,
+  } from "./lib/stores/remote_desktop";
   import { initTorrentStore } from "./lib/stores/torrents";
   import { initAvatarStore, peerAvatars } from "./lib/stores/avatars";
+  import "./lib/stores/theme";
   import { Upload, X, Zap, MessageSquare, Wifi, Users, Video, Monitor } from "lucide-svelte";
   import {
     appSettings,
@@ -387,7 +393,17 @@
           isDraggingFiles.set(false);
           const droppedPaths = event.payload.paths;
           if (droppedPaths && droppedPaths.length > 0) {
-            cliQueuedFiles.update((prev) => [...prev, ...droppedPaths]);
+            const currentTab = get(activeMainTab);
+            const rSession = get(activeRemoteSession);
+            const rStatus = get(remoteConnectionStatus);
+            if (currentTab === "remote" && rStatus === "connected" && rSession?.isClient) {
+              raydropApi.initiateTransfer(rSession.peerDeviceId, droppedPaths).catch((err) => {
+                console.warn("Direct remote drop transfer error:", err);
+                cliQueuedFiles.update((prev) => [...prev, ...droppedPaths]);
+              });
+            } else {
+              cliQueuedFiles.update((prev) => [...prev, ...droppedPaths]);
+            }
           }
         } else if (event.payload.type === "leave") {
           isDraggingFiles.set(false);
@@ -506,11 +522,19 @@
           <Upload class="w-10 h-10 stroke-[2.2]" />
         </div>
         <h3 class="text-xl font-extrabold text-white font-display">
-          Drop Files to Transfer
+          {#if $activeMainTab === 'remote' && $remoteConnectionStatus === 'connected' && $activeRemoteSession?.isClient}
+            Drop to Send Directly to {$activeRemoteSession.peerAlias}
+          {:else}
+            Drop Files to Transfer
+          {/if}
         </h3>
         <p class="text-xs text-slate-300 mt-2">
-          Drop any multiple files or folders here to send directly via encrypted
-          P2P.
+          {#if $activeMainTab === 'remote' && $remoteConnectionStatus === 'connected' && $activeRemoteSession?.isClient}
+            Files dropped onto the Remote Desktop screen are transferred directly to the host device immediately.
+          {:else}
+            Drop any multiple files or folders here to send directly via encrypted
+            P2P.
+          {/if}
         </p>
         <div
           class="flex items-center gap-2 mt-4 text-[11px] font-mono text-cyan-400 bg-cyan-500/10 px-3 py-1.5 rounded-full border border-cyan-500/30"

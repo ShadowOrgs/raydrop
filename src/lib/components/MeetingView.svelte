@@ -62,12 +62,42 @@
     Headphones,
     X,
     Loader2,
+    PictureInPicture2,
+    PenTool,
   } from "lucide-svelte";
+  import AnnotationOverlay from "./AnnotationOverlay.svelte";
 
   // Lobby States
   let inputRoomName = "General Discussion";
   let inputRoomCode = "";
   let previewMicLevel = 0;
+  let isMeetingPiP = false;
+  let showMeetingAnnotation = false;
+
+  async function toggleMeetingPiP() {
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+        isMeetingPiP = false;
+        return;
+      }
+      const videos = Array.from(document.querySelectorAll("video")).filter(
+        (v) => v.srcObject && v.readyState >= 2
+      );
+      const targetVideo = videos[0];
+      if (targetVideo && (targetVideo as any).requestPictureInPicture) {
+        await (targetVideo as any).requestPictureInPicture();
+        isMeetingPiP = true;
+        targetVideo.addEventListener(
+          "leavepictureinpicture",
+          () => (isMeetingPiP = false),
+          { once: true }
+        );
+      }
+    } catch (err) {
+      console.warn("Meeting PiP error:", err);
+    }
+  }
   let previewStream: MediaStream | null = null;
   let previewVideoEl: HTMLVideoElement;
   let isCheckingPreview = false;
@@ -669,6 +699,7 @@
             <div
               class="flex-1 rounded-2xl bg-black border border-indigo-500/40 relative overflow-hidden flex items-center justify-center shadow-2xl"
             >
+              <AnnotationOverlay active={showMeetingAnnotation} on:close={() => (showMeetingAnnotation = false)} />
               <!-- Floating Notification: Raised Hand banner during presentation -->
               {#if raisedHandParticipants.length > 0}
                 <div class="absolute top-4 left-1/2 transform -translate-x-1/2 z-30 flex items-center gap-2 px-4 py-2 rounded-2xl bg-amber-500/90 text-amber-950 font-bold text-xs sm:text-sm shadow-2xl backdrop-blur-md animate-bounce border border-amber-300">
@@ -1200,6 +1231,36 @@
           <span class="hidden md:inline ml-1.5"
             >{$isRecording ? "Stop Rec" : "Record"}</span
           >
+        </button>
+
+        <!-- Floating Mini Player (PiP) -->
+        <button
+          type="button"
+          on:click={toggleMeetingPiP}
+          class="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-semibold transition {isMeetingPiP
+            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+            : 'bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700'}"
+          title={isMeetingPiP ? "Exit Mini Player (PiP)" : "Floating Mini Player (PiP)"}
+        >
+          <PictureInPicture2
+            class="w-4 h-4 {isMeetingPiP ? 'text-cyan-400' : 'text-slate-400'}"
+          />
+          <span class="hidden md:inline ml-1.5">PiP</span>
+        </button>
+
+        <!-- Laser Pointer & Annotation -->
+        <button
+          type="button"
+          on:click={() => (showMeetingAnnotation = !showMeetingAnnotation)}
+          class="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-semibold transition {showMeetingAnnotation
+            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+            : 'bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700'}"
+          title="Laser Pointer & Screen Annotation"
+        >
+          <PenTool
+            class="w-4 h-4 {showMeetingAnnotation ? 'text-rose-400' : 'text-slate-400'}"
+          />
+          <span class="hidden md:inline ml-1.5">Annotate</span>
         </button>
       </div>
 

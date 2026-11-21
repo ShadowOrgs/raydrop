@@ -89,6 +89,8 @@
   let powerCountdownTimer: any = null;
   let hadActiveTasks = false;
 
+  $: visibleHttpTasks = $httpTasks.filter((t) => t.status !== 'completed' && t.status !== 'cancelled');
+
   $: {
     const activeCount =
       $activeTransfers.length +
@@ -881,20 +883,20 @@
     {/if}
 
     <!-- HTTP Multi-Segment Parallel Accelerator Downloads (IDM Engine) -->
-    {#if $httpTasks.length > 0}
+    {#if visibleHttpTasks.length > 0}
       <div class="space-y-3">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <Zap class="w-4 h-4 text-cyan-400" />
             <h3 class="text-xs font-bold uppercase tracking-wider text-cyan-400">
-              HTTP Accelerator Downloads ({$httpTasks.length})
+              HTTP Accelerator Downloads ({visibleHttpTasks.length})
             </h3>
           </div>
           <span class="text-xs text-slate-400 font-mono">Parallel Segment Accelerator</span>
         </div>
 
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-3.5">
-          {#each $httpTasks as task (task.id)}
+          {#each visibleHttpTasks as task (task.id)}
             {@const pct = task.total_bytes > 0 ? Math.min(100, Math.round((task.downloaded_bytes / task.total_bytes) * 100)) : 0}
             <div class="p-4 rounded-2xl bg-slate-900/90 border border-cyan-500/30 shadow-xl shadow-cyan-500/5 space-y-3 transition-all">
               <div class="flex items-start justify-between gap-3">
@@ -988,18 +990,21 @@
                     </button>
                   {/if}
 
-                  {#if task.status === 'completed' && task.save_path}
+                  {#if (task.status === 'completed' || (task.status === 'downloading' && task.downloaded_bytes > 524288)) && task.save_path}
                     {#if isVideoFile(task.filename) || isAudioFile(task.filename)}
                       <button
                         type="button"
                         on:click={() => openMediaPreview(task.save_path, task.filename)}
                         class="px-2.5 py-1 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-xs text-cyan-300 flex items-center gap-1 transition cursor-pointer"
-                        title="Play in Raydrop Media Lightbox"
+                        title={task.status === 'downloading' ? "Instant Stream while downloading" : "Play in Raydrop Media Lightbox"}
                       >
                         <Play class="w-3.5 h-3.5" />
-                        <span>Play</span>
+                        <span>{task.status === 'downloading' ? 'Stream' : 'Play'}</span>
                       </button>
                     {/if}
+                  {/if}
+
+                  {#if task.status === 'completed' && task.save_path}
                     <button
                       type="button"
                       on:click={() => openHashModal(task.filename, task.save_path)}
