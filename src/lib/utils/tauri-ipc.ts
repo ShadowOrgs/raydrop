@@ -599,6 +599,20 @@ export const raydropApi = {
     invoke<void>('push_second_screen_frame', { frameBase64 }),
   openSystemDisplaySettings: () =>
     invoke<void>('open_system_display_settings'),
+  startNativeScreenCapture: () =>
+    invoke<void>('start_native_screen_capture'),
+  stopNativeScreenCapture: () =>
+    invoke<void>('stop_native_screen_capture'),
+  checkUnattendedBootService: () =>
+    invoke<boolean>('check_unattended_boot_service'),
+  installUnattendedBootService: () =>
+    invoke<string>('install_unattended_boot_service'),
+  checkWindowsServiceStatus: () =>
+    invoke<string>('check_windows_service_status'),
+  installWindowsService: () =>
+    invoke<string>('install_windows_service'),
+  uninstallWindowsService: () =>
+    invoke<string>('uninstall_windows_service'),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>
     listen<T>(event, (e) => handler(e.payload)),
 };

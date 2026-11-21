@@ -7,11 +7,13 @@ pub mod http_downloader;
 pub mod network;
 pub mod os;
 pub mod remote_audio;
+pub mod remote_capture;
 pub mod remote_fs;
 pub mod remote_input;
 pub mod state;
 pub mod torrent;
 pub mod tray_badge;
+pub mod win_service;
 
 use crate::db::storage::Database;
 use crate::network::{
@@ -104,8 +106,9 @@ pub fn run() {
     let initial_args: Vec<String> = std::env::args().collect();
     let initial_send_paths = extract_send_paths(&initial_args);
     let initial_magnet = extract_magnet_url(&initial_args);
-    let start_minimized =
-        initial_args.iter().any(|a| a == "--minimized") && initial_send_paths.is_empty();
+    let is_system_agent = initial_args.iter().any(|a| a == "--system-agent");
+    let start_minimized = is_system_agent
+        || (initial_args.iter().any(|a| a == "--minimized") && initial_send_paths.is_empty());
 
     let torrent_mgr = Arc::new(crate::torrent::TorrentManager::new(
         std::path::PathBuf::from(&settings.download_dir),
@@ -150,7 +153,8 @@ pub fn run() {
     let builder = tauri::Builder::default();
 
     #[cfg(desktop)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(move |app, argv, _cwd| {
+    let builder = if !is_system_agent {
+        builder.plugin(tauri_plugin_single_instance::init(move |app, argv, _cwd| {
         let paths = extract_send_paths(&argv);
         let magnet = extract_magnet_url(&argv);
 
@@ -171,7 +175,10 @@ pub fn run() {
             }
             let _ = app.emit("cli_send_files", paths);
         }
-    }));
+    }))
+    } else {
+        builder
+    };
 
     builder
         .plugin(tauri_plugin_dialog::init())
@@ -523,6 +530,13 @@ pub fn run() {
             commands::stop_second_screen_server,
             commands::push_second_screen_frame,
             commands::open_system_display_settings,
+            commands::start_native_screen_capture,
+            commands::stop_native_screen_capture,
+            commands::check_unattended_boot_service,
+            commands::install_unattended_boot_service,
+            commands::check_windows_service_status,
+            commands::install_windows_service,
+            commands::uninstall_windows_service,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Raydrop Tauri application")
@@ -530,6 +544,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 crate::remote_input::set_host_cursor_hidden(false);
                 crate::remote_audio::stop_host_audio_loopback();
+                crate::remote_capture::stop_native_screen_capture();
             }
         });
 }

@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { raydropApi, type RemoteDesktopSettings } from '../utils/tauri-ipc';
 import { appSettings } from './state';
 import { contacts } from './contacts';
@@ -210,7 +211,59 @@ export function stopBackgroundKeepAlive() {
   }
 }
 
-// Helper to acquire monitor screen stream safely without host cursor
+let nativeCanvasEl: HTMLCanvasElement | null = null;
+let isNativeFrameListenerSet = false;
+let pendingFrameDraw = false;
+
+async function startNativeCanvasStream(): Promise<MediaStream | null> {
+  try {
+    if (!nativeCanvasEl) {
+      nativeCanvasEl = document.createElement('canvas');
+      nativeCanvasEl.width = 1280;
+      nativeCanvasEl.height = 720;
+      const ctx = nativeCanvasEl.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, 1280, 720);
+      }
+    }
+
+    if (!isNativeFrameListenerSet) {
+      isNativeFrameListenerSet = true;
+      await raydropApi.listenEvent<string>('host_screen_frame', (b64) => {
+        if (!nativeCanvasEl || pendingFrameDraw || !b64) return;
+        pendingFrameDraw = true;
+        const img = new Image();
+        img.onload = () => {
+          if (nativeCanvasEl) {
+            if (nativeCanvasEl.width !== img.width || nativeCanvasEl.height !== img.height) {
+              nativeCanvasEl.width = img.width;
+              nativeCanvasEl.height = img.height;
+            }
+            const ctx = nativeCanvasEl.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0);
+            }
+          }
+          pendingFrameDraw = false;
+        };
+        img.onerror = () => {
+          pendingFrameDraw = false;
+        };
+        img.src = 'data:image/jpeg;base64,' + b64;
+      });
+    }
+
+    await raydropApi.startNativeScreenCapture();
+    const stream = nativeCanvasEl.captureStream(30);
+    return stream;
+  } catch (err) {
+    console.warn('Native zero-prompt screen capture unavailable, falling back to browser picker:', err);
+    return null;
+  }
+}
+
+// Helper to acquire monitor screen stream safely without host cursor (Native zero-prompt on Windows, fallback to displayMedia)
 export async function acquireHostScreenStream(): Promise<MediaStream | null> {
   let stream = get(hostScreenStream);
   if (stream && stream.getVideoTracks().length > 0 && stream.getVideoTracks()[0].readyState === 'live') {
@@ -218,6 +271,20 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
     return stream;
   }
 
+  // 1. Try Native Zero-Prompt Windows Capture first (100% unattended after reboot, no popup!)
+  const nativeStream = await startNativeCanvasStream();
+  if (nativeStream && nativeStream.getVideoTracks().length > 0) {
+    const track = nativeStream.getVideoTracks()[0];
+    if ('contentHint' in track) {
+      (track as any).contentHint = 'detail';
+    }
+    hostScreenStream.set(nativeStream);
+    isHostSharingScreen.set(true);
+    startBackgroundKeepAlive();
+    return nativeStream;
+  }
+
+  // 2. Fallback to Browser displayMedia (macOS/Linux)
   try {
     stream = await (navigator.mediaDevices as any).getDisplayMedia({
       video: {
@@ -395,6 +462,11 @@ async function proceedHostAcceptRemote(
 
   // Reset any stuck modifier keys from previous session
   raydropApi.releaseRemoteModifiers().catch(() => {});
+
+  // Auto-minimize Host Raydrop window so client sees a clean desktop immediately
+  try {
+    getCurrentWindow().minimize().catch(() => {});
+  } catch (_) {}
 
   // Setup WebRTC Host Peer Connection
   await setupHostPeerConnection(clientDeviceId, sessionId, stream);
@@ -738,9 +810,16 @@ async function handleIncomingOffer(
   };
 
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed' || pc.connectionState === 'closed' || pc.connectionState === 'disconnected') {
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       remoteConnectionStatus.set('disconnected');
       cleanupPeerConnection();
+    } else if (pc.connectionState === 'disconnected') {
+      setTimeout(() => {
+        if (activePeerConnection === pc && pc.connectionState === 'disconnected') {
+          remoteConnectionStatus.set('disconnected');
+          cleanupPeerConnection();
+        }
+      }, 4000);
     }
   };
 
@@ -976,6 +1055,7 @@ export function sendPowerActionToHost(action: 'lock' | 'sleep' | 'restart' | 'sh
 
 export function stopHostScreenCapture() {
   raydropApi.setHostCursorHidden(false).catch(() => {});
+  raydropApi.stopNativeScreenCapture().catch(() => {});
   stopBackgroundKeepAlive();
   const stream = get(hostScreenStream);
   if (stream) {

@@ -173,6 +173,7 @@ pub fn set_target_monitor(monitor_index: Option<i32>) -> Result<(), String> {
         if let Ok(mut guard) = TARGET_MONITOR_BOUNDS.lock() {
             *guard = bounds;
         }
+        crate::remote_capture::set_capture_bounds(bounds);
         Ok(())
     }
     #[cfg(not(target_os = "windows"))]
@@ -202,6 +203,7 @@ pub fn get_screen_size() -> (u32, u32) {
 pub fn simulate_mouse_move(norm_x: f32, norm_y: f32) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        crate::win_service::switch_to_active_input_desktop();
         let active_bounds = TARGET_MONITOR_BOUNDS.lock().ok().and_then(|g| *g);
         let (ox, oy, screen_w, screen_h) = match active_bounds {
             Some((x, y, w, h)) if w > 0 && h > 0 => (x, y, w, h),
@@ -279,6 +281,7 @@ pub fn simulate_mouse_click(
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        crate::win_service::switch_to_active_input_desktop();
         unsafe {
             // Synchronize modifier states with client to prevent phantom stuck keys (e.g. Alt + Click opening file properties)
             if alt == Some(false) {
@@ -472,6 +475,7 @@ fn map_key_to_vk(key: &str, code: &str) -> Option<u8> {
 pub fn simulate_keyboard_key(key: &str, code: &str, action: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        crate::win_service::switch_to_active_input_desktop();
         if let Some(vk) = map_key_to_vk(key, code) {
             unsafe {
                 let scan = (win_user32::MapVirtualKeyA(vk as u32, 0) & 0xFF) as u8;

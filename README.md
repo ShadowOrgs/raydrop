@@ -37,9 +37,12 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 **Your files, voice data, screen streams, and metadata NEVER touch the cloud.**
 
 ### 🌟 What Makes Raydrop Unique?
-- 🖥️ **P2P Remote Desktop with PIN Protection:** Full remote control for PC and mobile with 1080p 60fps streaming, secure PIN authorization, and bidirectional clipboard sync (text & image).
+- 🖥️ **Unattended P2P Remote Desktop (Pre-Login Windows Service):** Full 60fps remote control with Windows `SYSTEM` service for pre-login Lock/PIN screen access, native zero-prompt capture, WASAPI system audio streaming, multi-monitor switching, remote power controls, and auto-minimize on connect.
+- 📱 **Extend to iPad / Tablet via QR Code:** Turn any iPad, iPhone, or Android tablet into a wireless touch-enabled second display via Safari/Chrome—no app installation required.
+- ⚡ **Wake-on-LAN (WoL) & Instant Media Streaming:** Wake offline PCs with UDP Magic Packets and stream actively downloading videos before completion.
 - 🚀 **Parallel P2P Transfer Engine:** Multi-segment streaming with auto-resume (`.raypart`) and BLAKE3 integrity verification.
-- 👥 **Encrypted Group Chat & Admin Roles:** Create multi-user group chats with multi-admin support, admin-only invitations, and flexible broadcast/custom sending controls.
+- 👥 **Encrypted Group Chat & Admin Roles:** Multi-user group chats with syntax-highlighted code blocks, variable-speed voice notes ($1\times$–$2\times$), and live "Last Online" presence.
+- 🎨 **Custom Themes & Collaboration:** Switch between Midnight Slate, OLED True Black, Cyberpunk Neon, and Clean Light themes; use Laser Pointer & Screen Annotation in Remote Desktop and Meetings; and minimize streams into Floating Mini Player (PiP).
 - 📋 **Direct Clipboard Image Paste:** Paste screenshots (Ctrl+V) directly into conversations with image preview cards and caption support.
 - 🔄 **Continuous Real-Time Folder Mirroring:** Automated background folder sync that monitors filesystem changes and mirrors files without manual intervention.
 - 📂 **Remote Folder Browser:** Securely explore authorized folder structures on paired peer devices and pull files on demand.
@@ -53,8 +56,14 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 
 ## ✨ Key Features
 
-### 🖥️ Raydrop P2P Remote Desktop & Control Suite (New in v1.2.26)
-- **High-Resolution 60 FPS Desktop Streaming:** Experience fluid, crystal-clear 1080p/2K desktop streaming powered by WebRTC with hardware acceleration and `maintain-resolution` priority for sharp text and code readability across WAN and LAN.
+### 🖥️ Raydrop P2P Remote Desktop & Control Suite (Updated in v1.2.44)
+- **Pre-Login Windows System Service (`RaydropService`):** Installable in 1 click from Host Settings (`NT AUTHORITY\SYSTEM`), allowing you to connect immediately after a PC reboot, view the Windows Lock/PIN screen (`Winlogon`), and type your Windows login PIN remotely.
+- **Native Zero-Prompt Capture & Auto-Minimize:** Captures the Windows desktop silently without browser permission popups and automatically minimizes the Host Raydrop window when a session connects.
+- **Native Host System Audio Streaming (WASAPI Loopback):** Streams YouTube, music, and system audio from the Host PC directly to the Remote Client.
+- **Extend to iPad / Tablet / Phone via QR Code:** Generates an instant local Wi-Fi QR Code to open a zero-install, touch-enabled wireless second display in Safari or Chrome.
+- **Multi-Monitor Switcher, Remote Power Controls & Drag-and-Drop:** Switch between displays, Lock/Sleep/Restart/Shutdown the host remotely, drag-and-drop files straight onto the remote screen, or pop out into Floating Mini Player (PiP).
+- **Fullscreen Keyboard Lock & Zero Ghost Cursor:** Captures `Alt+Tab`, `Win` key, and `PrintScreen` in fullscreen while keeping the client cursor crisp at 0ms latency.
+- **High-Resolution 60 FPS Desktop Streaming:** Powered by WebRTC with `maintain-resolution` priority for sharp text and code readability across WAN and LAN.
 - **Mandatory PIN Security & Access Control:** Remote connections are gated by a customizable 6-digit security PIN. Only authorized peers who supply the correct PIN can establish a control session, preventing unauthorized remote access on local networks.
 - **Bidirectional Clipboard Sync (Text & Images):** Effortlessly copy and paste between local and remote machines. Fully supports plain text, code snippets, and raw image screenshots in both directions with single-click syncing.
 - **Low-Latency Input Injection:** Native OS mouse movements, left/right/middle clicks, smooth wheel scrolling, and keyboard keystrokes are transmitted via low-overhead WebRTC DataChannels (<20ms local latency).

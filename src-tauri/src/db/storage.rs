@@ -149,6 +149,14 @@ pub fn resolve_app_data_dir() -> Result<PathBuf, String> {
 
     #[cfg(not(target_os = "android"))]
     {
+        if let Ok(override_dir) = std::env::var("RAYDROP_DATA_DIR") {
+            let trimmed = override_dir.trim();
+            if !trimmed.is_empty() {
+                let p = PathBuf::from(trimmed);
+                let _ = std::fs::create_dir_all(&p);
+                return Ok(p);
+            }
+        }
         if let Some(proj_dirs) = ProjectDirs::from("com", "raydrop", "Raydrop") {
             let data_dir = proj_dirs.data_dir().to_path_buf();
             std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;

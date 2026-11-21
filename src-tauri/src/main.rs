@@ -2,8 +2,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+
     #[cfg(target_os = "windows")]
     {
+        if args.iter().any(|a| a == "--service") {
+            raydrop_lib::win_service::run_windows_service();
+            return;
+        }
+
+        if args.iter().any(|a| a == "--system-agent") {
+            std::env::set_var("RAYDROP_DATA_DIR", r"C:\ProgramData\Raydrop\Data");
+            std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", r"C:\ProgramData\Raydrop\WebView2");
+        }
+
         let current_args = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").unwrap_or_default();
         let capture_switches = "--enable-usermedia-screen-capturing --auto-select-desktop-capture-source=\"Entire screen\" --use-fake-ui-for-media-stream --autoplay-policy=no-user-gesture-required";
         if !current_args.contains("auto-select-desktop-capture-source") {

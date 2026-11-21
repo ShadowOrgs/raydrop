@@ -3491,3 +3491,77 @@ pub async fn open_system_display_settings() -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn start_native_screen_capture(app: AppHandle) -> Result<(), String> {
+    crate::remote_capture::start_native_screen_capture(app)
+}
+
+#[tauri::command]
+pub async fn stop_native_screen_capture() -> Result<(), String> {
+    crate::remote_capture::stop_native_screen_capture();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn check_unattended_boot_service() -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let out = std::process::Command::new("schtasks")
+            .args(["/Query", "/TN", "RaydropUnattendedHost"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+        return Ok(out.map(|o| o.status.success()).unwrap_or(false));
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+pub async fn install_unattended_boot_service() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let exe_str = exe.to_string_lossy().replace('\'', "''");
+        let task_cmd = format!(
+            "/Create /TN \"RaydropUnattendedHost\" /TR \"\\\"{}\\\" --minimized\" /SC ONLOGON /RL HIGHEST /F",
+            exe_str
+        );
+        let ps_cmd = format!(
+            "Start-Process schtasks -ArgumentList '{}' -Verb RunAs -Wait",
+            task_cmd.replace('\'', "''")
+        );
+        let status = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_cmd])
+            .status()
+            .map_err(|e| format!("Failed to elevate task scheduler: {e}"))?;
+        if status.success() {
+            Ok("Elevated Boot Service registered! Raydrop will auto-start with Admin/UIPI remote control privileges on logon.".to_string())
+        } else {
+            Err("Administrator permission was cancelled or failed.".to_string())
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("Unattended boot service registration is currently supported on Windows.".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn check_windows_service_status() -> Result<String, String> {
+    Ok(crate::win_service::check_service_status())
+}
+
+#[tauri::command]
+pub async fn install_windows_service() -> Result<String, String> {
+    crate::win_service::install_service_elevated()
+}
+
+#[tauri::command]
+pub async fn uninstall_windows_service() -> Result<String, String> {
+    crate::win_service::uninstall_service_elevated()
+}
+

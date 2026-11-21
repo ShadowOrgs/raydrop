@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.43"
+    tag = clean_args[0] if clean_args else "v1.2.44"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Zero Minimize/Maximize Freeze & Auto Cursor Restoration"
+    title = f"Raydrop {tag}: Pre-Login Windows Service, Native Zero-Prompt Capture & Auto-Minimize"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Zero Minimize/Maximize Freeze & Auto Cursor Restoration</h2>
+<h2 align="center">Raydrop {tag}: Pre-Login Windows Service, Native Zero-Prompt Capture & Auto-Minimize</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,12 +126,16 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🧊 Zero Freeze on Minimize / Maximize
-- **WebView2 Occlusion Bypass:** Configured Chromium/WebView2 launch flags (`--disable-background-timer-throttling`, `--disable-backgrounding-occluded-windows`, `--disable-renderer-backgrounding`, `--disable-features=CalculateNativeWinOcclusion`) so WebRTC remote desktop video & control never pause when Raydrop is minimized or maximized.
-- **Force-Resume Playback:** Client video stream automatically re-triggers playback on `resize`, `focus`, and `visibilitychange`.
+#### 🛡️ Windows System Service (Pre-Login & Lock Screen PIN Access)
+- **Boot-Time `RaydropService`:** Installable in 1 click from **Remote Desktop → Host Settings**. Runs as `NT AUTHORITY\\SYSTEM` in Session 0 at Windows boot and spawns an elevated session worker (`--system-agent`) into the active console session.
+- **`Winlogon` Secure Desktop Capture & Input:** Automatically switches thread desktop (`OpenInputDesktop` / `SetThreadDesktop`) so you can view the Windows Lock/PIN screen right after reboot and type your Windows login PIN remotely.
 
-#### 🎯 Guaranteed Cursor Restoration on Disconnect / Freeze
-- **Host Watchdog & Disconnect Hooks:** System cursor and modifier keys are automatically restored (`SPI_SETCURSORS`) on WebRTC `disconnected`/`closed`/`failed`, data channel close, app exit (`RunEvent::Exit`), or if client ping stops for >8 seconds.
-- **Client Cursor Safety:** Automatically resets `hideLocalCursor` on client disconnect so the local pointer never disappears.
+#### 📸 Native Zero-Prompt Desktop Capture & Auto-Minimize
+- **No Browser Permission Popups:** Windows GDI (`StretchBlt` / `GetDIBits`) native screen capture eliminates the browser `getDisplayMedia()` picker dialog on Host startup, enabling 100% unattended remote access after reboot.
+- **Auto-Minimize on Connect:** Automatically minimizes the Host Raydrop window as soon as a remote session connects for a clean desktop view.
+- **Unattended Boot & Admin Control:** Optional elevated Task Scheduler registration (`ONLOGON` with `/RL HIGHEST`) for full UAC & Task Manager control.
+
+#### 🌐 WebRTC Connection Stability
+- **Transient Disconnect Grace Window:** Prevents WebRTC connections from dropping prematurely on brief ICE `'disconnected'` flickers during initial negotiation.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

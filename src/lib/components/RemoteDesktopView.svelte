@@ -129,6 +129,10 @@
   let secondScreenStream: MediaStream | null = null;
   let secondScreenMonitors: { index: number; name: string; width: number; height: number; is_primary: boolean }[] = [];
   let selectedSecondScreenMonitorIdx = 0;
+  let isBootServiceInstalled = false;
+  let isInstallingBootService = false;
+  let windowsServiceStatus = "not_installed";
+  let isManagingWinService = false;
   let pendingPowerAction: "lock" | "sleep" | "restart" | "shutdown" | null = null;
   let lastMouseMoveTime = 0;
 
@@ -331,6 +335,14 @@
       startHostScreenCapture().catch(() => {});
     }
 
+    raydropApi.checkUnattendedBootService().then((res) => {
+      isBootServiceInstalled = res;
+    }).catch(() => {});
+
+    raydropApi.checkWindowsServiceStatus().then((st) => {
+      windowsServiceStatus = st;
+    }).catch(() => {});
+
     document.addEventListener("fullscreenchange", handleFullscreenChange);
   });
 
@@ -425,6 +437,45 @@
       stopHostScreenCapture();
     } else {
       await startHostScreenCapture();
+    }
+  }
+
+  async function handleInstallBootService() {
+    try {
+      isInstallingBootService = true;
+      const msg = await raydropApi.installUnattendedBootService();
+      isBootServiceInstalled = await raydropApi.checkUnattendedBootService();
+      alert(msg);
+    } catch (err: any) {
+      alert(`Boot service setup failed: ${err?.message || err}`);
+    } finally {
+      isInstallingBootService = false;
+    }
+  }
+
+  async function handleInstallWindowsService() {
+    try {
+      isManagingWinService = true;
+      const msg = await raydropApi.installWindowsService();
+      windowsServiceStatus = await raydropApi.checkWindowsServiceStatus();
+      alert(msg);
+    } catch (err: any) {
+      alert(`Windows Service setup failed: ${err?.message || err}`);
+    } finally {
+      isManagingWinService = false;
+    }
+  }
+
+  async function handleUninstallWindowsService() {
+    try {
+      isManagingWinService = true;
+      const msg = await raydropApi.uninstallWindowsService();
+      windowsServiceStatus = await raydropApi.checkWindowsServiceStatus();
+      alert(msg);
+    } catch (err: any) {
+      alert(`Windows Service uninstall failed: ${err?.message || err}`);
+    } finally {
+      isManagingWinService = false;
     }
   }
 
@@ -1736,6 +1787,92 @@
                 {/if}
               </button>
             </div>
+          </div>
+
+          <!-- Windows SYSTEM Service (Pre-Login / Lock Screen Access) -->
+          <div
+            class="p-3 rounded-xl bg-slate-950 border border-cyan-500/30 space-y-2"
+          >
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <Shield class="w-3.5 h-3.5 text-cyan-400" />
+                <span>Windows System Service (Pre-Login PIN)</span>
+              </span>
+              <span
+                class="text-[10px] px-2 py-0.5 rounded-full font-semibold {windowsServiceStatus === 'running'
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                  : windowsServiceStatus === 'stopped'
+                  ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                  : 'bg-slate-800 text-slate-400 border border-slate-700'}"
+              >
+                {windowsServiceStatus === 'running'
+                  ? "Running (Boot Ready)"
+                  : windowsServiceStatus === 'stopped'
+                  ? "Stopped"
+                  : "Not Installed"}
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              Runs as a Windows <code class="text-cyan-300">SYSTEM</code> service on boot, enabling remote access and PIN entry directly on the Windows Lock/Login screen before signing in.
+            </p>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isManagingWinService}
+                on:click={handleInstallWindowsService}
+                class="flex-1 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 disabled:opacity-50 text-cyan-300 border border-cyan-500/40 text-xs font-semibold transition cursor-pointer"
+              >
+                {isManagingWinService
+                  ? "Working..."
+                  : windowsServiceStatus === 'running'
+                  ? "Sync Config & Restart Service"
+                  : "Install & Start Windows Service"}
+              </button>
+              {#if windowsServiceStatus !== 'not_installed' && windowsServiceStatus !== 'unsupported'}
+                <button
+                  type="button"
+                  disabled={isManagingWinService}
+                  on:click={handleUninstallWindowsService}
+                  class="px-3 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 disabled:opacity-50 text-rose-300 border border-rose-500/30 text-xs font-semibold transition cursor-pointer"
+                >
+                  Uninstall
+                </button>
+              {/if}
+            </div>
+          </div>
+
+          <!-- Unattended Boot & Elevated Admin Service -->
+          <div
+            class="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2"
+          >
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <Zap class="w-3.5 h-3.5 text-amber-400" />
+                <span>Unattended Boot & Admin Control</span>
+              </span>
+              <span
+                class="text-[10px] px-2 py-0.5 rounded-full font-semibold {isBootServiceInstalled
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                  : 'bg-slate-800 text-slate-400 border border-slate-700'}"
+              >
+                {isBootServiceInstalled ? "Installed (Active)" : "Standard User"}
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              Registers an elevated Windows boot/logon task so Raydrop starts automatically after a PC restart with zero screen-share prompts and full UAC/Admin control.
+            </p>
+            <button
+              type="button"
+              disabled={isInstallingBootService}
+              on:click={handleInstallBootService}
+              class="w-full py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 disabled:opacity-50 text-indigo-300 border border-indigo-500/40 text-xs font-semibold transition cursor-pointer"
+            >
+              {isInstallingBootService
+                ? "Requesting Admin Elevation..."
+                : isBootServiceInstalled
+                ? "Re-verify / Update Unattended Boot Task"
+                : "Enable Unattended Boot & Admin Service"}
+            </button>
           </div>
 
           <!-- Security Info Banner -->
