@@ -132,7 +132,6 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
     use image::ExtendedColorType;
 
     const SRCCOPY: u32 = 0x00CC0020;
-    const CAPTUREBLT: u32 = 0x40000000;
     const HALFTONE: i32 = 4;
 
     let mut bgra: Vec<u8> = Vec::new();
@@ -202,7 +201,7 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
                         src_y,
                         src_w,
                         src_h,
-                        SRCCOPY | CAPTUREBLT,
+                        SRCCOPY,
                     );
 
                     if ok != 0 {

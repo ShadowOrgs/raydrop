@@ -269,7 +269,9 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
   }
 }
 
-// Helper to acquire monitor screen stream safely without host cursor (Native zero-prompt on Windows, fallback to displayMedia)
+// Helper to acquire monitor screen stream safely without host cursor:
+// 1. Primary: GPU-accelerated zero-prompt getDisplayMedia (DXGI/WGC, ~2% CPU, 60fps, no cursor blink/UI freeze)
+// 2. Fallback: Native Windows GDI Capture (for pre-login Winlogon/Lock screen when getDisplayMedia is unavailable)
 export async function acquireHostScreenStream(): Promise<MediaStream | null> {
   let stream = get(hostScreenStream);
   if (stream && stream.getVideoTracks().length > 0 && stream.getVideoTracks()[0].readyState === 'live') {
@@ -277,20 +279,7 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
     return stream;
   }
 
-  // 1. Try Native Zero-Prompt Windows Capture first (100% unattended after reboot, no popup!)
-  const nativeStream = await startNativeCanvasStream();
-  if (nativeStream && nativeStream.getVideoTracks().length > 0) {
-    const track = nativeStream.getVideoTracks()[0];
-    if ('contentHint' in track) {
-      (track as any).contentHint = 'detail';
-    }
-    hostScreenStream.set(nativeStream);
-    isHostSharingScreen.set(true);
-    startBackgroundKeepAlive();
-    return nativeStream;
-  }
-
-  // 2. Fallback to Browser displayMedia (macOS/Linux)
+  // 1. Try GPU-accelerated Browser displayMedia first (zero-prompt on Windows via WebView2 flags)
   try {
     stream = await (navigator.mediaDevices as any).getDisplayMedia({
       video: {
@@ -307,7 +296,7 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
       monitorTypeSurfaces: 'include',
     });
   } catch (err) {
-    console.warn('Standard monitor displayMedia with audio failed, trying fallback:', err);
+    console.warn('Standard monitor displayMedia with audio failed, trying video-only fallback:', err);
     try {
       stream = await (navigator.mediaDevices as any).getDisplayMedia({
         video: {
@@ -318,12 +307,24 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
         monitorTypeSurfaces: 'include',
       });
     } catch (e2) {
-      console.warn('Fallback displayMedia failed:', e2);
-      return null;
+      console.warn('displayMedia unavailable (e.g. Winlogon/pre-login desktop), switching to Native GDI fallback:', e2);
+      stream = null;
     }
   }
 
+  // 2. Fallback to Native Windows GDI Capture (Pre-login Winlogon / Lock screen)
   if (!stream || stream.getVideoTracks().length === 0) {
+    const nativeStream = await startNativeCanvasStream();
+    if (nativeStream && nativeStream.getVideoTracks().length > 0) {
+      const track = nativeStream.getVideoTracks()[0];
+      if ('contentHint' in track) {
+        (track as any).contentHint = 'detail';
+      }
+      hostScreenStream.set(nativeStream);
+      isHostSharingScreen.set(true);
+      startBackgroundKeepAlive();
+      return nativeStream;
+    }
     return null;
   }
 
