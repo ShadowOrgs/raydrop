@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.32"
+    tag = clean_args[0] if clean_args else "v1.2.33"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Responsive Header, Reliable Keyboard Typing & Zero Ghost Cursor"
+    title = f"Raydrop {tag}: Ultra-Clean Icon Navigation & Guaranteed Profile Visibility"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Responsive Header, Reliable Keyboard Typing & Zero Ghost Cursor</h2>
+<h2 align="center">Raydrop {tag}: Ultra-Clean Icon Navigation & Guaranteed Profile Visibility</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,10 +126,10 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🛠️ Fix Remote Desktop Blank Black Screen & Premature Disconnect
-- **Removed Disruptive WebView2 CLI Switches:** Reverted experimental auto-select command line switches that conflicted with localized Windows displays and caused empty frame capture.
-- **Reliable Fallback Screen Capture:** Screen stream acquisition now utilizes robust, standard displayMedia constraints with fallback guarantees.
-- **Action-Based Video Element Stream Binding:** Video playback on the remote viewer uses the battle-tested `attachStream` action to guarantee immediate autoplay with `muted` enforcement, preventing frozen black frames.
-- **Resilient WebRTC Connection Handling:** Prevented premature session teardown on temporary ICE state renegotiations.
+#### 🎨 Ultra-Clean Icon Navigation & Compact Header Layout
+- **Icon-Only Center Navigation Tabs:** Converted bulky text navigation buttons into sleek, space-efficient icon buttons (`Zap`, `Chat`, `Meeting`, `Remote`, `Radar`, `Devices`, `Contacts`) with informative hover tooltips (`title="..."`) and floating badges.
+- **Zero Multi-Line Text Wrapping:** Completely eliminated unsightly 2-line wraps (such as "LAN Radar" and "My Devices" breaking lines on compact desktop displays).
+- **Guaranteed Profile & Settings Visibility:** Shrunk header width footprint by >500px, ensuring the profile avatar, quick identity indicator, and settings gear button are 100% visible and never pushed off-screen.
+- **Streamlined Right Controls:** Replaced wide buttons with polished icon pills for WAN connection status, discovery toggles, and authentication state.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

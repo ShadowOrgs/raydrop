@@ -125,7 +125,7 @@
           {#if $updateChecking}
             <RefreshCw class="w-2.5 h-2.5 animate-spin text-cyan-400" />
           {/if}
-          <span>v1.2.32</span>
+          <span>v1.2.33</span>
         </button>
 
         {#if $updateInfo?.has_update}
@@ -171,161 +171,158 @@
     </div>
   </div>
 
-  <!-- Center Segmented Navigation Tabs (Desktop only) -->
+  <!-- Center Segmented Navigation Tabs (Icon-only, compact & no wrapping) -->
   <nav
-    class="hidden md:flex items-center gap-0.5 lg:gap-1 bg-slate-950/80 p-1 rounded-2xl border border-slate-800/80 shadow-inner"
+    class="hidden md:flex items-center gap-1 bg-slate-950/80 p-1 rounded-2xl border border-slate-800/80 shadow-inner"
   >
-    <!-- 1. Transfers & Streams (Default Active Full Tab) -->
+    <!-- 1. Transfers & Torrents -->
     <button
       type="button"
       on:click={() => activeMainTab.set("transfers")}
-      class="flex items-center gap-1.5 px-2.5 lg:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all {$activeMainTab ===
+      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
       'transfers'
         ? 'bg-gradient-to-r from-cyan-500/25 to-indigo-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
+      title="Transfers & Torrents"
     >
       <Zap
-        class="w-3.5 h-3.5 {$activeMainTab === 'transfers'
+        class="w-4 h-4 {$activeMainTab === 'transfers'
           ? 'text-cyan-400'
           : 'text-slate-400'}"
       />
-      <span>Transfers</span>
       {#if $activeTransfers.length > 0}
         <span
-          class="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-400 text-slate-950 font-bold font-mono animate-pulse"
+          class="absolute -top-1 -right-1 text-[9px] min-w-[16px] h-4 px-1 rounded-full bg-cyan-400 text-slate-950 font-bold font-mono flex items-center justify-center animate-pulse shadow-sm"
         >
           {$activeTransfers.length}
         </span>
       {/if}
     </button>
 
-    <!-- 2. P2P Chat Tab -->
+    <!-- 2. P2P Chat -->
     <button
       type="button"
       on:click={() => activeMainTab.set("chat")}
-      class="flex items-center gap-1.5 px-2.5 lg:px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
       'chat'
         ? 'bg-gradient-to-r from-cyan-500/25 to-indigo-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
+      title="P2P Encrypted Chat"
     >
       <MessageSquare
-        class="w-3.5 h-3.5 {$activeMainTab === 'chat'
+        class="w-4 h-4 {$activeMainTab === 'chat'
           ? 'text-cyan-400'
           : 'text-slate-400'}"
       />
-      <span>Chat</span>
       {#if $totalUnreadCount > 0}
         <span
-          class="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-400 text-slate-950 font-bold font-mono animate-pulse"
+          class="absolute -top-1 -right-1 text-[9px] min-w-[16px] h-4 px-1 rounded-full bg-cyan-400 text-slate-950 font-bold font-mono flex items-center justify-center animate-pulse shadow-sm"
         >
           {$totalUnreadCount}
         </span>
       {/if}
     </button>
 
-    <!-- 3. Online Meeting & Voice Room Tab -->
+    <!-- 3. Online Meeting & Voice Room -->
     <button
       type="button"
       on:click={() => activeMainTab.set("meeting")}
-      class="flex items-center gap-1.5 px-2.5 lg:px-3 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
       'meeting'
         ? 'bg-gradient-to-r from-indigo-500/25 to-sky-500/25 text-indigo-300 border border-indigo-500/40 shadow-sm shadow-indigo-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
+      title="Online Meeting & Voice Room"
     >
       <Video
-        class="w-3.5 h-3.5 {$activeMainTab === 'meeting'
+        class="w-4 h-4 {$activeMainTab === 'meeting'
           ? 'text-indigo-400'
           : 'text-slate-400'}"
       />
-      <span>Meeting</span>
     </button>
 
-    <!-- 4. Remote Desktop Tab -->
+    <!-- 4. Remote Desktop -->
     <button
       type="button"
       on:click={() => activeMainTab.set("remote")}
-      class="flex items-center gap-1.5 px-2.5 lg:px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
       'remote'
         ? 'bg-gradient-to-r from-cyan-500/25 to-blue-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
       title="Raydrop P2P Remote Desktop"
     >
       <Monitor
-        class="w-3.5 h-3.5 {$activeMainTab === 'remote'
+        class="w-4 h-4 {$activeMainTab === 'remote'
           ? 'text-cyan-400'
           : 'text-slate-400'}"
       />
-      <span>Remote</span>
     </button>
 
-    <!-- 5. LAN Radar (Inactive Tab) -->
+    <!-- 5. LAN Radar -->
     <button
       type="button"
       on:click={() => activeMainTab.set("lan")}
-      class="flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
       'lan'
         ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
+      title="LAN Radar Discovery"
     >
       <Wifi
-        class="w-3.5 h-3.5 {$activeMainTab === 'lan'
+        class="w-4 h-4 {$activeMainTab === 'lan'
           ? 'text-cyan-400'
           : 'text-slate-400'}"
       />
-      <span class="hidden xl:inline">LAN Radar</span>
-      <span class="xl:hidden">LAN</span>
       {#if $lanContacts.length > 0}
         <span
-          class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-cyan-300 font-mono"
+          class="absolute -top-1 -right-1 text-[9px] min-w-[16px] h-4 px-1 rounded-full bg-slate-800 text-cyan-300 border border-slate-700 font-mono flex items-center justify-center"
         >
           {$lanContacts.length}
         </span>
       {/if}
     </button>
 
-    <!-- 6. My Devices (Inactive Tab) -->
+    <!-- 6. My Devices -->
     <button
       type="button"
       on:click={() => activeMainTab.set("devices")}
-      class="flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
       'devices'
         ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
+      title="My Cloud Devices"
     >
       <Laptop
-        class="w-3.5 h-3.5 {$activeMainTab === 'devices'
+        class="w-4 h-4 {$activeMainTab === 'devices'
           ? 'text-cyan-400'
           : 'text-slate-400'}"
       />
-      <span class="hidden xl:inline">My Devices</span>
-      <span class="xl:hidden">Devices</span>
       {#if $cloudMyDevices.length > 0}
         <span
-          class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono"
+          class="absolute -top-1 -right-1 text-[9px] min-w-[16px] h-4 px-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono flex items-center justify-center"
         >
           {$cloudMyDevices.length}
         </span>
       {/if}
     </button>
 
-    <!-- 7. Contacts (Inactive Tab) -->
+    <!-- 7. Contacts -->
     <button
       type="button"
       on:click={() => activeMainTab.set("contacts")}
-      class="flex items-center gap-1.5 px-2 lg:px-3 py-1.5 rounded-xl text-xs font-semibold transition-all {$activeMainTab ===
+      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
       'contacts'
         ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
+      title="Contacts List"
     >
       <Users
-        class="w-3.5 h-3.5 {$activeMainTab === 'contacts'
+        class="w-4 h-4 {$activeMainTab === 'contacts'
           ? 'text-cyan-400'
           : 'text-slate-400'}"
       />
-      <span>Contacts</span>
       {#if $cloudContacts.length > 0}
         <span
-          class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono"
+          class="absolute -top-1 -right-1 text-[9px] min-w-[16px] h-4 px-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono flex items-center justify-center"
         >
           {$cloudContacts.length}
         </span>
@@ -333,44 +330,40 @@
     </button>
   </nav>
 
-  <!-- Status Badges & Quick Action Controls (Right) -->
+  <!-- Status Badges & Quick Action Controls (Right - Compact & Profile Always Visible) -->
   <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-    <!-- WAN STUN Status (Desktop only) -->
+    <!-- WAN STUN Status Icon Pill -->
     <div
-      class="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs {$networkInfo.signalingConnected
+      class="flex items-center justify-center p-2 rounded-xl border text-xs {$networkInfo.signalingConnected
         ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
         : 'bg-slate-800/70 border-slate-700/60 text-slate-400'}"
-      title={$networkInfo.wanReflexiveAddr
-        ? `Public NAT Endpoint: ${$networkInfo.wanReflexiveAddr}`
-        : "WAN Signaling & STUN Server"}
+      title={$networkInfo.signalingConnected
+        ? `WAN Online (NAT: ${$networkInfo.wanReflexiveAddr || 'Connected'})`
+        : "WAN Signaling Standby"}
     >
       <Globe
-        class="w-3.5 h-3.5 {$networkInfo.signalingConnected
+        class="w-4 h-4 {$networkInfo.signalingConnected
           ? 'text-emerald-400'
           : 'text-slate-500'}"
       />
-      <span class="hidden xl:inline"
-        >{$networkInfo.signalingConnected ? "Online" : "Standby"}</span
-      >
     </div>
 
-    <!-- Discoverability Toggle (Compact on mobile) -->
+    <!-- Discoverability Toggle Icon Pill -->
     <button
       type="button"
       on:click={toggleDiscoverable}
-      class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all {$appSettings.discoverable
+      class="flex items-center justify-center p-2 rounded-xl border text-xs transition-all cursor-pointer {$appSettings.discoverable
         ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
         : 'bg-slate-800/60 border-slate-700 text-slate-400'}"
-      title="Toggle whether nearby LAN peers can see this device"
+      title={$appSettings.discoverable
+        ? "Device Discovery: Visible to nearby peers"
+        : "Device Discovery: Hidden"}
     >
       <span
-        class="w-2 h-2 rounded-full {$appSettings.discoverable
+        class="w-2.5 h-2.5 rounded-full {$appSettings.discoverable
           ? 'bg-cyan-400 animate-pulse'
           : 'bg-slate-500'}"
       ></span>
-      <span class="hidden xl:inline"
-        >{$appSettings.discoverable ? "Visible" : "Hidden"}</span
-      >
     </button>
 
     <!-- Account Sign In / Out -->
@@ -378,20 +371,19 @@
       <button
         type="button"
         on:click={handleLogout}
-        class="p-1.5 sm:p-2 rounded-xl bg-slate-800/70 hover:bg-rose-500/20 border border-slate-700/70 hover:border-rose-500/30 text-slate-300 hover:text-rose-300 transition-colors"
+        class="p-2 rounded-xl bg-slate-800/70 hover:bg-rose-500/20 border border-slate-700/70 hover:border-rose-500/30 text-slate-300 hover:text-rose-300 transition-colors cursor-pointer"
         title="Sign Out ({$appSettings.user_email})"
       >
-        <LogOut class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+        <LogOut class="w-4 h-4" />
       </button>
     {:else}
       <button
         type="button"
         on:click={() => authModalOpen.set(true)}
-        class="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold text-xs transition-colors shadow-sm shadow-cyan-500/20"
+        class="p-2 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold text-xs transition-colors shadow-sm shadow-cyan-500/20 cursor-pointer"
         title="Sign In to Sync Devices"
       >
-        <LogIn class="w-3.5 h-3.5" />
-        <span class="hidden sm:inline">Sign In</span>
+        <LogIn class="w-4 h-4" />
       </button>
     {/if}
 
@@ -412,19 +404,18 @@
           console.warn("File picker canceled or error:", e);
         }
       }}
-      class="flex items-center gap-1 sm:gap-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-cyan-500/20 transition-all hover:-translate-y-0.5 active:translate-y-0"
+      class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-cyan-500/20 transition-all hover:-translate-y-0.5 active:translate-y-0 cursor-pointer whitespace-nowrap"
       title="Select multiple files to send"
     >
       <Plus class="w-3.5 h-3.5 stroke-[2.5]" />
-      <span class="hidden xl:inline">Send Files</span>
-      <span class="hidden sm:inline xl:hidden">Send</span>
+      <span>Send</span>
     </button>
 
-    <!-- User Avatar Upload / Profile Button -->
+    <!-- User Avatar Upload / Profile Button (Guaranteed Visible) -->
     <button
       type="button"
       on:click={handleUploadAvatar}
-      class="relative group w-7 h-7 sm:w-8 sm:h-8 rounded-xl overflow-hidden border border-slate-700/80 hover:border-cyan-400 bg-slate-800 flex items-center justify-center shrink-0 transition cursor-pointer shadow-sm"
+      class="relative group w-8 h-8 rounded-xl overflow-hidden border border-slate-700/80 hover:border-cyan-400 bg-slate-800 flex items-center justify-center shrink-0 transition cursor-pointer shadow-sm"
       title="Click to set or change your profile avatar"
     >
       {#if $myAvatar}
@@ -445,14 +436,14 @@
       </div>
     </button>
 
-    <!-- Settings Trigger Button -->
+    <!-- Settings Trigger Button (Guaranteed Visible) -->
     <button
       type="button"
       on:click={() => settingsModalOpen.set(true)}
-      class="p-1.5 sm:p-2 rounded-xl bg-slate-800/70 hover:bg-slate-700 border border-slate-700/70 text-slate-300 hover:text-white transition-colors"
+      class="p-2 rounded-xl bg-slate-800/70 hover:bg-slate-700 border border-slate-700/70 text-slate-300 hover:text-white transition-colors shrink-0 cursor-pointer"
       title="Open Raydrop Settings"
     >
-      <Settings class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+      <Settings class="w-4 h-4" />
     </button>
   </div>
 </header>
