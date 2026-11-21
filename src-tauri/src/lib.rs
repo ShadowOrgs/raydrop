@@ -524,7 +524,13 @@ pub fn run() {
             commands::push_second_screen_frame,
             commands::open_system_display_settings,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Raydrop Tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building Raydrop Tauri application")
+        .run(|_app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                crate::remote_input::set_host_cursor_hidden(false);
+                crate::remote_audio::stop_host_audio_loopback();
+            }
+        });
 }
 

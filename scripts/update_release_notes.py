@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.42"
+    tag = clean_args[0] if clean_args else "v1.2.43"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Extend Display Picker, Meeting App/Window Share & Scrollable Modals"
+    title = f"Raydrop {tag}: Zero Minimize/Maximize Freeze & Auto Cursor Restoration"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Extend Display Picker, Meeting App/Window Share & Scrollable Modals</h2>
+<h2 align="center">Raydrop {tag}: Zero Minimize/Maximize Freeze & Auto Cursor Restoration</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,14 +126,12 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 📱 True Extend to iPad / Tablet Setup
-- **Independent Screen or App Window Picker:** Extend to iPad/Tablet now uses an independent surface picker allowing you to choose either a secondary extended monitor (`Display 2`) or any specific application window without forcing primary monitor mirroring.
-- **Display Detection & Touch Mapping:** Automatically detects multiple Windows monitors, targets iPad touch input to the secondary display, and provides 1-click access to Windows Display Settings and Virtual Display Driver installation.
+#### 🧊 Zero Freeze on Minimize / Maximize
+- **WebView2 Occlusion Bypass:** Configured Chromium/WebView2 launch flags (`--disable-background-timer-throttling`, `--disable-backgrounding-occluded-windows`, `--disable-renderer-backgrounding`, `--disable-features=CalculateNativeWinOcclusion`) so WebRTC remote desktop video & control never pause when Raydrop is minimized or maximized.
+- **Force-Resume Playback:** Client video stream automatically re-triggers playback on `resize`, `focus`, and `visibilitychange`.
 
-#### 🤝 Meeting Screen Share Picker
-- **Pick App Window or Monitor:** Meeting screen sharing now uses full surface switching (`surfaceSwitching: 'include'`, `monitorTypeSurfaces: 'include'`) plus a **Switch** button in the meeting toolbar to change between application windows and monitors mid-call.
-
-#### 🪟 Scrollable Popup Modals
-- **Full Vertical Scroll Support:** Added `max-h-[90vh] overflow-y-auto` across all Remote Desktop modals (Extend to iPad, Host Settings, Connect PIN, Manual Connect, Change PIN, Power Confirmation, and Auth Request) so no content ever overflows off smaller screens.
+#### 🎯 Guaranteed Cursor Restoration on Disconnect / Freeze
+- **Host Watchdog & Disconnect Hooks:** System cursor and modifier keys are automatically restored (`SPI_SETCURSORS`) on WebRTC `disconnected`/`closed`/`failed`, data channel close, app exit (`RunEvent::Exit`), or if client ping stops for >8 seconds.
+- **Client Cursor Safety:** Automatically resets `hideLocalCursor` on client disconnect so the local pointer never disappears.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

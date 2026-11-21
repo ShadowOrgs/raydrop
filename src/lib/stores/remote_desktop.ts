@@ -495,8 +495,12 @@ async function setupHostPeerConnection(
   };
 
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed') {
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       disconnectRemoteSession();
+    } else if (pc.connectionState === 'disconnected') {
+      // Restore host cursor immediately on connection drop so host isn't stuck with hidden cursor
+      raydropApi.setHostCursorHidden(false).catch(() => {});
+      raydropApi.releaseRemoteModifiers().catch(() => {});
     }
   };
 
@@ -514,8 +518,22 @@ async function setupHostPeerConnection(
   });
 }
 
+let hostWatchdogInterval: any = null;
+let lastClientPingAt = 0;
+
 function setupHostDataChannel(dc: RTCDataChannel) {
   dc.onopen = async () => {
+    lastClientPingAt = Date.now();
+    if (hostWatchdogInterval) clearInterval(hostWatchdogInterval);
+    hostWatchdogInterval = setInterval(() => {
+      const sess = get(activeRemoteSession);
+      if (sess?.isHost && Date.now() - lastClientPingAt > 8000) {
+        // Client stopped pinging (frozen/disconnected) -> restore cursor immediately
+        raydropApi.setHostCursorHidden(false).catch(() => {});
+        raydropApi.releaseRemoteModifiers().catch(() => {});
+      }
+    }, 3000);
+
     try {
       const monitors = await raydropApi.getHostMonitors();
       if (dc.readyState === 'open') {
@@ -528,7 +546,17 @@ function setupHostDataChannel(dc: RTCDataChannel) {
     });
   };
 
+  dc.onclose = () => {
+    if (hostWatchdogInterval) {
+      clearInterval(hostWatchdogInterval);
+      hostWatchdogInterval = null;
+    }
+    raydropApi.setHostCursorHidden(false).catch(() => {});
+    raydropApi.releaseRemoteModifiers().catch(() => {});
+  };
+
   dc.onmessage = async (event) => {
+    lastClientPingAt = Date.now();
     try {
       const data = JSON.parse(event.data);
       if (!data || !data.t) return;
@@ -710,8 +738,9 @@ async function handleIncomingOffer(
   };
 
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed') {
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed' || pc.connectionState === 'disconnected') {
       remoteConnectionStatus.set('disconnected');
+      cleanupPeerConnection();
     }
   };
 
@@ -958,7 +987,13 @@ export function stopHostScreenCapture() {
 
 function cleanupPeerConnection() {
   clearAuthTimer();
+  raydropApi.setHostCursorHidden(false).catch(() => {});
+  raydropApi.releaseRemoteModifiers().catch(() => {});
   raydropApi.stopHostAudioLoopback().catch(() => {});
+  if (hostWatchdogInterval) {
+    clearInterval(hostWatchdogInterval);
+    hostWatchdogInterval = null;
+  }
   if (clientAudioCtx) {
     try {
       clientAudioCtx.close();

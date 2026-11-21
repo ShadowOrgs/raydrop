@@ -144,6 +144,10 @@
     isConnectPinModalOpen = false;
   }
 
+  $: if (!isClientConnected && hideLocalCursor) {
+    hideLocalCursor = false;
+  }
+
   // Svelte action to reliably attach MediaStream to video DOM element with autoplay & unfreeze handling
   function attachStream(node: HTMLVideoElement, stream: MediaStream | null) {
     node.srcObject = stream;
@@ -174,7 +178,7 @@
     };
 
     const handleResume = () => {
-      if (node && node.srcObject && node.paused) {
+      if (node && node.srcObject) {
         playSafe();
       }
     };

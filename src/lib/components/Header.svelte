@@ -125,7 +125,7 @@
           {#if $updateChecking}
             <RefreshCw class="w-2.5 h-2.5 animate-spin text-cyan-400" />
           {/if}
-          <span>v1.2.42</span>
+          <span>v1.2.43</span>
         </button>
 
         {#if $updateInfo?.has_update}
