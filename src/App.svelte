@@ -26,7 +26,16 @@
   import { initTorrentStore } from "./lib/stores/torrents";
   import { initAvatarStore, peerAvatars } from "./lib/stores/avatars";
   import "./lib/stores/theme";
-  import { Upload, X, Zap, MessageSquare, Wifi, Users, Video, Monitor } from "lucide-svelte";
+  import {
+    Upload,
+    X,
+    Zap,
+    MessageSquare,
+    Wifi,
+    Users,
+    Video,
+    Monitor,
+  } from "lucide-svelte";
   import {
     appSettings,
     deviceCryptoMeta,
@@ -119,8 +128,14 @@
       contacts.set(await raydropApi.getContacts());
     });
 
-    await raydropApi.listenEvent("contacts_updated", async () => {
-      contacts.set(await raydropApi.getContacts());
+    let contactsUpdateTimer: any = null;
+    await raydropApi.listenEvent("contacts_updated", () => {
+      if (contactsUpdateTimer) clearTimeout(contactsUpdateTimer);
+      contactsUpdateTimer = setTimeout(async () => {
+        try {
+          contacts.set(await raydropApi.getContacts());
+        } catch (_) {}
+      }, 300);
     });
 
     await raydropApi.listenEvent("cloud_state_changed", async () => {
@@ -284,14 +299,6 @@
       },
     );
 
-    // Listen for contacts updates (e.g. auto-added after two-way chat or renamed)
-    await raydropApi.listenEvent("contacts_updated", async () => {
-      try {
-        const list = await raydropApi.getContacts();
-        contacts.set(list);
-      } catch (_) {}
-    });
-
     // Listen for group chat updates & removals
     await raydropApi.listenEvent<any>("chat_group_updated", (group) => {
       chatGroups.update((groups) => {
@@ -396,11 +403,17 @@
             const currentTab = get(activeMainTab);
             const rSession = get(activeRemoteSession);
             const rStatus = get(remoteConnectionStatus);
-            if (currentTab === "remote" && rStatus === "connected" && rSession?.isClient) {
-              raydropApi.initiateTransfer(rSession.peerDeviceId, droppedPaths).catch((err) => {
-                console.warn("Direct remote drop transfer error:", err);
-                cliQueuedFiles.update((prev) => [...prev, ...droppedPaths]);
-              });
+            if (
+              currentTab === "remote" &&
+              rStatus === "connected" &&
+              rSession?.isClient
+            ) {
+              raydropApi
+                .initiateTransfer(rSession.peerDeviceId, droppedPaths)
+                .catch((err) => {
+                  console.warn("Direct remote drop transfer error:", err);
+                  cliQueuedFiles.update((prev) => [...prev, ...droppedPaths]);
+                });
             } else {
               cliQueuedFiles.update((prev) => [...prev, ...droppedPaths]);
             }
@@ -432,8 +445,12 @@
       30 * 60 * 1000,
     );
 
-    // Re-check whenever the user unhides or focuses the Raydrop window from tray
+    // Re-check whenever the user unhides or focuses the Raydrop window from tray (with 60s cooldown)
+    let lastFocusUpdateCheck = Date.now();
     const handleWindowFocus = () => {
+      const now = Date.now();
+      if (now - lastFocusUpdateCheck < 60_000) return;
+      lastFocusUpdateCheck = now;
       checkForUpdates(false).catch(() => {});
     };
     window.addEventListener("focus", handleWindowFocus);
@@ -522,18 +539,19 @@
           <Upload class="w-10 h-10 stroke-[2.2]" />
         </div>
         <h3 class="text-xl font-extrabold text-white font-display">
-          {#if $activeMainTab === 'remote' && $remoteConnectionStatus === 'connected' && $activeRemoteSession?.isClient}
+          {#if $activeMainTab === "remote" && $remoteConnectionStatus === "connected" && $activeRemoteSession?.isClient}
             Drop to Send Directly to {$activeRemoteSession.peerAlias}
           {:else}
             Drop Files to Transfer
           {/if}
         </h3>
         <p class="text-xs text-slate-300 mt-2">
-          {#if $activeMainTab === 'remote' && $remoteConnectionStatus === 'connected' && $activeRemoteSession?.isClient}
-            Files dropped onto the Remote Desktop screen are transferred directly to the host device immediately.
+          {#if $activeMainTab === "remote" && $remoteConnectionStatus === "connected" && $activeRemoteSession?.isClient}
+            Files dropped onto the Remote Desktop screen are transferred
+            directly to the host device immediately.
           {:else}
-            Drop any multiple files or folders here to send directly via encrypted
-            P2P.
+            Drop any multiple files or folders here to send directly via
+            encrypted P2P.
           {/if}
         </p>
         <div

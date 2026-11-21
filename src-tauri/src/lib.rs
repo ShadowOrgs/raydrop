@@ -303,31 +303,33 @@ pub fn run() {
                 }
                 let _ = tray_builder.build(app)?;
 
-                // Initialize System Tray badge with unread messages count on startup
-                if let Ok(counts) = state_tray.db.get_unread_chat_counts() {
-                    let total: u32 = counts.values().sum();
-                    crate::tray_badge::update_tray_unread_badge(&app.handle(), total);
-                }
-
-                // Auto-register OS Right-Click Context Menu ("Send with Raydrop") on startup
-                match crate::os::register_context_menu() {
-                    Ok(msg) => info!("{msg}"),
-                    Err(e) => info!("OS Context Menu registration skipped: {e}"),
-                }
-
-                // Auto-register Magnet Link Protocol Handler ("magnet:?") on startup
-                match crate::os::register_magnet_protocol() {
-                    Ok(msg) => info!("{msg}"),
-                    Err(e) => info!("Magnet protocol registration skipped: {e}"),
-                }
-
-                // Ensure OS Autorun at Startup matches user preference (points to current_exe)
-                if is_autostart {
-                    match crate::os::set_autostart(true) {
-                        Ok(msg) => info!("{msg}"),
-                        Err(e) => info!("OS Autostart registration skipped: {e}"),
+                // Run tray badge sync & OS shell/registry registrations off the main UI thread
+                // so the window message loop never shows "Not Responding" on startup.
+                let handle_os_init = handle.clone();
+                let state_os_init = state_tray.clone();
+                std::thread::spawn(move || {
+                    if let Ok(counts) = state_os_init.db.get_unread_chat_counts() {
+                        let total: u32 = counts.values().sum();
+                        crate::tray_badge::update_tray_unread_badge(&handle_os_init, total);
                     }
-                }
+
+                    match crate::os::register_context_menu() {
+                        Ok(msg) => info!("{msg}"),
+                        Err(e) => info!("OS Context Menu registration skipped: {e}"),
+                    }
+
+                    match crate::os::register_magnet_protocol() {
+                        Ok(msg) => info!("{msg}"),
+                        Err(e) => info!("Magnet protocol registration skipped: {e}"),
+                    }
+
+                    if is_autostart {
+                        match crate::os::set_autostart(true) {
+                            Ok(msg) => info!("{msg}"),
+                            Err(e) => info!("OS Autostart registration skipped: {e}"),
+                        }
+                    }
+                });
             }
 
             // Show & focus main window on startup (desktop only)
@@ -415,8 +417,13 @@ pub fn run() {
             start_mdns_daemon(handle.clone(), state_for_setup.clone());
             start_signaling_daemon(handle.clone(), state_for_setup.clone());
 
-            // Initialize Continuous Real-Time Folder Mirroring (Background Sync)
-            folder_sync_mgr.init_all_auto_tasks(handle.clone(), state_for_setup.clone());
+            // Initialize Continuous Real-Time Folder Mirroring (Background Sync) off main thread
+            let handle_sync = handle.clone();
+            let state_sync = state_for_setup.clone();
+            let fsm = folder_sync_mgr.clone();
+            std::thread::spawn(move || {
+                fsm.init_all_auto_tasks(handle_sync, state_sync);
+            });
 
             // Start Local Loopback Server for Chrome/Edge Browser Extension (IDM mode)
             browser_bridge::start_browser_bridge_daemon(handle, state_for_setup);
@@ -532,6 +539,7 @@ pub fn run() {
             commands::open_system_display_settings,
             commands::start_native_screen_capture,
             commands::stop_native_screen_capture,
+            commands::ack_native_screen_frame,
             commands::check_unattended_boot_service,
             commands::install_unattended_boot_service,
             commands::check_windows_service_status,

@@ -2,12 +2,25 @@
 //! Captures the host desktop silently in the background without triggering browser
 //! `getDisplayMedia()` permission popups, enabling true unattended remote access after reboot.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 
 static CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
+static FRAME_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+static LAST_EMIT_EPOCH_MS: AtomicU64 = AtomicU64::new(0);
 static CAPTURE_BOUNDS: Mutex<Option<(i32, i32, i32, i32)>> = Mutex::new(None);
+
+fn now_epoch_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+pub fn ack_native_screen_frame() {
+    FRAME_IN_FLIGHT.store(false, Ordering::Release);
+}
 
 pub fn set_capture_bounds(bounds: Option<(i32, i32, i32, i32)>) {
     if let Ok(mut guard) = CAPTURE_BOUNDS.lock() {
@@ -20,6 +33,7 @@ pub fn is_native_capture_active() -> bool {
 }
 
 pub fn start_native_screen_capture(app: AppHandle) -> Result<(), String> {
+    FRAME_IN_FLIGHT.store(false, Ordering::Release);
     if CAPTURE_ACTIVE.swap(true, Ordering::SeqCst) {
         return Ok(()); // Already running
     }
@@ -45,6 +59,7 @@ pub fn start_native_screen_capture(app: AppHandle) -> Result<(), String> {
 
 pub fn stop_native_screen_capture() {
     CAPTURE_ACTIVE.store(false, Ordering::SeqCst);
+    FRAME_IN_FLIGHT.store(false, Ordering::Release);
 }
 
 #[cfg(target_os = "windows")]
@@ -120,11 +135,31 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
     const CAPTUREBLT: u32 = 0x40000000;
     const HALFTONE: i32 = 4;
 
+    let mut bgra: Vec<u8> = Vec::new();
+    let mut rgb: Vec<u8> = Vec::new();
+    let mut jpeg_buf: Vec<u8> = Vec::with_capacity(65536);
+    let mut last_frame_hash: u64 = 0;
+    let mut last_force_emit = std::time::Instant::now() - std::time::Duration::from_secs(2);
+    let mut last_desktop_switch = std::time::Instant::now() - std::time::Duration::from_secs(2);
+
     while CAPTURE_ACTIVE.load(Ordering::Relaxed) {
         let loop_start = std::time::Instant::now();
 
-        // Switch thread desktop to active input desktop (Winlogon when locked / Default when logged in)
-        crate::win_service::switch_to_active_input_desktop();
+        // Backpressure: do not flood WebView2 IPC if the previous frame is still decoding
+        if FRAME_IN_FLIGHT.load(Ordering::Acquire) {
+            let elapsed_ms = now_epoch_ms().saturating_sub(LAST_EMIT_EPOCH_MS.load(Ordering::Acquire));
+            if elapsed_ms < 250 {
+                std::thread::sleep(std::time::Duration::from_millis(12));
+                continue;
+            }
+            FRAME_IN_FLIGHT.store(false, Ordering::Release);
+        }
+
+        // Switch thread desktop periodically (or on capture failure) for Winlogon / UAC support
+        if last_desktop_switch.elapsed() >= std::time::Duration::from_millis(500) {
+            crate::win_service::switch_to_active_input_desktop();
+            last_desktop_switch = std::time::Instant::now();
+        }
 
         let custom_bounds = CAPTURE_BOUNDS.lock().ok().and_then(|g| *g);
         let (src_x, src_y, src_w, src_h) = match custom_bounds {
@@ -136,9 +171,9 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
             },
         };
 
-        // Scale to max 1600px width for crisp low-latency streaming
-        let scale = if src_w > 1600 {
-            1600.0 / src_w as f32
+        // Scale to max 1280px width for crisp, zero-freeze WebView2 streaming
+        let scale = if src_w > 1280 {
+            1280.0 / src_w as f32
         } else {
             1.0
         };
@@ -147,7 +182,9 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
 
         unsafe {
             let hdc_screen = win_gdi::GetDC(0);
-            if hdc_screen != 0 {
+            if hdc_screen == 0 {
+                crate::win_service::switch_to_active_input_desktop();
+            } else {
                 let hdc_mem = win_gdi::CreateCompatibleDC(hdc_screen);
                 let hbm = win_gdi::CreateCompatibleBitmap(hdc_screen, dst_w, dst_h);
 
@@ -186,7 +223,10 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
                             bmi_colors: [0],
                         };
 
-                        let mut bgra = vec![0u8; (dst_w * dst_h * 4) as usize];
+                        let needed_bgra = (dst_w * dst_h * 4) as usize;
+                        if bgra.len() != needed_bgra {
+                            bgra.resize(needed_bgra, 0);
+                        }
                         let lines = win_gdi::GetDIBits(
                             hdc_mem,
                             hbm,
@@ -198,21 +238,41 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
                         );
 
                         if lines > 0 {
-                            let mut rgb = Vec::with_capacity((dst_w * dst_h * 3) as usize);
-                            for px in bgra.chunks_exact(4) {
-                                rgb.push(px[2]); // R
-                                rgb.push(px[1]); // G
-                                rgb.push(px[0]); // B
+                            // Fast sampled FNV-1a hash to skip unchanged idle frames (saves 100% encode/IPC CPU)
+                            let mut h: u64 = 0xcbf29ce484222325;
+                            for &b in bgra.iter().step_by(64) {
+                                h ^= b as u64;
+                                h = h.wrapping_mul(0x100000001b3);
                             }
 
-                            let mut jpeg_buf = Vec::with_capacity(65536);
-                            let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buf, 75);
-                            if encoder
-                                .encode(&rgb, dst_w as u32, dst_h as u32, ExtendedColorType::Rgb8)
-                                .is_ok()
-                            {
-                                let b64 = base64::engine::general_purpose::STANDARD.encode(&jpeg_buf);
-                                let _ = app.emit("host_screen_frame", b64);
+                            if h != last_frame_hash || last_force_emit.elapsed() >= std::time::Duration::from_millis(1000) {
+                                last_frame_hash = h;
+                                last_force_emit = std::time::Instant::now();
+
+                                rgb.clear();
+                                let needed_rgb = (dst_w * dst_h * 3) as usize;
+                                if rgb.capacity() < needed_rgb {
+                                    rgb.reserve(needed_rgb - rgb.capacity());
+                                }
+                                for px in bgra.chunks_exact(4) {
+                                    rgb.push(px[2]); // R
+                                    rgb.push(px[1]); // G
+                                    rgb.push(px[0]); // B
+                                }
+
+                                jpeg_buf.clear();
+                                let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buf, 68);
+                                if encoder
+                                    .encode(&rgb, dst_w as u32, dst_h as u32, ExtendedColorType::Rgb8)
+                                    .is_ok()
+                                {
+                                    let b64 = base64::engine::general_purpose::STANDARD.encode(&jpeg_buf);
+                                    LAST_EMIT_EPOCH_MS.store(now_epoch_ms(), Ordering::Release);
+                                    FRAME_IN_FLIGHT.store(true, Ordering::Release);
+                                    if app.emit("host_screen_frame", b64).is_err() {
+                                        FRAME_IN_FLIGHT.store(false, Ordering::Release);
+                                    }
+                                }
                             }
                         }
                     }
@@ -230,10 +290,10 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
             }
         }
 
-        // Target ~30 fps (33ms per frame)
+        // Target ~24 fps (42ms per frame) for smooth & responsive remote without UI saturation
         let elapsed = loop_start.elapsed();
-        if elapsed < std::time::Duration::from_millis(33) {
-            std::thread::sleep(std::time::Duration::from_millis(33) - elapsed);
+        if elapsed < std::time::Duration::from_millis(42) {
+            std::thread::sleep(std::time::Duration::from_millis(42) - elapsed);
         }
     }
 

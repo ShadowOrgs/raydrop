@@ -200,6 +200,9 @@ impl Database {
         let data_dir = resolve_app_data_dir()?;
         let db_path = data_dir.join("storage.db");
         let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+        let _ = conn.execute_batch(
+            "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;",
+        );
 
         conn.execute_batch(
             "

@@ -3503,6 +3503,12 @@ pub async fn stop_native_screen_capture() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn ack_native_screen_frame() -> Result<(), String> {
+    crate::remote_capture::ack_native_screen_frame();
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn check_unattended_boot_service() -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {

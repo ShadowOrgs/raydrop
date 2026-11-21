@@ -231,7 +231,10 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
     if (!isNativeFrameListenerSet) {
       isNativeFrameListenerSet = true;
       await raydropApi.listenEvent<string>('host_screen_frame', (b64) => {
-        if (!nativeCanvasEl || pendingFrameDraw || !b64) return;
+        if (!nativeCanvasEl || pendingFrameDraw || !b64) {
+          raydropApi.ackNativeScreenFrame().catch(() => {});
+          return;
+        }
         pendingFrameDraw = true;
         const img = new Image();
         img.onload = () => {
@@ -246,16 +249,19 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
             }
           }
           pendingFrameDraw = false;
+          raydropApi.ackNativeScreenFrame().catch(() => {});
         };
         img.onerror = () => {
           pendingFrameDraw = false;
+          raydropApi.ackNativeScreenFrame().catch(() => {});
         };
         img.src = 'data:image/jpeg;base64,' + b64;
       });
     }
 
+    pendingFrameDraw = false;
     await raydropApi.startNativeScreenCapture();
-    const stream = nativeCanvasEl.captureStream(30);
+    const stream = nativeCanvasEl.captureStream(24);
     return stream;
   } catch (err) {
     console.warn('Native zero-prompt screen capture unavailable, falling back to browser picker:', err);
@@ -1108,6 +1114,9 @@ export function disconnectRemoteSession() {
   clearAuthTimer();
   const session = get(activeRemoteSession);
   if (session) {
+    if (session.isHost) {
+      stopHostScreenCapture();
+    }
     sendRemoteSignal(session.peerDeviceId, session.sessionId, {
       type: 'remote_session_ended',
     });

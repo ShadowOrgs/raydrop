@@ -603,6 +603,8 @@ export const raydropApi = {
     invoke<void>('start_native_screen_capture'),
   stopNativeScreenCapture: () =>
     invoke<void>('stop_native_screen_capture'),
+  ackNativeScreenFrame: () =>
+    invoke<void>('ack_native_screen_frame'),
   checkUnattendedBootService: () =>
     invoke<boolean>('check_unattended_boot_service'),
   installUnattendedBootService: () =>
