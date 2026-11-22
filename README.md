@@ -42,7 +42,11 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 - ⚡ **Wake-on-LAN (WoL) & Instant Media Streaming:** Wake offline PCs with UDP Magic Packets and stream actively downloading videos before completion.
 - 🚀 **Parallel P2P Transfer Engine:** Multi-segment streaming with auto-resume (`.raypart`) and BLAKE3 integrity verification.
 - 👥 **Encrypted Group Chat & Admin Roles:** Multi-user group chats with syntax-highlighted code blocks, variable-speed voice notes ($1\times$–$2\times$), and live "Last Online" presence.
-- 🎨 **Custom Themes & Collaboration:** Switch between Midnight Slate, OLED True Black, Cyberpunk Neon, and Clean Light themes; use Laser Pointer & Screen Annotation in Remote Desktop and Meetings; and minimize streams into Floating Mini Player (PiP).
+- 🎨 **Carbon Azure & Custom Themes:** Sleek matte Carbon Azure default theme plus Midnight Slate, OLED True Black, Cyberpunk Neon, and Clean Light themes; Laser Pointer & Screen Annotation; and Floating Mini Player (PiP).
+- 📊 **System Monitor & Transfer Analytics Dashboard:** Live Task Manager-style CPU, RAM, GPU, Disk, and Network charts with persistent lifetime transfer analytics.
+- 🏆 **Raydrop Rank & EXP Progression:** Level up from Bronze to Mythic by transferring files, chatting, hosting meetings, using Remote Desktop, and extending to tablets—with rank badges shown in Contacts, Chat, and Meetings.
+- 📋 **Cross-Platform Copy History (Win+V) & Keep-Style Notes:** Automatic clipboard history for Windows, macOS, and Linux plus Google Keep-style notes with `Ctrl+V` image paste and interactive task checklists.
+- 🔒 **Hidden & Offline Private Mode:** Switch from Visible to `Hidden • Offline` to disconnect WAN signaling and unregister LAN mDNS immediately.
 - 📋 **Direct Clipboard Image Paste:** Paste screenshots (Ctrl+V) directly into conversations with image preview cards and caption support.
 - 🔄 **Continuous Real-Time Folder Mirroring:** Automated background folder sync that monitors filesystem changes and mirrors files without manual intervention.
 - 📂 **Remote Folder Browser:** Securely explore authorized folder structures on paired peer devices and pull files on demand.
@@ -56,16 +60,25 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 
 ## ✨ Key Features
 
-### 🖥️ Raydrop P2P Remote Desktop & Control Suite (Updated in v1.2.44)
+### 🆕 Productivity, Analytics & Privacy Suite (New in v1.2.49)
+- **System Monitor & Persistent Transfer Analytics Dashboard:** Monitor live CPU, RAM, GPU, Disk, and Network throughput charts (loaded lazily when opened) alongside persistent local analytics for total gigabytes sent and received.
+- **Raydrop Rank & EXP Badges:** Earn EXP across File Transfers (`+2 EXP/MB`), Chat (`+5 EXP/msg`), Remote Desktop, Meetings, Tablet Extend (`+10 EXP/min`), and Sync/Share (`+25 EXP`). Rank badges (`Bronze` → `Mythic`) appear in your Profile Menu, Contacts, Chat, and Meeting tiles.
+- **Cross-Platform Copy History (Win+V):** Persistent clipboard history for Windows, macOS, and Linux—automatically captures copied text and images, supports search, Pin/Unpin, and 1-click re-copy.
+- **Notes & Task Lists (Google Keep Style):** Create color-coded notes, interactive task checklists, `#labels`, and paste screenshots (`Ctrl+V`) directly into notes.
+- **Hidden & Offline Private Mode:** Clicking `Visible` toggles to `Hidden • Offline`, immediately disconnecting WAN signaling and unregistering LAN mDNS so other users see you as offline.
+- **WAN Wake-on-LAN (DDNS + Custom Port) & Auto MAC:** Automatically detects and pre-fills MAC addresses across your own devices and supports DDNS hostnames + custom UDP ports for waking PCs over WAN.
+- **Native OS Download Notifications:** Triggers Windows/macOS/Linux desktop notifications upon completion for P2P Transfers, HTTP Accelerator downloads, and BitTorrent downloads.
+
+### 🖥️ Raydrop P2P Remote Desktop & Control Suite (Updated in v1.2.49)
 - **Pre-Login Windows System Service (`RaydropService`):** Installable in 1 click from Host Settings (`NT AUTHORITY\SYSTEM`), allowing you to connect immediately after a PC reboot, view the Windows Lock/PIN screen (`Winlogon`), and type your Windows login PIN remotely.
 - **Native Zero-Prompt Capture & Auto-Minimize:** Captures the Windows desktop silently without browser permission popups and automatically minimizes the Host Raydrop window when a session connects.
 - **Native Host System Audio Streaming (WASAPI Loopback):** Streams YouTube, music, and system audio from the Host PC directly to the Remote Client.
-- **Extend to iPad / Tablet / Phone via QR Code:** Generates an instant local Wi-Fi QR Code to open a zero-install, touch-enabled wireless second display in Safari or Chrome.
-- **Multi-Monitor Switcher, Remote Power Controls & Drag-and-Drop:** Switch between displays, Lock/Sleep/Restart/Shutdown the host remotely, drag-and-drop files straight onto the remote screen, or pop out into Floating Mini Player (PiP).
+- **Extend to iPad / Tablet / Phone via QR Code:** Generates an instant local Wi-Fi QR Code to open a zero-install, touch-enabled wireless second display in Safari or Chrome, with auto-hiding fullscreen controls and a top-center arrow drawer handle.
+- **Multi-Monitor Switcher, Remote Power Controls & Drag-and-Drop:** Switch between displays, Lock/Sleep/Restart/Shutdown the host remotely, drag-and-drop files straight onto the remote screen (including fullscreen mode), or pop out into Floating Mini Player (PiP).
 - **Fullscreen Keyboard Lock & Zero Ghost Cursor:** Captures `Alt+Tab`, `Win` key, and `PrintScreen` in fullscreen while keeping the client cursor crisp at 0ms latency.
 - **High-Resolution 60 FPS Desktop Streaming:** Powered by WebRTC with `maintain-resolution` priority for sharp text and code readability across WAN and LAN.
 - **Mandatory PIN Security & Access Control:** Remote connections are gated by a customizable 6-digit security PIN. Only authorized peers who supply the correct PIN can establish a control session, preventing unauthorized remote access on local networks.
-- **Bidirectional Clipboard Sync (Text & Images):** Effortlessly copy and paste between local and remote machines. Fully supports plain text, code snippets, and raw image screenshots in both directions with single-click syncing.
+- **Automatic Bidirectional Clipboard Sync (Text & Images):** Automatically detects copied text or images on either the Client or Host and syncs them silently in both directions so you can paste immediately without manual toolbar buttons.
 - **Low-Latency Input Injection:** Native OS mouse movements, left/right/middle clicks, smooth wheel scrolling, and keyboard keystrokes are transmitted via low-overhead WebRTC DataChannels (<20ms local latency).
 - **Desktop Shortcut Toolbar:** Built-in floating controls for Windows key, Task Manager (`Ctrl+Shift+Esc`), Show Desktop (`Win+D`), Lock Host (`Win+L`), and fullscreen switching.
 - **Cross-Platform PC & Mobile Ready:** Remote control desktop machines directly from other PCs or mobile devices.
