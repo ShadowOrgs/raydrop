@@ -17,6 +17,7 @@ pub struct AppStateSnapshot {
     pub wan_reflexive_addr: Option<String>,
     pub signaling_connected: bool,
     pub queued_cli_files: Vec<String>,
+    pub my_rank_exp: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,6 +67,7 @@ pub fn get_app_state(state: State<'_, Arc<AppState>>) -> Result<AppStateSnapshot
         wan_reflexive_addr,
         signaling_connected: state.is_signaling_connected(),
         queued_cli_files,
+        my_rank_exp: state.db.compute_my_rank_exp().unwrap_or(0),
     })
 }
 
@@ -174,6 +176,8 @@ pub fn sync_cloud_data_to_local(
             last_seen_at: now,
             created_at: now,
             avatar_hash: existing.as_ref().and_then(|c| c.avatar_hash.clone()),
+            rank_exp: existing.as_ref().map(|c| c.rank_exp).unwrap_or(0),
+            mac_address: existing.as_ref().and_then(|c| c.mac_address.clone()),
         };
         let _ = state.db.upsert_contact(&c);
     }
@@ -212,6 +216,8 @@ pub fn sync_cloud_data_to_local(
                 last_seen_at: now,
                 created_at: now,
                 avatar_hash: existing.as_ref().and_then(|c| c.avatar_hash.clone()),
+                rank_exp: existing.as_ref().map(|c| c.rank_exp).unwrap_or(0),
+                mac_address: existing.as_ref().and_then(|c| c.mac_address.clone()),
             };
             let _ = state.db.upsert_contact(&c);
         }
@@ -237,14 +243,25 @@ pub fn delete_local_contact(
 
 #[tauri::command]
 pub fn toggle_discoverability(
+    app: AppHandle,
     state: State<'_, Arc<AppState>>,
     enabled: bool,
 ) -> Result<bool, String> {
     state
         .db
         .set_setting("discoverable", if enabled { "true" } else { "false" })?;
-    let mut s = state.settings.lock().map_err(|e| e.to_string())?;
-    s.discoverable = enabled;
+    {
+        let mut s = state.settings.lock().map_err(|e| e.to_string())?;
+        s.discoverable = enabled;
+    }
+    if !enabled {
+        // Immediately drop signaling channel so the WebSocket closes and server marks us offline
+        *state.signaling_tx.lock().unwrap() = None;
+        state
+            .signaling_connected
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        let _ = app.emit("signaling_status_changed", false);
+    }
     Ok(enabled)
 }
 
@@ -334,6 +351,19 @@ pub fn update_settings(
 }
 
 #[tauri::command]
+pub fn set_ui_theme(
+    state: State<'_, Arc<AppState>>,
+    theme: String,
+) -> Result<String, String> {
+    let clean = theme.trim().to_string();
+    state.db.set_setting("theme", &clean)?;
+    if let Ok(mut s) = state.settings.lock() {
+        s.theme = clean.clone();
+    }
+    Ok(clean)
+}
+
+#[tauri::command]
 pub fn set_speed_limit(state: State<'_, Arc<AppState>>, speed_limit_mbps: u32) -> Result<u32, String> {
     state.db.set_setting("speed_limit_mbps", &speed_limit_mbps.to_string())?;
     let mut s = state.settings.lock().map_err(|e| e.to_string())?;
@@ -388,6 +418,8 @@ pub fn add_wan_contact(
         last_seen_at: now_unix_secs(),
         created_at: now_unix_secs(),
         avatar_hash: None,
+        rank_exp: 0,
+        mac_address: None,
     };
     state.db.upsert_contact(&contact)?;
 
@@ -1334,6 +1366,8 @@ pub fn auto_add_contact_from_chat(
         last_seen_at: now,
         created_at: existing.as_ref().map(|c| c.created_at).unwrap_or(now),
         avatar_hash: existing.as_ref().and_then(|c| c.avatar_hash.clone()),
+        rank_exp: existing.as_ref().map(|c| c.rank_exp).unwrap_or(0),
+        mac_address: existing.as_ref().and_then(|c| c.mac_address.clone()),
     };
     let _ = state.db.upsert_contact(&contact);
     let _ = app.emit("contacts_updated", ());
@@ -1675,6 +1709,7 @@ pub fn send_chat_message(
         "files_json": enriched_files_json,
         "from_alias": state.settings.lock().unwrap().alias_name,
         "from_avatar_hash": my_avatar_hash,
+        "from_rank_exp": state.db.compute_my_rank_exp().unwrap_or(0),
         "from_avatar_data": my_avatar_b64,
         "created_at": now
     })
@@ -2338,6 +2373,7 @@ pub fn send_group_chat_message(
         "from_device_id": my_id,
         "from_alias": my_alias,
         "from_avatar_hash": my_avatar_hash,
+        "from_rank_exp": state.db.compute_my_rank_exp().unwrap_or(0),
         "from_avatar_data": my_avatar_b64,
         "content": content,
         "msg_type": effective_type,
@@ -2473,6 +2509,23 @@ pub fn write_clipboard_content(content: &str) -> Result<(), String> {
     cb.set_text(trimmed.to_string()).map_err(|e| format!("Clipboard write error: {e}"))
 }
 
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn GetClipboardSequenceNumber() -> u32;
+}
+
+#[tauri::command]
+pub fn get_clipboard_sequence_number() -> u64 {
+    #[cfg(target_os = "windows")]
+    {
+        unsafe { GetClipboardSequenceNumber() as u64 }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        0
+    }
+}
+
 #[tauri::command]
 pub fn read_system_clipboard() -> Result<String, String> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -2483,6 +2536,112 @@ pub fn read_system_clipboard() -> Result<String, String> {
     {
         Err("Clipboard read is not supported on mobile native backend".to_string())
     }
+}
+
+#[tauri::command]
+pub fn read_system_clipboard_if_changed(last_seq: u64) -> Result<Option<(u64, String)>, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let seq = get_clipboard_sequence_number();
+        if seq != 0 && seq == last_seq {
+            return Ok(None);
+        }
+        match read_clipboard_content() {
+            Ok(content) if !content.trim().is_empty() => Ok(Some((seq, content))),
+            Ok(_) => Ok(None),
+            Err(_) => Ok(None),
+        }
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = last_seq;
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+pub fn list_clipboard_history(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::storage::ClipboardHistoryItem>, String> {
+    state.db.list_clipboard_history(120)
+}
+
+#[tauri::command]
+pub fn copy_clipboard_history_item(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> Result<(), String> {
+    if let Some(content) = state.db.get_clipboard_history_content(&id)? {
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        write_clipboard_content(&content)?;
+        let _ = state.db.record_clipboard_entry(&content);
+        let _ = app.emit("clipboard_history_updated", ());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn toggle_pin_clipboard_item(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> Result<bool, String> {
+    let pinned = state.db.toggle_pin_clipboard_item(&id)?;
+    let _ = app.emit("clipboard_history_updated", ());
+    Ok(pinned)
+}
+
+#[tauri::command]
+pub fn delete_clipboard_history_item(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> Result<(), String> {
+    state.db.delete_clipboard_item(&id)?;
+    let _ = app.emit("clipboard_history_updated", ());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_clipboard_history(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state.db.clear_unpinned_clipboard_history()?;
+    let _ = app.emit("clipboard_history_updated", ());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_notes(
+    state: State<'_, Arc<AppState>>,
+    include_archived: bool,
+) -> Result<Vec<crate::db::storage::NoteItem>, String> {
+    state.db.list_notes(include_archived)
+}
+
+#[tauri::command]
+pub fn save_note(
+    state: State<'_, Arc<AppState>>,
+    note: crate::db::storage::NoteItem,
+) -> Result<crate::db::storage::NoteItem, String> {
+    state.db.upsert_note(note)
+}
+
+#[tauri::command]
+pub fn toggle_pin_note(state: State<'_, Arc<AppState>>, id: String) -> Result<bool, String> {
+    state.db.toggle_pin_note(&id)
+}
+
+#[tauri::command]
+pub fn toggle_archive_note(state: State<'_, Arc<AppState>>, id: String) -> Result<bool, String> {
+    state.db.toggle_archive_note(&id)
+}
+
+#[tauri::command]
+pub fn delete_note(state: State<'_, Arc<AppState>>, id: String) -> Result<(), String> {
+    state.db.delete_note(&id)
 }
 
 #[tauri::command]
@@ -3258,6 +3417,8 @@ pub async fn connect_peer_by_ip(
         last_seen_at: crate::db::storage::now_unix_secs(),
         created_at: crate::db::storage::now_unix_secs(),
         avatar_hash: peer_avatar_hash.clone().or_else(|| existing.as_ref().and_then(|e| e.avatar_hash.clone())),
+        rank_exp: existing.as_ref().map(|e| e.rank_exp).unwrap_or(0),
+        mac_address: existing.as_ref().and_then(|e| e.mac_address.clone()),
     };
 
     state.db.upsert_contact(&contact)?;
@@ -3405,8 +3566,74 @@ pub async fn execute_remote_power_action(action: String) -> Result<(), String> {
     crate::remote_input::execute_power_action(&action)
 }
 
+pub fn get_local_mac_address(local_ip: &str) -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        #[link(name = "iphlpapi")]
+        extern "system" {
+            fn SendARP(dest_ip: u32, src_ip: u32, mac_addr: *mut u8, phy_addr_len: *mut u32) -> u32;
+        }
+        if let Ok(ipv4) = local_ip.trim().parse::<std::net::Ipv4Addr>() {
+            let dest = u32::from_ne_bytes(ipv4.octets());
+            let mut mac = [0u8; 6];
+            let mut len = 6u32;
+            let ret = unsafe { SendARP(dest, 0, mac.as_mut_ptr(), &mut len) };
+            if ret == 0 && len == 6 && mac.iter().any(|&b| b != 0) {
+                return Some(format!(
+                    "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+                ));
+            }
+        }
+        None
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(entries) = std::fs::read_dir("/sys/class/net") {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name == "lo" {
+                    continue;
+                }
+                if let Ok(addr) = std::fs::read_to_string(entry.path().join("address")) {
+                    let trimmed = addr.trim().to_uppercase();
+                    if !trimmed.is_empty() && trimmed != "00:00:00:00:00:00" && trimmed.len() == 17 {
+                        return Some(trimmed);
+                    }
+                }
+            }
+        }
+        None
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(out) = std::process::Command::new("ifconfig").output() {
+            let txt = String::from_utf8_lossy(&out.stdout);
+            for line in txt.lines() {
+                let t = line.trim();
+                if let Some(rest) = t.strip_prefix("ether ") {
+                    let mac = rest.trim().to_uppercase();
+                    if mac.len() == 17 && mac != "00:00:00:00:00:00" {
+                        return Some(mac);
+                    }
+                }
+            }
+        }
+        None
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    {
+        let _ = local_ip;
+        None
+    }
+}
+
 #[tauri::command]
-pub async fn send_wake_on_lan(mac_address: String) -> Result<(), String> {
+pub async fn send_wake_on_lan(
+    mac_address: String,
+    target_host: Option<String>,
+    port: Option<u16>,
+) -> Result<(), String> {
     let clean: String = mac_address
         .chars()
         .filter(|c| c.is_ascii_hexdigit())
@@ -3432,8 +3659,41 @@ pub async fn send_wake_on_lan(mac_address: String) -> Result<(), String> {
         .set_broadcast(true)
         .map_err(|e| format!("Failed to enable UDP broadcast: {e}"))?;
 
-    let _ = socket.send_to(&packet, "255.255.255.255:9");
-    let _ = socket.send_to(&packet, "255.255.255.255:7");
+    let target_port = port.unwrap_or(9);
+
+    if let Some(host) = target_host.map(|h| h.trim().to_string()).filter(|h| !h.is_empty()) {
+        use std::net::ToSocketAddrs;
+        let addr_str = format!("{host}:{target_port}");
+        let addrs: Vec<_> = addr_str
+            .to_socket_addrs()
+            .map_err(|e| format!("Failed to resolve WAN/DDNS host '{host}': {e}"))?
+            .collect();
+        if addrs.is_empty() {
+            return Err(format!("No IP addresses resolved for '{host}'"));
+        }
+        let mut sent_any = false;
+        let mut last_err = None;
+        for addr in addrs {
+            match socket.send_to(&packet, addr) {
+                Ok(_) => sent_any = true,
+                Err(e) => last_err = Some(e.to_string()),
+            }
+        }
+        if !sent_any {
+            return Err(format!(
+                "Failed to send WAN Magic Packet to '{addr_str}': {}",
+                last_err.unwrap_or_else(|| "unknown error".to_string())
+            ));
+        }
+        // Also broadcast locally in case sender happens to be on the same LAN
+        let _ = socket.send_to(&packet, "255.255.255.255:9");
+    } else {
+        let _ = socket.send_to(&packet, format!("255.255.255.255:{target_port}"));
+        if target_port != 9 {
+            let _ = socket.send_to(&packet, "255.255.255.255:9");
+        }
+        let _ = socket.send_to(&packet, "255.255.255.255:7");
+    }
     Ok(())
 }
 
@@ -3470,6 +3730,29 @@ pub async fn push_second_screen_frame(
 ) -> Result<(), String> {
     state.second_screen.push_frame_b64(&frame_base64);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn record_activity_tick(
+    active_features: Vec<String>,
+    seconds: u64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<u64, String> {
+    let mut features = active_features;
+    let second_screen_on = state
+        .second_screen
+        .active_flag
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|f| f.load(std::sync::atomic::Ordering::Relaxed))
+        .unwrap_or(false);
+    if second_screen_on && !features.iter().any(|f| f == "second_screen") {
+        features.push("second_screen".to_string());
+    }
+    state
+        .db
+        .add_activity_usage_seconds(&features, seconds.min(60))
 }
 
 #[tauri::command]
@@ -3574,5 +3857,22 @@ pub async fn install_windows_service() -> Result<String, String> {
 #[tauri::command]
 pub async fn uninstall_windows_service() -> Result<String, String> {
     crate::win_service::uninstall_service_elevated()
+}
+
+#[tauri::command]
+pub async fn get_system_telemetry() -> Result<crate::system_monitor::SystemTelemetry, String> {
+    tokio::task::spawn_blocking(crate::system_monitor::collect_system_telemetry)
+        .await
+        .map_err(|e| format!("System telemetry task error: {e}"))
+}
+
+#[tauri::command]
+pub async fn get_transfer_analytics(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::db::storage::TransferAnalytics, String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || db.get_transfer_analytics())
+        .await
+        .map_err(|e| format!("Transfer analytics task error: {e}"))?
 }
 

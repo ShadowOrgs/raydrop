@@ -1,6 +1,6 @@
 [package]
 name = "raydrop"
-version = "1.2.48"
+version = "1.2.49"
 description = "Universal Zero-Server P2P File Transfer System (LAN + WAN)"
 authors = ["Raydrop Team"]
 edition = "2021"
@@ -50,6 +50,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 base64 = "0.22"
 notify = "6.1"
 dunce = "1.0"
+sysinfo = "0.32"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2.0.0"
 arboard = "3.4"

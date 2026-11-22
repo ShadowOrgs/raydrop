@@ -13,6 +13,15 @@ use tracing::{info, warn};
 pub fn start_signaling_daemon(app: AppHandle, state: Arc<AppState>) {
     tauri::async_runtime::spawn(async move {
         loop {
+            if !state.is_discoverable() {
+                if state.signaling_connected.swap(false, Ordering::Relaxed) {
+                    let _ = app.emit("signaling_status_changed", false);
+                }
+                *state.signaling_tx.lock().unwrap() = None;
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            }
+
             let (sig_url, stun_addr, alias_name, auth_token) = {
                 let s = state.settings.lock().unwrap();
                 (
@@ -59,6 +68,7 @@ pub fn start_signaling_daemon(app: AppHandle, state: Arc<AppState>) {
                         format!("RAYDROP_REGISTER:{}:{ts}", state.identity.device_id);
                     let sig = state.identity.sign_message(sign_payload.as_bytes());
 
+                    let local_mac = crate::commands::get_local_mac_address(&state.local_ip);
                     let reg_msg = json!({
                         "type": "REGISTER",
                         "device_id": state.identity.device_id,
@@ -66,7 +76,8 @@ pub fn start_signaling_daemon(app: AppHandle, state: Arc<AppState>) {
                         "ed25519_pubkey": state.identity.public_hex(),
                         "timestamp": ts,
                         "signature": sig,
-                        "auth_token": auth_token
+                        "auth_token": auth_token,
+                        "mac_address": local_mac
                     })
                     .to_string();
                     let _ = tx.send(reg_msg);
@@ -96,7 +107,10 @@ pub fn start_signaling_daemon(app: AppHandle, state: Arc<AppState>) {
                                                 break;
                                             }
                                         }
-                                        None => break,
+                                        None => {
+                                            let _ = ws_tx.send(Message::Close(None)).await;
+                                            break;
+                                        }
                                     }
                                 }
                                 _ = ping_interval.tick() => {
@@ -109,24 +123,32 @@ pub fn start_signaling_daemon(app: AppHandle, state: Arc<AppState>) {
                         }
                     });
 
+                    let mut last_rx_at = std::time::Instant::now();
                     loop {
+                        if !state.is_discoverable() {
+                            info!("Discoverability disabled (Hidden/Offline) — disconnecting signaling");
+                            break;
+                        }
                         // Dead Peer Detection: If no message, ping, or pong is received within 45s,
                         // assume intermediate NAT/firewall dropped the silent TCP socket and force reconnect
-                        let next_frame = tokio::time::timeout(Duration::from_secs(45), ws_rx.next()).await;
+                        let next_frame = tokio::time::timeout(Duration::from_millis(1000), ws_rx.next()).await;
                         match next_frame {
-                            Ok(Some(Ok(msg))) => match msg {
-                                Message::Text(text) => {
-                                    handle_signaling_message(&app, &state, &text).await;
+                            Ok(Some(Ok(msg))) => {
+                                last_rx_at = std::time::Instant::now();
+                                match msg {
+                                    Message::Text(text) => {
+                                        handle_signaling_message(&app, &state, &text).await;
+                                    }
+                                    Message::Ping(_) | Message::Pong(_) => {
+                                        // Heartbeat alive!
+                                    }
+                                    Message::Close(_) => {
+                                        info!("Signaling WebSocket closed by server");
+                                        break;
+                                    }
+                                    _ => {}
                                 }
-                                Message::Ping(_) | Message::Pong(_) => {
-                                    // Heartbeat alive!
-                                }
-                                Message::Close(_) => {
-                                    info!("Signaling WebSocket closed by server");
-                                    break;
-                                }
-                                _ => {}
-                            },
+                            }
                             Ok(Some(Err(e))) => {
                                 warn!("Signaling WebSocket connection error: {e}");
                                 break;
@@ -136,8 +158,10 @@ pub fn start_signaling_daemon(app: AppHandle, state: Arc<AppState>) {
                                 break;
                             }
                             Err(_) => {
-                                warn!("Signaling WebSocket idle heartbeat timeout (45s) — forcing reconnect");
-                                break;
+                                if last_rx_at.elapsed() >= Duration::from_secs(45) {
+                                    warn!("Signaling WebSocket idle heartbeat timeout (45s) — forcing reconnect");
+                                    break;
+                                }
                             }
                         }
                     }
@@ -407,6 +431,9 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 let avatar_hash = chat_val
                     .get("from_avatar_hash")
                     .and_then(|v| v.as_str());
+                if let Some(exp) = chat_val.get("from_rank_exp").and_then(|v| v.as_u64()) {
+                    let _ = state.db.update_contact_rank_exp(&from_device_id, exp);
+                }
 
                 if let Some(av_data) = avatar_data {
                     let _ = crate::commands::save_peer_avatar_internal(

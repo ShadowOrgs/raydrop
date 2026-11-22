@@ -16,7 +16,11 @@
   import MeetingView from "./lib/components/MeetingView.svelte";
   import MeetingInviteModal from "./lib/components/MeetingInviteModal.svelte";
   import RemoteDesktopView from "./lib/components/RemoteDesktopView.svelte";
-  import { setupMeetingSignalListener } from "./lib/stores/meeting";
+  import DashboardView from "./lib/components/DashboardView.svelte";
+  import ClipboardHistoryView from "./lib/components/ClipboardHistoryView.svelte";
+  import NotesView from "./lib/components/NotesView.svelte";
+  import WolModal from "./lib/components/WolModal.svelte";
+  import { setupMeetingSignalListener, isInMeeting } from "./lib/stores/meeting";
   import {
     initRemoteDesktopListener,
     loadRemoteDesktopSettings,
@@ -25,7 +29,7 @@
   } from "./lib/stores/remote_desktop";
   import { initTorrentStore } from "./lib/stores/torrents";
   import { initAvatarStore, peerAvatars } from "./lib/stores/avatars";
-  import "./lib/stores/theme";
+  import { applyTheme, type RaydropTheme } from "./lib/stores/theme";
   import {
     Upload,
     X,
@@ -48,6 +52,7 @@
     activeMainTab,
     activeChatPeerId,
     isDraggingFiles,
+    myRankExp,
   } from "./lib/stores/state";
   import {
     fetchUnreadCounts,
@@ -159,6 +164,15 @@
     // 2. Fetch fresh app state & populate stores
     const snap = await raydropApi.getAppState();
     appSettings.set(snap.settings);
+    if (typeof snap.my_rank_exp === "number") {
+      myRankExp.set(snap.my_rank_exp);
+    }
+    if (
+      snap.settings.theme &&
+      ["azure", "slate", "oled", "cyberpunk", "light"].includes(snap.settings.theme)
+    ) {
+      applyTheme(snap.settings.theme as RaydropTheme, false);
+    }
     deviceCryptoMeta.set({
       ed25519Pubkey: snap.ed25519_pubkey,
       osType: snap.os_type,
@@ -203,7 +217,22 @@
     // 3. Periodic synchronization timer (every 4s) to ensure signaling & network status never get stuck
     statusSyncTimer = setInterval(async () => {
       try {
+        const activeFeatures: string[] = [];
+        if (get(remoteConnectionStatus) === "connected") {
+          activeFeatures.push("remote_desktop");
+        }
+        if (get(isInMeeting)) {
+          activeFeatures.push("meeting");
+        }
+        const updatedExp = await raydropApi.recordActivityTick(activeFeatures, 4);
+        if (typeof updatedExp === "number") {
+          myRankExp.set(updatedExp);
+        }
+
         const fresh = await raydropApi.getAppState();
+        if (typeof fresh.my_rank_exp === "number") {
+          myRankExp.set(fresh.my_rank_exp);
+        }
         networkInfo.update((n) => ({
           ...n,
           signalingConnected: fresh.signaling_connected,
@@ -390,6 +419,17 @@
       },
     );
 
+    // Prevent WebView/Chromium from showing the prohibited/block drag cursor (⊘)
+    const preventBrowserDragDefault = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = "copy";
+      }
+    };
+    window.addEventListener("dragenter", preventBrowserDragDefault);
+    window.addEventListener("dragover", preventBrowserDragDefault);
+    window.addEventListener("drop", preventBrowserDragDefault);
+
     // Native OS Drag and Drop multiple files/folders listener
     try {
       const webview = getCurrentWebview();
@@ -458,6 +498,9 @@
     return () => {
       clearInterval(updateInterval);
       window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("dragenter", preventBrowserDragDefault);
+      window.removeEventListener("dragover", preventBrowserDragDefault);
+      window.removeEventListener("drop", preventBrowserDragDefault);
     };
   });
 </script>
@@ -483,7 +526,7 @@
 
   <!-- Main View: FULL width & height for Transfers & Streams, or active tab -->
   <main
-    class="flex-1 w-full p-2 sm:p-4 pb-16 md:pb-4 overflow-hidden relative z-10 flex flex-col min-h-0"
+    class="flex-1 w-full p-2 sm:p-4 pb-16 md:pb-4 overflow-hidden relative flex flex-col min-h-0"
   >
     <div
       class="h-full w-full {$activeMainTab === 'transfers'
@@ -514,10 +557,34 @@
       <RemoteDesktopView />
     </div>
     <div
+      class="h-full w-full {$activeMainTab === 'dashboard'
+        ? 'flex flex-col'
+        : 'hidden'}"
+    >
+      <DashboardView active={$activeMainTab === 'dashboard'} />
+    </div>
+    <div
+      class="h-full w-full {$activeMainTab === 'clipboard'
+        ? 'flex flex-col'
+        : 'hidden'}"
+    >
+      <ClipboardHistoryView active={$activeMainTab === 'clipboard'} />
+    </div>
+    <div
+      class="h-full w-full {$activeMainTab === 'notes'
+        ? 'flex flex-col'
+        : 'hidden'}"
+    >
+      <NotesView active={$activeMainTab === 'notes'} />
+    </div>
+    <div
       class="h-full w-full {$activeMainTab !== 'transfers' &&
       $activeMainTab !== 'chat' &&
       $activeMainTab !== 'meeting' &&
-      $activeMainTab !== 'remote'
+      $activeMainTab !== 'remote' &&
+      $activeMainTab !== 'dashboard' &&
+      $activeMainTab !== 'clipboard' &&
+      $activeMainTab !== 'notes'
         ? 'flex flex-col'
         : 'hidden'}"
     >
@@ -636,6 +703,7 @@
   <MagnetDownloadModal />
   <BrowserExtensionModal />
   <MeetingInviteModal />
+  <WolModal />
 
   <!-- Mobile Bottom Navigation Bar (md:hidden) -->
   <nav

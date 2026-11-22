@@ -11,6 +11,7 @@ pub mod remote_capture;
 pub mod remote_fs;
 pub mod remote_input;
 pub mod state;
+pub mod system_monitor;
 pub mod torrent;
 pub mod tray_badge;
 pub mod win_service;
@@ -191,8 +192,8 @@ pub fn run() {
             let handle = app.handle().clone();
 
             #[cfg(desktop)]
-            {
-                // Build System Tray Menu
+            if !is_system_agent {
+                // Build System Tray Menu (user desktop instance only, never for headless --system-agent)
                 let is_disc = state_for_setup.is_discoverable();
                 let is_autostart = state_for_setup
                     .settings
@@ -200,9 +201,9 @@ pub fn run() {
                     .map(|s| s.autostart)
                     .unwrap_or(true);
                 let toggle_label = if is_disc {
-                    "Status: Discoverable (ON)"
+                    "Status: Visible (Online)"
                 } else {
-                    "Status: Hidden (OFF)"
+                    "Status: Hidden (Offline)"
                 };
                 let autostart_label = if is_autostart {
                     "Auto-Start at Boot: ON"
@@ -238,10 +239,17 @@ pub fn run() {
                             if let Ok(mut s) = state_menu.settings.lock() {
                                 s.discoverable = next;
                             }
+                            if !next {
+                                *state_menu.signaling_tx.lock().unwrap() = None;
+                                state_menu
+                                    .signaling_connected
+                                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                                let _ = app_handle.emit("signaling_status_changed", false);
+                            }
                             let new_label = if next {
-                                "Status: Discoverable (ON)"
+                                "Status: Visible (Online)"
                             } else {
-                                "Status: Hidden (OFF)"
+                                "Status: Hidden (Offline)"
                             };
                             let _ = toggle_item_clone.set_text(new_label);
                             let _ = app_handle.emit("discoverability_changed", next);
@@ -330,6 +338,40 @@ pub fn run() {
                         }
                     }
                 });
+
+                // Background Cross-Platform Clipboard History Watcher (Windows, macOS, Linux)
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                {
+                    let app_cb = handle.clone();
+                    let state_cb = state_for_setup.clone();
+                    std::thread::spawn(move || {
+                        let mut last_seq: u64 = 0;
+                        let mut last_hash = String::new();
+                        loop {
+                            std::thread::sleep(std::time::Duration::from_millis(900));
+                            let seq = commands::get_clipboard_sequence_number();
+                            if seq != 0 && seq == last_seq {
+                                continue;
+                            }
+                            if seq != 0 {
+                                last_seq = seq;
+                            }
+                            if let Ok(content) = commands::read_clipboard_content() {
+                                if content.trim().is_empty() || content.len() > 6_000_000 {
+                                    continue;
+                                }
+                                let hash = blake3::hash(content.as_bytes()).to_hex().to_string();
+                                if hash == last_hash {
+                                    continue;
+                                }
+                                last_hash = hash;
+                                if let Ok(true) = state_cb.db.record_clipboard_entry(&content) {
+                                    let _ = app_cb.emit("clipboard_history_updated", ());
+                                }
+                            }
+                        }
+                    });
+                }
             }
 
             // Show & focus main window on startup (desktop only)
@@ -364,10 +406,34 @@ pub fn run() {
             let state_for_torrents = state_for_setup.clone();
             tauri::async_runtime::spawn(async move {
                 let mut interval = tokio::time::interval(std::time::Duration::from_millis(1200));
+                let mut recorded_completed = std::collections::HashSet::<String>::new();
+                let mut initialized = false;
                 loop {
                     interval.tick().await;
                     let tasks = state_for_torrents.torrent_manager.list_torrents().await;
+                    if !initialized {
+                        for task in &tasks {
+                            if task.status == "completed" {
+                                recorded_completed.insert(task.id.clone());
+                            }
+                        }
+                        initialized = true;
+                    }
                     if !tasks.is_empty() {
+                        for task in &tasks {
+                            if task.status == "completed" && !recorded_completed.contains(&task.id) {
+                                recorded_completed.insert(task.id.clone());
+                                crate::network::transport::notify_os(
+                                    &handle_for_torrents,
+                                    "Torrent Download Complete",
+                                    &format!(
+                                        "{} ({}) has finished downloading.",
+                                        task.name,
+                                        crate::network::transport::format_bytes_human(task.total_bytes)
+                                    ),
+                                );
+                            }
+                        }
                         let _ = handle_for_torrents.emit("torrent_stats_update", &tasks);
                     }
                 }
@@ -405,6 +471,17 @@ pub fn run() {
                                 };
                                 let _ = state_for_http.db.upsert_transfer(&rec);
                                 let _ = handle_for_http.emit("transfer_state_changed", &rec);
+                                crate::network::transport::notify_os(
+                                    &handle_for_http,
+                                    "Download Complete",
+                                    &format!(
+                                        "{} ({}) has finished downloading.",
+                                        task.filename,
+                                        crate::network::transport::format_bytes_human(
+                                            task.total_bytes.max(task.downloaded_bytes)
+                                        )
+                                    ),
+                                );
                             }
                         }
                         let _ = handle_for_http.emit("http_download_stats_update", &tasks);
@@ -439,6 +516,7 @@ pub fn run() {
             commands::toggle_discoverability,
             commands::toggle_autostart,
             commands::update_settings,
+            commands::set_ui_theme,
             commands::get_contacts,
             commands::add_wan_contact,
             commands::update_contact_trust,
@@ -476,6 +554,18 @@ pub fn run() {
             commands::start_web_share,
             commands::stop_web_share,
             commands::read_system_clipboard,
+            commands::read_system_clipboard_if_changed,
+            commands::get_clipboard_sequence_number,
+            commands::list_clipboard_history,
+            commands::copy_clipboard_history_item,
+            commands::toggle_pin_clipboard_item,
+            commands::delete_clipboard_history_item,
+            commands::clear_clipboard_history,
+            commands::list_notes,
+            commands::save_note,
+            commands::toggle_pin_note,
+            commands::toggle_archive_note,
+            commands::delete_note,
             commands::write_system_clipboard,
             commands::save_base64_image,
             commands::broadcast_clipboard,
@@ -536,6 +626,7 @@ pub fn run() {
             commands::start_second_screen_server,
             commands::stop_second_screen_server,
             commands::push_second_screen_frame,
+            commands::record_activity_tick,
             commands::open_system_display_settings,
             commands::start_native_screen_capture,
             commands::stop_native_screen_capture,
@@ -546,6 +637,8 @@ pub fn run() {
             commands::check_windows_service_status,
             commands::install_windows_service,
             commands::uninstall_windows_service,
+            commands::get_system_telemetry,
+            commands::get_transfer_analytics,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Raydrop Tauri application")

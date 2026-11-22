@@ -667,6 +667,7 @@ where
         let from_os = raw_val.get("os_type").and_then(|v| v.as_str()).map(|s| s.to_string());
         let from_listen_port = raw_val.get("listen_port").and_then(|v| v.as_u64()).map(|p| p as u16);
         let from_avatar_hash = raw_val.get("avatar_hash").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let from_rank_exp = raw_val.get("rank_exp").and_then(|v| v.as_u64()).unwrap_or(0);
 
         if !from_dev_id.is_empty() {
             let existing = state.db.get_contact(&from_dev_id).ok().flatten();
@@ -687,6 +688,8 @@ where
                 last_seen_at: crate::db::storage::now_unix_secs(),
                 created_at: crate::db::storage::now_unix_secs(),
                 avatar_hash: from_avatar_hash.clone().or_else(|| existing.as_ref().and_then(|e| e.avatar_hash.clone())),
+                rank_exp: from_rank_exp.max(existing.as_ref().map(|e| e.rank_exp).unwrap_or(0)),
+                mac_address: existing.as_ref().and_then(|e| e.mac_address.clone()),
             };
             let _ = state.db.upsert_contact(&c);
             let _ = app.emit("contacts_updated", ());
@@ -698,6 +701,7 @@ where
         }
 
         let my_avatar_hash = state.db.get_setting("avatar_hash").ok().flatten();
+        let my_rank_exp = state.db.compute_my_rank_exp().unwrap_or(0);
         let my_alias = state.settings.lock().map(|s| s.alias_name.clone()).unwrap_or_else(|_| "Raydrop".to_string());
         let pong = serde_json::json!({
             "type": "DIRECT_PONG",
@@ -706,6 +710,7 @@ where
             "os_type": std::env::consts::OS,
             "listen_port": state.listen_port,
             "avatar_hash": my_avatar_hash,
+            "rank_exp": my_rank_exp,
         });
         write_json_packet(&mut writer, &pong).await?;
         return Ok(());
@@ -876,6 +881,9 @@ where
                         let avatar_hash = chat_val
                             .get("from_avatar_hash")
                             .and_then(|v| v.as_str());
+                        if let Some(exp) = chat_val.get("from_rank_exp").and_then(|v| v.as_u64()) {
+                            let _ = state.db.update_contact_rank_exp(&from_device_id, exp);
+                        }
 
                         if let Some(av_data) = avatar_data {
                             let _ = crate::commands::save_peer_avatar_internal(
@@ -992,6 +1000,8 @@ where
         last_seen_at: now_unix_secs(),
         created_at: now_unix_secs(),
         avatar_hash: existing_contact.as_ref().and_then(|c| c.avatar_hash.clone()),
+        rank_exp: existing_contact.as_ref().map(|c| c.rank_exp).unwrap_or(0),
+        mac_address: existing_contact.as_ref().and_then(|c| c.mac_address.clone()),
     };
     let _ = state.db.upsert_contact(&contact);
     let _ = app.emit("contacts_updated", ());
@@ -1863,6 +1873,8 @@ async fn start_or_resume_transfer(
                 last_seen_at: now_unix_secs(),
                 created_at: now_unix_secs(),
                 avatar_hash: None,
+                rank_exp: 0,
+                mac_address: None,
             };
             let _ = state.db.upsert_contact(&fallback);
             fallback

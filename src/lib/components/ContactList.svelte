@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { openWithLastDir } from "../utils/filePicker";
   import {
     appSettings,
     cloudMyDevices,
@@ -44,6 +44,7 @@
   import RemoteExplorerModal from "./RemoteExplorerModal.svelte";
   import { createMeetingRoom, inviteContactToMeeting } from "../stores/meeting";
   import { formatLastOnline } from "../utils/time";
+  import { getRankInfo } from "../utils/rank";
   import { triggerWakeOnLan } from "../stores/wol";
 
   let remoteBrowserTarget: { deviceId: string; alias: string } | null = null;
@@ -313,7 +314,7 @@
     try {
       const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
       const shouldPickDir = directory && !isMobile;
-      const selected = await open({
+      const selected = await openWithLastDir({
         multiple: true,
         directory: shouldPickDir,
         title: shouldPickDir
@@ -1023,6 +1024,16 @@
                           >
                             {peer.network_type}
                           </span>
+                          {#if true}
+                            {@const pRank = getRankInfo(peer.rank_exp || 0)}
+                            <span
+                              class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                              style={pRank.badgeStyle}
+                              title="{pRank.tierName} Level {pRank.level} ({pRank.exp.toLocaleString()} EXP)"
+                            >
+                              {pRank.icon} {pRank.tierName} Lv.{pRank.level}
+                            </span>
+                          {/if}
                         </div>
                       {/if}
                       <p class="text-xs font-mono text-slate-400 truncate">
@@ -1229,6 +1240,16 @@
                     <span class="text-[11px] font-mono text-cyan-300 truncate"
                       >{peer.user_email}</span
                     >
+                  {/if}
+                  {#if true}
+                    {@const pRank = getRankInfo(peer.rank_exp || 0)}
+                    <span
+                      class="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                      style={pRank.badgeStyle}
+                      title="{pRank.tierName} Level {pRank.level} ({pRank.exp.toLocaleString()} EXP)"
+                    >
+                      {pRank.icon} {pRank.tierName} Lv.{pRank.level}
+                    </span>
                   {/if}
                 </div>
               {/if}

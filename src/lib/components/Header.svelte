@@ -9,7 +9,9 @@
     cloudContacts,
     activeMainTab,
     cliQueuedFiles,
+    myRankExp,
   } from "../stores/state";
+  import { getRankInfo } from "../utils/rank";
   import { contacts, lanContacts } from "../stores/contacts";
   import { activeTransfers } from "../stores/transfers";
   import { totalUnreadCount } from "../stores/chat";
@@ -21,6 +23,7 @@
   } from "../stores/update";
   import { checkForUpdates } from "../utils/updater";
   import { myAvatar } from "../stores/avatars";
+  import { RAYDROP_THEMES, currentTheme, applyTheme } from "../stores/theme";
   import {
     Copy,
     Check,
@@ -33,6 +36,8 @@
     Sparkles,
     RefreshCw,
     Activity,
+    ClipboardList,
+    StickyNote,
     Laptop,
     Users,
     Zap,
@@ -41,9 +46,12 @@
     Camera,
     Video,
     Monitor,
+    Palette,
   } from "lucide-svelte";
 
   let copied = false;
+  let themeMenuOpen = false;
+  let profileMenuOpen = false;
 
   async function toggleDiscoverable() {
     const next = !$appSettings.discoverable;
@@ -72,6 +80,7 @@
     appSettings.set(updated);
     cloudMyDevices.set([]);
     cloudContacts.set([]);
+    authModalOpen.set(true);
   }
 
   async function handleUploadAvatar() {
@@ -97,6 +106,8 @@
   }
 </script>
 
+<svelte:window on:click={() => { themeMenuOpen = false; profileMenuOpen = false; }} />
+
 <header
   class="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-xl px-3 sm:px-5 pt-8 pb-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 z-20 shrink-0"
 >
@@ -105,7 +116,7 @@
     <img
       src="/icon.png"
       alt="Raydrop Icon"
-      class="w-7 h-7 sm:w-9 sm:h-9 rounded-xl shadow-lg shadow-cyan-500/20 object-contain p-0.5 bg-slate-900 border border-cyan-500/30 shrink-0"
+      class="w-7 h-7 sm:w-9 sm:h-9 rounded-xl object-contain shrink-0"
     />
     <div>
       <div class="flex items-center gap-1.5 sm:gap-2">
@@ -337,6 +348,57 @@
         </span>
       {/if}
     </button>
+
+    <!-- 8. System Monitor & Transfer Analytics Dashboard -->
+    <button
+      type="button"
+      on:click={() => activeMainTab.set("dashboard")}
+      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
+      'dashboard'
+        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
+        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
+      title="System Monitor & Transfer Analytics"
+    >
+      <Activity
+        class="w-4 h-4 {$activeMainTab === 'dashboard'
+          ? 'text-cyan-400'
+          : 'text-slate-400'}"
+      />
+    </button>
+
+    <!-- 9. Copy History (Win+V) -->
+    <button
+      type="button"
+      on:click={() => activeMainTab.set("clipboard")}
+      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
+      'clipboard'
+        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
+        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
+      title="Copy History (Win+V)"
+    >
+      <ClipboardList
+        class="w-4 h-4 {$activeMainTab === 'clipboard'
+          ? 'text-cyan-400'
+          : 'text-slate-400'}"
+      />
+    </button>
+
+    <!-- 10. Notes & Task Lists (Google Keep style) -->
+    <button
+      type="button"
+      on:click={() => activeMainTab.set("notes")}
+      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
+      'notes'
+        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
+        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
+      title="Notes & Task Lists"
+    >
+      <StickyNote
+        class="w-4 h-4 {$activeMainTab === 'notes'
+          ? 'text-cyan-400'
+          : 'text-slate-400'}"
+      />
+    </button>
   </nav>
 
   <!-- Status Badges & Quick Action Controls (Right - Compact & Profile Always Visible) -->
@@ -346,19 +408,19 @@
       <button
         type="button"
         on:click={enableAutostartQuick}
-        class="hidden lg:flex items-center gap-1.5 px-2 py-1.5 rounded-xl border bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300 text-[11px] font-semibold transition cursor-pointer"
+        class="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold transition cursor-pointer"
         title="Auto-Start at Boot is OFF — click to enable so Raydrop starts automatically after restart"
       >
-        <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+        <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
         <span>Autostart OFF</span>
       </button>
     {/if}
 
     <!-- WAN STUN Status Pill -->
     <div
-      class="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl border text-[11px] font-semibold {$networkInfo.signalingConnected
-        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-        : 'bg-amber-500/10 border-amber-500/30 text-amber-300'}"
+      class="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold {$networkInfo.signalingConnected
+        ? 'bg-emerald-500/15 text-emerald-300'
+        : 'bg-slate-800/90 text-slate-400'}"
       title={$networkInfo.signalingConnected
         ? `WAN Online (NAT: ${$networkInfo.wanReflexiveAddr || 'Connected'})`
         : "WAN Signaling Offline — LAN Only"}
@@ -366,7 +428,7 @@
       <Globe
         class="w-3.5 h-3.5 {$networkInfo.signalingConnected
           ? 'text-emerald-400'
-          : 'text-amber-400'}"
+          : 'text-slate-400'}"
       />
       <span class="hidden lg:inline">
         {$networkInfo.signalingConnected ? "WAN Online" : "LAN Only"}
@@ -377,101 +439,193 @@
     <button
       type="button"
       on:click={toggleDiscoverable}
-      class="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer {$appSettings.discoverable
-        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25'
-        : 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25'}"
+      class="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition-all cursor-pointer {$appSettings.discoverable
+        ? 'bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25'
+        : 'bg-slate-800/90 text-slate-400 hover:bg-slate-700'}"
       title={$appSettings.discoverable
-        ? "Device Discovery: Visible to nearby peers (Click to hide)"
-        : "Device Discovery: Hidden Mode — click to make visible"}
+        ? "Visible & Online to other users (Click to go Hidden & Offline)"
+        : "Hidden & Offline Mode — other users see you as offline (Click to go Visible)"}
     >
       <span
         class="w-2 h-2 rounded-full {$appSettings.discoverable
           ? 'bg-cyan-400 animate-pulse'
-          : 'bg-amber-400'}"
+          : 'bg-slate-500'}"
       ></span>
       <span class="hidden lg:inline">
-        {$appSettings.discoverable ? "Visible" : "Hidden"}
+        {$appSettings.discoverable ? "Visible" : "Hidden • Offline"}
       </span>
     </button>
 
-    <!-- Account Sign In / Out -->
-    {#if $appSettings.auth_token}
+    <!-- Quick Theme Switcher Dropdown -->
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div class="relative" on:click|stopPropagation>
       <button
         type="button"
-        on:click={handleLogout}
-        class="p-2 rounded-xl bg-slate-800/70 hover:bg-rose-500/20 border border-slate-700/70 hover:border-rose-500/30 text-slate-300 hover:text-rose-300 transition-colors cursor-pointer"
-        title="Sign Out ({$appSettings.user_email})"
+        on:click={() => {
+          themeMenuOpen = !themeMenuOpen;
+          profileMenuOpen = false;
+        }}
+        class="p-2 rounded-xl bg-slate-800/70 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
+        title="Switch Theme ({RAYDROP_THEMES.find((t) => t.id === $currentTheme)?.name || 'Carbon Azure'})"
       >
-        <LogOut class="w-4 h-4" />
+        <Palette class="w-4 h-4 text-cyan-400" />
       </button>
-    {:else}
-      <button
-        type="button"
-        on:click={() => authModalOpen.set(true)}
-        class="p-2 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold text-xs transition-colors shadow-sm shadow-cyan-500/20 cursor-pointer"
-        title="Sign In to Sync Devices"
-      >
-        <LogIn class="w-4 h-4" />
-      </button>
-    {/if}
 
-    <!-- Send Files Quick Button -->
-    <button
-      type="button"
-      on:click={async () => {
-        try {
-          const picked = await open({
-            multiple: true,
-            title: "Select Files to Send via Raydrop",
-          });
-          if (picked) {
-            const list = Array.isArray(picked) ? picked : [picked];
-            cliQueuedFiles.update((prev) => [...prev, ...list]);
-          }
-        } catch (e) {
-          console.warn("File picker canceled or error:", e);
-        }
-      }}
-      class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-cyan-500/20 transition-all hover:-translate-y-0.5 active:translate-y-0 cursor-pointer whitespace-nowrap"
-      title="Select multiple files to send"
-    >
-      <Plus class="w-3.5 h-3.5 stroke-[2.5]" />
-      <span>Send</span>
-    </button>
-
-    <!-- User Avatar Upload / Profile Button (Guaranteed Visible) -->
-    <button
-      type="button"
-      on:click={handleUploadAvatar}
-      class="relative group w-8 h-8 rounded-xl overflow-hidden border border-slate-700/80 hover:border-cyan-400 bg-slate-800 flex items-center justify-center shrink-0 transition cursor-pointer shadow-sm"
-      title="Click to set or change your profile avatar"
-    >
-      {#if $myAvatar}
-        <img
-          src={$myAvatar}
-          alt="My Avatar"
-          class="w-full h-full object-cover"
-        />
-      {:else}
-        <span class="text-[11px] font-bold text-cyan-300">
-          {($appSettings.alias_name || "RD").slice(0, 2).toUpperCase()}
-        </span>
+      {#if themeMenuOpen}
+        <div
+          class="absolute right-0 mt-2 w-56 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-2 z-50 space-y-1"
+        >
+          <div class="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            UI Theme
+          </div>
+          {#each RAYDROP_THEMES as themeOpt}
+            <button
+              type="button"
+              on:click={() => {
+                applyTheme(themeOpt.id);
+                themeMenuOpen = false;
+              }}
+              class="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-left text-xs transition cursor-pointer {$currentTheme === themeOpt.id
+                ? 'bg-cyan-500/20 text-white font-semibold'
+                : 'text-slate-300 hover:bg-slate-800'}"
+            >
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span
+                  class="w-4 h-4 rounded-full shrink-0 flex items-center justify-center border border-white/15"
+                  style="background: {themeOpt.previewBg}"
+                >
+                  <span
+                    class="w-2 h-2 rounded-full"
+                    style="background: {themeOpt.previewAccent}"
+                  ></span>
+                </span>
+                <span class="truncate">{themeOpt.name}</span>
+              </div>
+              {#if $currentTheme === themeOpt.id}
+                <Check class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              {/if}
+            </button>
+          {/each}
+        </div>
       {/if}
-      <div
-        class="absolute inset-0 bg-slate-950/70 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
-      >
-        <Camera class="w-3.5 h-3.5 text-cyan-300" />
-      </div>
-    </button>
+    </div>
 
-    <!-- Settings Trigger Button (Guaranteed Visible) -->
-    <button
-      type="button"
-      on:click={() => settingsModalOpen.set(true)}
-      class="p-2 rounded-xl bg-slate-800/70 hover:bg-slate-700 border border-slate-700/70 text-slate-300 hover:text-white transition-colors shrink-0 cursor-pointer"
-      title="Open Raydrop Settings"
-    >
-      <Settings class="w-4 h-4" />
-    </button>
+    <!-- Profile Avatar & Context Menu (Change Avatar, Settings, Sign In/Out) -->
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div class="relative shrink-0" on:click|stopPropagation>
+      <button
+        type="button"
+        on:click={() => {
+          profileMenuOpen = !profileMenuOpen;
+          themeMenuOpen = false;
+        }}
+        class="relative group w-8 h-8 rounded-xl overflow-hidden bg-slate-800 flex items-center justify-center shrink-0 transition cursor-pointer shadow-sm"
+        title="Profile Menu ({$appSettings.alias_name || 'Raydrop'})"
+      >
+        {#if $myAvatar}
+          <img
+            src={$myAvatar}
+            alt="My Avatar"
+            class="w-full h-full object-cover"
+          />
+        {:else}
+          <span class="text-[11px] font-bold text-cyan-300">
+            {($appSettings.alias_name || "RD").slice(0, 2).toUpperCase()}
+          </span>
+        {/if}
+      </button>
+
+      {#if profileMenuOpen}
+        {@const myRank = getRankInfo($myRankExp)}
+        <div
+          class="absolute right-0 mt-2 w-56 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-2 z-50 space-y-1"
+        >
+          <div class="px-2.5 py-2 border-b border-slate-800 mb-1 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="min-w-0">
+                <div class="text-xs font-bold text-white truncate">
+                  {$appSettings.alias_name || "Raydrop User"}
+                </div>
+                <div class="text-[11px] text-slate-400 truncate">
+                  {$appSettings.user_email || $appSettings.device_id}
+                </div>
+              </div>
+              <span
+                class="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap"
+                style={myRank.badgeStyle}
+              >
+                {myRank.icon} {myRank.tierName} Lv.{myRank.level}
+              </span>
+            </div>
+            <div class="space-y-1">
+              <div class="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                <span>{myRank.exp.toLocaleString()} EXP</span>
+                <span>Next: {myRank.nextLevelExp.toLocaleString()}</span>
+              </div>
+              <div class="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                <div
+                  class="h-full rounded-full transition-all"
+                  style="width: {myRank.progressPercent}%; background: {myRank.barColor}"
+                ></div>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            on:click={() => {
+              profileMenuOpen = false;
+              handleUploadAvatar();
+            }}
+            class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+          >
+            <Camera class="w-4 h-4 text-cyan-400 shrink-0" />
+            <span>Change Avatar</span>
+          </button>
+
+          <button
+            type="button"
+            on:click={() => {
+              profileMenuOpen = false;
+              settingsModalOpen.set(true);
+            }}
+            class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+          >
+            <Settings class="w-4 h-4 text-cyan-400 shrink-0" />
+            <span>Settings</span>
+          </button>
+
+          <div class="border-t border-slate-800 my-1"></div>
+
+          {#if $appSettings.auth_token}
+            <button
+              type="button"
+              on:click={() => {
+                profileMenuOpen = false;
+                handleLogout();
+              }}
+              class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/15 transition cursor-pointer"
+            >
+              <LogOut class="w-4 h-4 shrink-0" />
+              <span>Sign Out</span>
+            </button>
+          {:else}
+            <button
+              type="button"
+              on:click={() => {
+                profileMenuOpen = false;
+                authModalOpen.set(true);
+              }}
+              class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs text-cyan-300 hover:text-white hover:bg-cyan-500/20 transition cursor-pointer font-semibold"
+            >
+              <LogIn class="w-4 h-4 shrink-0" />
+              <span>Sign In to Sync Devices</span>
+            </button>
+          {/if}
+        </div>
+      {/if}
+    </div>
   </div>
 </header>

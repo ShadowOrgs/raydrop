@@ -43,6 +43,9 @@
   let maxConcurrentDownloads = 3;
   let win11DirectMenu = false;
   let statusBanner = "";
+  let saveError = "";
+  let isSaving = false;
+  let justSaved = false;
   let sharedFolders: Array<{
     id: string;
     name: string;
@@ -142,19 +145,30 @@
   }
 
   async function saveSettings() {
-    const updated = await raydropApi.updateSettings({
-      aliasName,
-      downloadDir,
-      signalingUrl,
-      stunAddr,
-      autostart,
-      speedLimitMbps,
-      autoCategorize,
-      maxConcurrentDownloads,
-    });
-    appSettings.set(updated);
-    statusBanner = "Settings saved! Autorun & Signaling configuration updated.";
-    setTimeout(() => (statusBanner = ""), 3000);
+    if (isSaving) return;
+    isSaving = true;
+    saveError = "";
+    try {
+      const updated = await raydropApi.updateSettings({
+        aliasName,
+        downloadDir,
+        signalingUrl,
+        stunAddr,
+        autostart,
+        speedLimitMbps,
+        autoCategorize,
+        maxConcurrentDownloads,
+      });
+      appSettings.set(updated);
+      statusBanner = "Settings saved! Autorun & Signaling configuration updated.";
+      justSaved = true;
+      setTimeout(() => (justSaved = false), 2500);
+      setTimeout(() => (statusBanner = ""), 4000);
+    } catch (err) {
+      saveError = `Failed to save settings: ${err instanceof Error ? err.message : String(err)}`;
+    } finally {
+      isSaving = false;
+    }
   }
 
   async function handleSpeedLimitChange(val: number) {
@@ -742,15 +756,25 @@
           </button>
         </div>
 
-        {#if statusBanner}
-          <div
-            class="flex items-center gap-2 text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-3 py-2 rounded-xl"
-          >
-            <CheckCircle2 class="w-4 h-4 shrink-0" />
-            <span>{statusBanner}</span>
-          </div>
-        {/if}
       </div>
+
+      {#if saveError}
+        <div
+          class="flex items-center gap-2 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 px-3 py-2 rounded-xl shrink-0"
+        >
+          <X class="w-4 h-4 shrink-0" />
+          <span>{saveError}</span>
+        </div>
+      {/if}
+
+      {#if statusBanner}
+        <div
+          class="flex items-center gap-2 text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-3 py-2 rounded-xl shrink-0"
+        >
+          <CheckCircle2 class="w-4 h-4 shrink-0" />
+          <span>{statusBanner}</span>
+        </div>
+      {/if}
 
       <div
         class="flex items-center justify-end gap-2 pt-4 border-t border-slate-800 shrink-0"
@@ -763,10 +787,18 @@
         </button>
         <button
           on:click={saveSettings}
-          class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-xs font-bold text-slate-950 shadow-md shadow-cyan-500/20 active:scale-95 transition-all"
+          disabled={isSaving}
+          class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold shadow-md active:scale-95 transition-all disabled:opacity-60 {justSaved
+            ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20'
+            : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-cyan-500/20'}"
         >
-          <Save class="w-3.5 h-3.5" />
-          <span>Save Configuration</span>
+          {#if justSaved}
+            <CheckCircle2 class="w-3.5 h-3.5" />
+            <span>Configuration Saved!</span>
+          {:else}
+            <Save class="w-3.5 h-3.5" />
+            <span>{isSaving ? "Saving..." : "Save Configuration"}</span>
+          {/if}
         </button>
       </div>
     </div>

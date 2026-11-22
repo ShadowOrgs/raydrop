@@ -11,8 +11,6 @@
     X,
     Maximize,
     Minimize,
-    ArrowDownToLine,
-    ArrowUpFromLine,
     LogOut,
     Copy,
     Laptop,
@@ -39,6 +37,7 @@
   import QRCode from "qrcode";
   import AnnotationOverlay from "./AnnotationOverlay.svelte";
   import { triggerWakeOnLan } from "../stores/wol";
+  import { isDraggingFiles } from "../stores/state";
   import { raydropApi } from "../utils/tauri-ipc";
   import {
     remoteHostSettings,
@@ -55,8 +54,7 @@
     connectToRemoteHost,
     disconnectRemoteSession,
     sendInputToHost,
-    sendLocalClipboardToHost,
-    requestClipboardFromHost,
+    triggerLocalClipboardSyncNow,
     sendShortcutToHost,
     switchRemoteMonitor,
     sendPowerActionToHost,
@@ -789,6 +787,10 @@
       a: "down",
     });
 
+    if ((e.ctrlKey || e.metaKey) && ["c", "x"].includes(e.key.toLowerCase())) {
+      triggerLocalClipboardSyncNow();
+    }
+
     // In Fullscreen mode: intercept and prevent default for ALL shortcuts
     // (Alt+Tab, Windows key/Meta, PrintScreen, F-keys, etc.) so host handles them!
     if (isFullscreen) {
@@ -836,6 +838,13 @@
     <div
       bind:this={viewerContainerEl}
       class="flex-1 w-full h-full relative flex flex-col bg-black overflow-hidden"
+      on:dragenter|preventDefault={(e) => {
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      }}
+      on:dragover|preventDefault={(e) => {
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      }}
+      on:drop|preventDefault
     >
       <!-- Tiny Top Arrow Trigger Handle (Click-to-expand, tiny footprint so it never blocks apps) -->
       <button
@@ -875,28 +884,6 @@
             >
               ⚡ {$remoteLatencyMs} ms
             </span>
-          </div>
-
-          <!-- Clipboard Actions (Bidirectional Text & Image) -->
-          <div class="flex items-center gap-1.5 pr-3 border-r border-slate-800 shrink-0">
-            <button
-              type="button"
-              on:click={sendLocalClipboardToHost}
-              class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap font-medium"
-              title="Send your local clipboard (Text or Image) to Host PC"
-            >
-              <ArrowUpFromLine class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-              <span>Send Clipboard</span>
-            </button>
-            <button
-              type="button"
-              on:click={requestClipboardFromHost}
-              class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap font-medium"
-              title="Get clipboard contents from Host PC to your local computer"
-            >
-              <ArrowDownToLine class="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-              <span>Get Clipboard</span>
-            </button>
           </div>
 
           <!-- Shortcuts Dropdown / Quick Buttons -->
@@ -1132,6 +1119,23 @@
         ></video>
         <AnnotationOverlay active={showAnnotation} on:close={() => (showAnnotation = false)} />
       </div>
+
+      {#if isFullscreen && $isDraggingFiles}
+        <div
+          class="absolute inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center pointer-events-none"
+        >
+          <div
+            class="p-6 rounded-2xl border-2 border-dashed border-cyan-400 bg-slate-900/95 shadow-2xl text-center max-w-sm mx-4"
+          >
+            <p class="text-base font-bold text-white">
+              Drop to Send Directly to {$activeRemoteSession?.peerAlias || "Host"}
+            </p>
+            <p class="text-xs text-slate-300 mt-1">
+              Files dropped onto the Remote Desktop screen will transfer immediately.
+            </p>
+          </div>
+        </div>
+      {/if}
     </div>
   {:else}
     <!-- Remote Desktop Full-Page Device List Dashboard -->

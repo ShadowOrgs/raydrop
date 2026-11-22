@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick, onDestroy } from 'svelte';
-  import { open } from '@tauri-apps/plugin-dialog';
+  import { openWithLastDir } from '../utils/filePicker';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import {
     Send,
@@ -54,6 +54,8 @@
     LogOut,
     CheckSquare,
     Square,
+    ChevronUp,
+    ChevronDown,
   } from 'lucide-svelte';
   import VoiceNotePlayer from './VoiceNotePlayer.svelte';
   import RemoteExplorerModal from './RemoteExplorerModal.svelte';
@@ -87,6 +89,7 @@
   } from '../utils/tauri-ipc';
   import { renderMarkdown } from '../utils/markdown';
   import { formatLastOnline } from '../utils/time';
+  import { getRankInfo } from '../utils/rank';
 
   let messageInput = '';
   let searchQuery = '';
@@ -358,6 +361,7 @@
         networkType: c.network_type || 'wan',
         isOwnDevice: c.is_own_device,
         trustLevel: c.trust_level || 'ask',
+        rankExp: c.rank_exp || 0,
       });
     }
 
@@ -580,11 +584,57 @@
   $: hasMore = $activeChatPeerId ? !!$hasMoreMap[$activeChatPeerId] : false;
   $: isPeerBlocked = activePeer?.trustLevel === 'blocked';
 
-  $: displayMessages = chatSearchText.trim()
-    ? activeMessages.filter((m) =>
-        (m.content || '').toLowerCase().includes(chatSearchText.trim().toLowerCase())
-      )
-    : activeMessages;
+  let activeMatchIndex = 0;
+  let lastSearchQueryKey = '';
+
+  $: displayMessages = activeMessages;
+  $: searchQueryTrimmed = chatSearchText.trim().toLowerCase();
+  $: searchMatchIds = searchQueryTrimmed
+    ? activeMessages
+        .filter((m) => (m.content || '').toLowerCase().includes(searchQueryTrimmed))
+        .map((m) => m.id)
+    : [];
+
+  $: {
+    const key = `${$activeChatPeerId || ''}::${searchQueryTrimmed}`;
+    if (key !== lastSearchQueryKey) {
+      lastSearchQueryKey = key;
+      if (searchMatchIds.length > 0) {
+        activeMatchIndex = searchMatchIds.length - 1;
+        scrollToMatch(searchMatchIds[activeMatchIndex]);
+      } else {
+        activeMatchIndex = 0;
+      }
+    } else if (activeMatchIndex >= searchMatchIds.length) {
+      activeMatchIndex = Math.max(0, searchMatchIds.length - 1);
+    }
+  }
+
+  $: activeMatchId =
+    searchMatchIds.length > 0 && activeMatchIndex >= 0 && activeMatchIndex < searchMatchIds.length
+      ? searchMatchIds[activeMatchIndex]
+      : null;
+
+  async function scrollToMatch(msgId: string | null) {
+    if (!msgId) return;
+    await tick();
+    const el = document.getElementById(`chat-msg-${msgId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  function jumpToPrevMatch() {
+    if (searchMatchIds.length === 0) return;
+    activeMatchIndex = activeMatchIndex > 0 ? activeMatchIndex - 1 : searchMatchIds.length - 1;
+    scrollToMatch(searchMatchIds[activeMatchIndex]);
+  }
+
+  function jumpToNextMatch() {
+    if (searchMatchIds.length === 0) return;
+    activeMatchIndex = activeMatchIndex < searchMatchIds.length - 1 ? activeMatchIndex + 1 : 0;
+    scrollToMatch(searchMatchIds[activeMatchIndex]);
+  }
 
   $: conversationFiles = (() => {
     const list: {
@@ -812,7 +862,7 @@
 
   async function handlePickFiles() {
     try {
-      const picked = await open({
+      const picked = await openWithLastDir({
         multiple: true,
         title: 'Select Files to Send in Chat',
       });
@@ -832,7 +882,7 @@
         // Fallback to picking multiple files on mobile
         return handlePickFiles();
       }
-      const picked = await open({
+      const picked = await openWithLastDir({
         directory: true,
         multiple: false,
         title: 'Select Folder to Send in Chat',
@@ -1328,6 +1378,15 @@
                   {/if}
                   {#if peer.isOwnDevice}
                     <span class="text-[9px] px-1 rounded bg-indigo-500/20 text-indigo-300 font-mono">You</span>
+                  {:else}
+                    {@const peerRank = getRankInfo(peer.rankExp || 0)}
+                    <span
+                      class="text-[9px] font-semibold px-1.5 py-0.2 rounded-full"
+                      style={peerRank.badgeStyle}
+                      title="{peerRank.tierName} Level {peerRank.level} ({peerRank.exp.toLocaleString()} EXP)"
+                    >
+                      {peerRank.icon} {peerRank.tierName} Lv.{peerRank.level}
+                    </span>
                   {/if}
                   {#if blocked}
                     <span class="text-[9px] px-1 rounded bg-rose-500/20 text-rose-300 font-mono">Blocked</span>
@@ -1482,6 +1541,16 @@
                 <span class="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono">
                   {activePeer.networkType.toUpperCase()}
                 </span>
+                {#if !isGroupChat}
+                  {@const activeRank = getRankInfo(activePeer.rankExp || 0)}
+                  <span
+                    class="text-[9px] sm:text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                    style={activeRank.badgeStyle}
+                    title="{activeRank.tierName} Level {activeRank.level} ({activeRank.exp.toLocaleString()} EXP)"
+                  >
+                    {activeRank.icon} {activeRank.tierName} Lv.{activeRank.level}
+                  </span>
+                {/if}
                 {#if isPeerBlocked}
                   <span class="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 font-mono font-bold">
                     BLOCKED
@@ -1627,18 +1696,55 @@
           <input
             type="text"
             bind:value={chatSearchText}
+            on:keydown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.shiftKey) jumpToNextMatch();
+                else jumpToPrevMatch();
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                jumpToPrevMatch();
+              } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                jumpToNextMatch();
+              } else if (e.key === 'Escape') {
+                showChatSearch = false;
+                chatSearchText = '';
+              }
+            }}
             placeholder="Search text in this conversation..."
             class="flex-1 bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none font-sans"
             autofocus
           />
           {#if chatSearchText.trim()}
-            <span class="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/40">
-              {displayMessages.length} {displayMessages.length === 1 ? 'match' : 'matches'}
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded border {searchMatchIds.length > 0 ? 'text-cyan-400 bg-cyan-950/80 border-cyan-800/40' : 'text-rose-400 bg-rose-950/60 border-rose-800/40'}">
+              {searchMatchIds.length > 0 ? `${activeMatchIndex + 1} / ${searchMatchIds.length}` : '0 / 0'}
             </span>
+            <div class="flex items-center gap-0.5">
+              <button
+                type="button"
+                on:click={jumpToPrevMatch}
+                disabled={searchMatchIds.length === 0}
+                class="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                title="Previous match (Arrow Up)"
+              >
+                <ChevronUp class="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                on:click={jumpToNextMatch}
+                disabled={searchMatchIds.length === 0}
+                class="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                title="Next match (Arrow Down)"
+              >
+                <ChevronDown class="w-3.5 h-3.5" />
+              </button>
+            </div>
             <button
               type="button"
               on:click={() => (chatSearchText = '')}
               class="p-0.5 text-slate-400 hover:text-white"
+              title="Clear search"
             >
               <X class="w-3.5 h-3.5" />
             </button>
@@ -1695,15 +1801,11 @@
               Messages are sent directly (LAN) or via E2EE relay (WAN). Share markdown plans, code blocks, or attach files.
             </p>
           </div>
-        {:else if chatSearchText.trim() && displayMessages.length === 0}
-          <div class="h-full flex flex-col items-center justify-center text-center p-8 text-slate-400">
-            <Search class="w-8 h-8 text-slate-500 mb-2" />
-            <p class="text-sm font-semibold">No messages found</p>
-            <p class="text-xs text-slate-500 mt-1">No messages match "{chatSearchText}" in this conversation</p>
-          </div>
         {:else}
           {#each displayMessages as msg (msg.id)}
             {@const isOutgoing = msg.direction === 'outgoing'}
+            {@const isActiveMatch = activeMatchId === msg.id}
+            {@const isSearchMatch = searchQueryTrimmed.length > 0 && searchMatchIds.includes(msg.id)}
             {@const files = parseFilesJson(msg.files_json)}
             {@const linkedTransfer = msg.transfer_session_id ? $transfers.find((t) => t.id === msg.transfer_session_id) : undefined}
             {@const pendingRequest = msg.transfer_session_id ? $incomingRequestQueue.find((q) => q.session_id === msg.transfer_session_id) : undefined}
@@ -1711,7 +1813,7 @@
             {@const dataImageUrl = extractDataImage(msg.content)}
             {@const isDataImage = !!dataImageUrl}
 
-            <div class="flex flex-col {isOutgoing ? 'items-end' : 'items-start'} group">
+            <div id="chat-msg-{msg.id}" class="flex flex-col {isOutgoing ? 'items-end' : 'items-start'} group">
               {#if isGroupChat && !isOutgoing}
                 {@const senderMember = activeGroup?.members.find((m) => m.device_id === msg.sender_device_id)}
                 {@const isSenderOwner = activeGroup?.owner_id === msg.sender_device_id}
@@ -1732,7 +1834,11 @@
               <div
                 class="max-w-[85%] sm:max-w-[75%] rounded-2xl p-3.5 text-xs shadow-lg transition-all relative {isOutgoing
                   ? 'bg-gradient-to-tr from-cyan-950/60 to-indigo-950/60 border border-cyan-500/40 text-slate-100 rounded-br-sm shadow-cyan-500/5'
-                  : 'bg-slate-900/90 border border-slate-800 text-slate-200 rounded-bl-sm'}"
+                  : 'bg-slate-900/90 border border-slate-800 text-slate-200 rounded-bl-sm'} {isActiveMatch
+                  ? 'ring-2 ring-amber-400 border-amber-400 shadow-amber-500/20'
+                  : isSearchMatch
+                  ? 'ring-1 ring-cyan-400/60'
+                  : ''}"
               >
                 <!-- Quick Copy Button on Bubble Hover -->
                 <button

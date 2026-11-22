@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
+import { raydropApi } from '../utils/tauri-ipc';
 
-export type RaydropTheme = 'slate' | 'oled' | 'cyberpunk' | 'light';
+export type RaydropTheme = 'azure' | 'slate' | 'oled' | 'cyberpunk' | 'light';
 
 export interface ThemeOption {
   id: RaydropTheme;
@@ -12,9 +13,16 @@ export interface ThemeOption {
 
 export const RAYDROP_THEMES: ThemeOption[] = [
   {
+    id: 'azure',
+    name: 'Carbon Azure',
+    description: 'Default matte obsidian carbon with vibrant electric blue accents',
+    previewBg: '#0a0a0c',
+    previewAccent: '#0078e8',
+  },
+  {
     id: 'slate',
     name: 'Midnight Slate',
-    description: 'Default dark studio theme with balanced contrast',
+    description: 'Deep studio navy-slate with electric cyan contrast',
     previewBg: '#0f172a',
     previewAccent: '#06b6d4',
   },
@@ -45,23 +53,27 @@ const STORAGE_KEY = 'raydrop_theme';
 
 function getInitialTheme(): RaydropTheme {
   if (typeof localStorage !== 'undefined') {
-    const saved = localStorage.getItem(STORAGE_KEY) as RaydropTheme | null;
-    if (saved && ['slate', 'oled', 'cyberpunk', 'light'].includes(saved)) {
-      return saved;
+    const saved = localStorage.getItem(STORAGE_KEY) as string | null;
+    if (saved === 'noir') return 'azure';
+    if (saved && ['azure', 'slate', 'oled', 'cyberpunk', 'light'].includes(saved)) {
+      return saved as RaydropTheme;
     }
   }
-  return 'slate';
+  return 'azure';
 }
 
 export const currentTheme = writable<RaydropTheme>(getInitialTheme());
 
-export function applyTheme(theme: RaydropTheme) {
+export function applyTheme(theme: RaydropTheme, persistToBackend: boolean = true) {
   currentTheme.set(theme);
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(STORAGE_KEY, theme);
   }
   if (typeof document !== 'undefined') {
     document.documentElement.setAttribute('data-theme', theme);
+  }
+  if (persistToBackend) {
+    raydropApi.setUiTheme(theme).catch(() => {});
   }
 }
 

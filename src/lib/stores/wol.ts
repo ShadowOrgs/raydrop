@@ -1,43 +1,69 @@
+import { writable } from 'svelte/store';
 import { raydropApi } from '../utils/tauri-ipc';
 
-const STORAGE_KEY = 'raydrop_device_macs';
+const LEGACY_MAC_KEY = 'raydrop_device_macs';
+const CONFIG_STORAGE_KEY = 'raydrop_device_wol_configs';
 
-function loadMacMap(): Record<string, string> {
+export interface WolConfig {
+  mac: string;
+  wanHost: string;
+  port: number;
+}
+
+export const wolModalTarget = writable<{
+  deviceId: string;
+  deviceName: string;
+} | null>(null);
+
+function loadConfigMap(): Record<string, WolConfig> {
   if (typeof localStorage === 'undefined') return {};
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
+    const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+    const legacyRaw = localStorage.getItem(LEGACY_MAC_KEY);
+    if (legacyRaw) {
+      const legacy: Record<string, string> = JSON.parse(legacyRaw);
+      const migrated: Record<string, WolConfig> = {};
+      for (const [id, mac] of Object.entries(legacy)) {
+        migrated[id] = { mac, wanHost: '', port: 9 };
+      }
+      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(migrated));
+      return migrated;
+    }
+  } catch {}
+  return {};
+}
+
+export function getWolConfig(deviceId: string): WolConfig {
+  return loadConfigMap()[deviceId] || { mac: '', wanHost: '', port: 9 };
 }
 
 export function getSavedMac(deviceId: string): string {
-  return loadMacMap()[deviceId] || '';
+  return getWolConfig(deviceId).mac;
 }
 
-export function saveDeviceMac(deviceId: string, mac: string) {
+export function saveWolConfig(deviceId: string, cfg: WolConfig) {
   if (typeof localStorage === 'undefined') return;
-  const map = loadMacMap();
-  map[deviceId] = mac.trim();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+  const map = loadConfigMap();
+  map[deviceId] = {
+    mac: cfg.mac.trim(),
+    wanHost: cfg.wanHost.trim(),
+    port: Number(cfg.port) > 0 && Number(cfg.port) <= 65535 ? Number(cfg.port) : 9,
+  };
+  localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(map));
 }
 
-export async function triggerWakeOnLan(deviceId: string, deviceName: string): Promise<void> {
-  let mac = getSavedMac(deviceId);
-  if (!mac) {
-    const entered = window.prompt(
-      `Enter the MAC address of "${deviceName}" to wake it via Wake-on-LAN (e.g. AA:BB:CC:DD:EE:FF):`
-    );
-    if (!entered || !entered.trim()) return;
-    mac = entered.trim();
-  }
+export async function executeWakeOnLan(
+  deviceId: string,
+  _deviceName: string,
+  cfg: WolConfig
+): Promise<void> {
+  saveWolConfig(deviceId, cfg);
+  await raydropApi.sendWakeOnLan(cfg.mac.trim(), cfg.wanHost.trim(), cfg.port || 9);
+}
 
-  try {
-    await raydropApi.sendWakeOnLan(mac);
-    saveDeviceMac(deviceId, mac);
-    alert(`⚡ Magic Packet sent to ${deviceName} (${mac})!`);
-  } catch (err: any) {
-    alert(`Failed to send Wake-on-LAN packet: ${err?.message || err}`);
-  }
+export function triggerWakeOnLan(deviceId: string, deviceName: string): void {
+  wolModalTarget.set({ deviceId, deviceName });
 }

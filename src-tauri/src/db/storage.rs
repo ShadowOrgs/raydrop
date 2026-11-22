@@ -24,6 +24,10 @@ pub struct Contact {
     pub last_seen_at: u64,
     pub created_at: u64,
     pub avatar_hash: Option<String>,
+    #[serde(default)]
+    pub rank_exp: u64,
+    #[serde(default)]
+    pub mac_address: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +120,7 @@ pub struct AppSettings {
     pub stun_addr: String,
     pub auto_categorize: bool,
     pub max_concurrent_downloads: u32,
+    pub theme: String,
 }
 
 pub struct Database {
@@ -286,6 +291,31 @@ impl Database {
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS clipboard_history (
+                id TEXT PRIMARY KEY,
+                content_type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                preview TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                pinned INTEGER DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS notes (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL DEFAULT '',
+                note_type TEXT NOT NULL DEFAULT 'note',
+                checklist_json TEXT NOT NULL DEFAULT '[]',
+                images_json TEXT NOT NULL DEFAULT '[]',
+                color TEXT NOT NULL DEFAULT 'default',
+                labels_json TEXT NOT NULL DEFAULT '[]',
+                pinned INTEGER DEFAULT 0,
+                archived INTEGER DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
             ",
         )
         .map_err(|e| e.to_string())?;
@@ -300,6 +330,8 @@ impl Database {
         );
         let _ = conn.execute("ALTER TABLE contacts ADD COLUMN custom_name TEXT", []);
         let _ = conn.execute("ALTER TABLE contacts ADD COLUMN avatar_hash TEXT", []);
+        let _ = conn.execute("ALTER TABLE contacts ADD COLUMN rank_exp INTEGER DEFAULT 0", []);
+        let _ = conn.execute("ALTER TABLE contacts ADD COLUMN mac_address TEXT", []);
         let _ = conn.execute("ALTER TABLE transfer_history ADD COLUMN source_paths TEXT", []);
         let _ = conn.execute("ALTER TABLE chat_messages ADD COLUMN sender_device_id TEXT", []);
         let _ = conn.execute("ALTER TABLE chat_messages ADD COLUMN sender_alias TEXT", []);
@@ -324,13 +356,31 @@ impl Database {
             }
         };
 
-        let default_alias = std::env::var("COMPUTERNAME")
+        let short_id: String = identity
+            .device_id
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .skip(3)
+            .take(6)
+            .collect();
+        let host_candidate = std::env::var("COMPUTERNAME")
             .or_else(|_| std::env::var("HOSTNAME"))
-            .unwrap_or_else(|_| "Raydrop-Device".to_string());
+            .ok()
+            .or_else(sysinfo::System::host_name)
+            .map(|h| h.trim().to_string())
+            .filter(|h| {
+                !h.is_empty()
+                    && !h.eq_ignore_ascii_case("localhost")
+                    && !h.eq_ignore_ascii_case("raydrop-device")
+            });
+        let default_alias = match host_candidate {
+            Some(h) => format!("{}-{}", h, short_id),
+            None => format!("Raydrop-{}", short_id),
+        };
 
         let alias_name = match db.get_setting("alias_name")? {
-            Some(a) => a,
-            None => {
+            Some(a) if !a.trim().is_empty() && a != "Raydrop-Device" => a,
+            _ => {
                 db.set_setting("alias_name", &default_alias)?;
                 default_alias
             }
@@ -409,6 +459,18 @@ impl Database {
             }
         };
 
+        let theme = match db.get_setting("theme")? {
+            Some(v) if v == "noir" => {
+                let _ = db.set_setting("theme", "azure");
+                "azure".to_string()
+            }
+            Some(v) if !v.trim().is_empty() => v,
+            _ => {
+                let _ = db.set_setting("theme", "azure");
+                "azure".to_string()
+            }
+        };
+
         let settings = AppSettings {
             device_id: identity.device_id.clone(),
             alias_name,
@@ -424,6 +486,7 @@ impl Database {
             stun_addr,
             auto_categorize,
             max_concurrent_downloads,
+            theme,
         };
 
         Ok((db, identity, settings))
@@ -457,8 +520,8 @@ impl Database {
             "INSERT INTO contacts (
                 device_id, alias_name, user_email, user_name, os_type, is_own_device,
                 ed25519_pubkey, network_type, last_known_ip, last_known_port,
-                trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash, rank_exp, mac_address
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
             ON CONFLICT(device_id) DO UPDATE SET
                 alias_name = excluded.alias_name,
                 user_email = COALESCE(excluded.user_email, contacts.user_email),
@@ -471,9 +534,14 @@ impl Database {
                 last_known_port = COALESCE(excluded.last_known_port, contacts.last_known_port),
                 trust_level = excluded.trust_level,
                 is_online = excluded.is_online,
-                last_seen_at = excluded.last_seen_at,
+                last_seen_at = CASE
+                    WHEN excluded.is_online = 1 OR contacts.is_online = 1 THEN excluded.last_seen_at
+                    ELSE contacts.last_seen_at
+                END,
                 custom_name = COALESCE(excluded.custom_name, contacts.custom_name),
-                avatar_hash = COALESCE(excluded.avatar_hash, contacts.avatar_hash)",
+                avatar_hash = COALESCE(excluded.avatar_hash, contacts.avatar_hash),
+                rank_exp = MAX(excluded.rank_exp, COALESCE(contacts.rank_exp, 0)),
+                mac_address = COALESCE(excluded.mac_address, contacts.mac_address)",
             params![
                 c.device_id,
                 c.alias_name,
@@ -491,6 +559,8 @@ impl Database {
                 c.created_at as i64,
                 c.custom_name,
                 c.avatar_hash,
+                c.rank_exp as i64,
+                c.mac_address,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -540,9 +610,16 @@ impl Database {
 
     pub fn update_contact_online(&self, device_id: &str, is_online: bool) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let online_int = if is_online { 1 } else { 0 };
         conn.execute(
-            "UPDATE contacts SET is_online = ?1, last_seen_at = ?2 WHERE device_id = ?3",
-            params![if is_online { 1 } else { 0 }, now_unix_secs() as i64, device_id],
+            "UPDATE contacts
+             SET is_online = ?1,
+                 last_seen_at = CASE
+                     WHEN ?1 = 1 OR is_online = 1 THEN ?2
+                     ELSE last_seen_at
+                 END
+             WHERE device_id = ?3",
+            params![online_int, now_unix_secs() as i64, device_id],
         )
         .map_err(|e| e.to_string())?;
         Ok(())
@@ -558,12 +635,134 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_contact_rank_exp(&self, device_id: &str, rank_exp: u64) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE contacts SET rank_exp = MAX(?1, COALESCE(rank_exp, 0)) WHERE device_id = ?2",
+            params![rank_exp as i64, device_id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn compute_my_rank_exp_locked(conn: &Connection) -> Result<u64, String> {
+        let read_u64 = |k: &str| -> u64 {
+            conn.query_row(
+                "SELECT value FROM local_settings WHERE key = ?1",
+                params![k],
+                |r| r.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0)
+        };
+
+        let hist_bytes: u64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(MAX(total_bytes, transferred_bytes)), 0) FROM transfer_history WHERE status = 'completed'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            .max(0) as u64;
+        let hist_sessions: u64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM transfer_history WHERE status = 'completed'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            .max(0) as u64;
+        let chat_count: u64 = conn
+            .query_row("SELECT COUNT(*) FROM chat_messages", [], |r| r.get::<_, i64>(0))
+            .unwrap_or(0)
+            .max(0) as u64;
+        let sync_count: u64 = conn
+            .query_row("SELECT COUNT(*) FROM folder_sync_tasks", [], |r| r.get::<_, i64>(0))
+            .unwrap_or(0)
+            .max(0) as u64;
+        let share_count: u64 = conn
+            .query_row("SELECT COUNT(*) FROM shared_folders", [], |r| r.get::<_, i64>(0))
+            .unwrap_or(0)
+            .max(0) as u64;
+
+        let rd_secs = read_u64("usage_remote_desktop_secs");
+        let meeting_secs = read_u64("usage_meeting_secs");
+        let second_screen_secs = read_u64("usage_second_screen_secs");
+
+        let lifetime_bytes = read_u64("analytics_lifetime_sent_bytes")
+            .saturating_add(read_u64("analytics_lifetime_received_bytes"))
+            .max(hist_bytes);
+        let computed = (lifetime_bytes / 524_288)
+            .saturating_add(hist_sessions.saturating_mul(15))
+            .saturating_add(chat_count.saturating_mul(5))
+            .saturating_add(rd_secs / 6)
+            .saturating_add(meeting_secs / 6)
+            .saturating_add(second_screen_secs / 6)
+            .saturating_add(sync_count.saturating_mul(25))
+            .saturating_add(share_count.saturating_mul(25));
+        let stored = read_u64("my_rank_exp");
+        let final_exp = computed.max(stored);
+        if final_exp > stored {
+            let _ = conn.execute(
+                "INSERT INTO local_settings (key, value) VALUES ('my_rank_exp', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![final_exp.to_string()],
+            );
+        }
+        Ok(final_exp)
+    }
+
+    pub fn compute_my_rank_exp(&self) -> Result<u64, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        Self::compute_my_rank_exp_locked(&conn)
+    }
+
+    pub fn add_activity_usage_seconds(
+        &self,
+        activities: &[String],
+        seconds: u64,
+    ) -> Result<u64, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        if seconds > 0 && !activities.is_empty() {
+            let mut seen_keys = std::collections::HashSet::new();
+            for act in activities {
+                let key = match act.as_str() {
+                    "remote_desktop" => "usage_remote_desktop_secs",
+                    "meeting" => "usage_meeting_secs",
+                    "second_screen" => "usage_second_screen_secs",
+                    _ => continue,
+                };
+                if !seen_keys.insert(key) {
+                    continue;
+                }
+                let prev: u64 = conn
+                    .query_row(
+                        "SELECT value FROM local_settings WHERE key = ?1",
+                        params![key],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let next = prev.saturating_add(seconds);
+                conn.execute(
+                    "INSERT INTO local_settings (key, value) VALUES (?1, ?2)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    params![key, next.to_string()],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+        }
+        Self::compute_my_rank_exp_locked(&conn)
+    }
+
     pub fn get_contact(&self, device_id: &str) -> Result<Option<Contact>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.query_row(
             "SELECT device_id, alias_name, user_email, user_name, os_type, is_own_device,
                     ed25519_pubkey, network_type, last_known_ip, last_known_port,
-                    trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash
+                    trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash, COALESCE(rank_exp, 0), mac_address
              FROM contacts WHERE device_id = ?1",
             params![device_id],
             |row| {
@@ -584,6 +783,8 @@ impl Database {
                     created_at: row.get::<_, i64>(13)? as u64,
                     custom_name: row.get(14)?,
                     avatar_hash: row.get(15)?,
+                    rank_exp: row.get::<_, i64>(16).unwrap_or(0).max(0) as u64,
+                    mac_address: row.get(17)?,
                 })
             },
         )
@@ -597,7 +798,7 @@ impl Database {
             .prepare(
                 "SELECT device_id, alias_name, user_email, user_name, os_type, is_own_device,
                         ed25519_pubkey, network_type, last_known_ip, last_known_port,
-                        trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash
+                        trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash, COALESCE(rank_exp, 0), mac_address
                  FROM contacts ORDER BY is_online DESC, last_seen_at DESC",
             )
             .map_err(|e| e.to_string())?;
@@ -621,6 +822,8 @@ impl Database {
                     created_at: row.get::<_, i64>(13)? as u64,
                     custom_name: row.get(14)?,
                     avatar_hash: row.get(15)?,
+                    rank_exp: row.get::<_, i64>(16).unwrap_or(0).max(0) as u64,
+                    mac_address: row.get(17)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -1183,4 +1386,463 @@ impl Database {
             .map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    pub fn get_transfer_analytics(&self) -> Result<TransferAnalytics, String> {
+        let conn = self.conn.lock().unwrap();
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT direction, network_route, status, total_files, total_bytes, transferred_bytes, created_at
+                 FROM transfer_history",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let mut sent_bytes_hist: u64 = 0;
+        let mut received_bytes_hist: u64 = 0;
+        let mut sent_files_hist: u64 = 0;
+        let mut received_files_hist: u64 = 0;
+        let mut sent_sessions: u64 = 0;
+        let mut received_sessions: u64 = 0;
+        let mut failed_sessions: u64 = 0;
+        let mut lan_bytes: u64 = 0;
+        let mut wan_bytes: u64 = 0;
+        let mut http_bytes: u64 = 0;
+
+        let mut day_map: std::collections::BTreeMap<String, (u64, u64)> =
+            std::collections::BTreeMap::new();
+
+        let rows = stmt
+            .query_map([], |row| {
+                let direction: String = row.get(0)?;
+                let route: String = row.get(1)?;
+                let status: String = row.get(2)?;
+                let total_files: i64 = row.get(3)?;
+                let total_bytes: i64 = row.get(4)?;
+                let transferred_bytes: i64 = row.get(5)?;
+                let created_at: i64 = row.get(6)?;
+                Ok((
+                    direction,
+                    route,
+                    status,
+                    total_files.max(0) as u64,
+                    total_bytes.max(0) as u64,
+                    transferred_bytes.max(0) as u64,
+                    created_at,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        for r in rows {
+            if let Ok((dir, route, status, files, total_b, xfer_b, created_at)) = r {
+                let effective_bytes = if status == "completed" {
+                    total_b.max(xfer_b)
+                } else {
+                    xfer_b
+                };
+
+                if status == "failed" {
+                    failed_sessions += 1;
+                }
+
+                if status == "completed" {
+                    if dir == "outgoing" {
+                        sent_bytes_hist = sent_bytes_hist.saturating_add(effective_bytes);
+                        sent_files_hist = sent_files_hist.saturating_add(files.max(1));
+                        sent_sessions += 1;
+                    } else {
+                        received_bytes_hist = received_bytes_hist.saturating_add(effective_bytes);
+                        received_files_hist = received_files_hist.saturating_add(files.max(1));
+                        received_sessions += 1;
+                    }
+
+                    if route.contains("lan") {
+                        lan_bytes = lan_bytes.saturating_add(effective_bytes);
+                    } else if route.contains("http") {
+                        http_bytes = http_bytes.saturating_add(effective_bytes);
+                    } else {
+                        wan_bytes = wan_bytes.saturating_add(effective_bytes);
+                    }
+                }
+
+                if effective_bytes > 0 && created_at > 0 {
+                    let day_secs = (created_at / 86400) * 86400;
+                    let key = format!("{}", day_secs);
+                    let entry = day_map.entry(key).or_insert((0, 0));
+                    if dir == "outgoing" {
+                        entry.0 = entry.0.saturating_add(effective_bytes);
+                    } else {
+                        entry.1 = entry.1.saturating_add(effective_bytes);
+                    }
+                }
+            }
+        }
+        drop(stmt);
+
+        // Persist lifetime cumulative high-water marks in local_settings so stats survive history cleanup
+        let read_u64 = |k: &str| -> u64 {
+            conn.query_row(
+                "SELECT value FROM local_settings WHERE key = ?1",
+                params![k],
+                |r| r.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0)
+        };
+        let write_u64 = |k: &str, v: u64| {
+            let _ = conn.execute(
+                "INSERT INTO local_settings (key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![k, v.to_string()],
+            );
+        };
+
+        let lifetime_sent_bytes = read_u64("analytics_lifetime_sent_bytes").max(sent_bytes_hist);
+        let lifetime_received_bytes =
+            read_u64("analytics_lifetime_received_bytes").max(received_bytes_hist);
+        let lifetime_sent_files = read_u64("analytics_lifetime_sent_files").max(sent_files_hist);
+        let lifetime_received_files =
+            read_u64("analytics_lifetime_received_files").max(received_files_hist);
+
+        write_u64("analytics_lifetime_sent_bytes", lifetime_sent_bytes);
+        write_u64("analytics_lifetime_received_bytes", lifetime_received_bytes);
+        write_u64("analytics_lifetime_sent_files", lifetime_sent_files);
+        write_u64("analytics_lifetime_received_files", lifetime_received_files);
+
+        // Last 7 days bucketed
+        let now_day = ((now_unix_secs() as i64) / 86400) * 86400;
+        let mut daily = Vec::with_capacity(7);
+        for offset in (0..7).rev() {
+            let d_ts = now_day - offset * 86400;
+            let k = format!("{}", d_ts);
+            let (s_b, r_b) = day_map.get(&k).copied().unwrap_or((0, 0));
+            daily.push(DailyTransferStat {
+                day_epoch_secs: d_ts as u64,
+                sent_bytes: s_b,
+                received_bytes: r_b,
+            });
+        }
+
+        Ok(TransferAnalytics {
+            total_sent_bytes: lifetime_sent_bytes,
+            total_received_bytes: lifetime_received_bytes,
+            total_sent_files: lifetime_sent_files,
+            total_received_files: lifetime_received_files,
+            sent_sessions,
+            received_sessions,
+            failed_sessions,
+            lan_bytes,
+            wan_bytes,
+            http_bytes,
+            daily,
+        })
+    }
+
+    pub fn record_clipboard_entry(&self, content: &str) -> Result<bool, String> {
+        let trimmed = content.trim();
+        if trimmed.is_empty() || content.len() > 6_000_000 {
+            return Ok(false);
+        }
+        let content_hash = blake3::hash(content.as_bytes()).to_hex().to_string();
+        let now = now_unix_secs() as i64;
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // Check if this exact content already exists; if so, bump its timestamp
+        let existing_id: Option<String> = conn
+            .query_row(
+                "SELECT id FROM clipboard_history WHERE content_hash = ?1 LIMIT 1",
+                params![&content_hash],
+                |r| r.get(0),
+            )
+            .ok();
+
+        if let Some(id) = existing_id {
+            conn.execute(
+                "UPDATE clipboard_history SET created_at = ?1 WHERE id = ?2",
+                params![now, id],
+            )
+            .map_err(|e| e.to_string())?;
+            return Ok(true);
+        }
+
+        let is_image = trimmed.starts_with("data:image/");
+        let content_type = if is_image { "image" } else { "text" };
+        let preview = if is_image {
+            "Image Snapshot".to_string()
+        } else {
+            trimmed.chars().take(200).collect::<String>()
+        };
+        let id = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO clipboard_history (id, content_type, content, preview, content_hash, pinned, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6)",
+            params![id, content_type, content, preview, content_hash, now],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Keep at most 100 unpinned items
+        let _ = conn.execute(
+            "DELETE FROM clipboard_history
+             WHERE pinned = 0 AND id NOT IN (
+                 SELECT id FROM clipboard_history WHERE pinned = 0 ORDER BY created_at DESC LIMIT 100
+             )",
+            [],
+        );
+
+        Ok(true)
+    }
+
+    pub fn list_clipboard_history(&self, limit: usize) -> Result<Vec<ClipboardHistoryItem>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, content_type, content, preview, pinned, created_at
+                 FROM clipboard_history
+                 ORDER BY pinned DESC, created_at DESC
+                 LIMIT ?1",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![limit as i64], |r| {
+                Ok(ClipboardHistoryItem {
+                    id: r.get(0)?,
+                    content_type: r.get(1)?,
+                    content: r.get(2)?,
+                    preview: r.get(3)?,
+                    pinned: r.get::<_, i64>(4).unwrap_or(0) != 0,
+                    created_at: r.get::<_, i64>(5).unwrap_or(0) as u64,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for row in rows {
+            if let Ok(item) = row {
+                out.push(item);
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn get_clipboard_history_content(&self, id: &str) -> Result<Option<String>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let res = conn
+            .query_row(
+                "SELECT content FROM clipboard_history WHERE id = ?1",
+                params![id],
+                |r| r.get::<_, String>(0),
+            )
+            .ok();
+        Ok(res)
+    }
+
+    pub fn toggle_pin_clipboard_item(&self, id: &str) -> Result<bool, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE clipboard_history SET pinned = CASE WHEN pinned = 0 THEN 1 ELSE 0 END WHERE id = ?1",
+            params![id],
+        )
+        .map_err(|e| e.to_string())?;
+        let pinned: i64 = conn
+            .query_row(
+                "SELECT pinned FROM clipboard_history WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        Ok(pinned != 0)
+    }
+
+    pub fn delete_clipboard_item(&self, id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM clipboard_history WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn clear_unpinned_clipboard_history(&self) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM clipboard_history WHERE pinned = 0", [])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn list_notes(&self, include_archived: bool) -> Result<Vec<NoteItem>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let sql = if include_archived {
+            "SELECT id, title, content, note_type, checklist_json, images_json, color, labels_json, pinned, archived, created_at, updated_at
+             FROM notes
+             ORDER BY pinned DESC, updated_at DESC"
+        } else {
+            "SELECT id, title, content, note_type, checklist_json, images_json, color, labels_json, pinned, archived, created_at, updated_at
+             FROM notes
+             WHERE archived = 0
+             ORDER BY pinned DESC, updated_at DESC"
+        };
+        let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                let checklist_str: String = r.get(4)?;
+                let images_str: String = r.get(5)?;
+                let labels_str: String = r.get(7)?;
+                Ok(NoteItem {
+                    id: r.get(0)?,
+                    title: r.get(1)?,
+                    content: r.get(2)?,
+                    note_type: r.get(3)?,
+                    checklist: serde_json::from_str(&checklist_str).unwrap_or_default(),
+                    images: serde_json::from_str(&images_str).unwrap_or_default(),
+                    color: r.get(6)?,
+                    labels: serde_json::from_str(&labels_str).unwrap_or_default(),
+                    pinned: r.get::<_, i64>(8).unwrap_or(0) != 0,
+                    archived: r.get::<_, i64>(9).unwrap_or(0) != 0,
+                    created_at: r.get::<_, i64>(10).unwrap_or(0) as u64,
+                    updated_at: r.get::<_, i64>(11).unwrap_or(0) as u64,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for row in rows {
+            if let Ok(item) = row {
+                out.push(item);
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn upsert_note(&self, mut note: NoteItem) -> Result<NoteItem, String> {
+        let now = now_unix_secs();
+        if note.id.trim().is_empty() {
+            note.id = uuid::Uuid::new_v4().to_string();
+        }
+        if note.created_at == 0 {
+            note.created_at = now;
+        }
+        note.updated_at = now;
+        let checklist_json = serde_json::to_string(&note.checklist).unwrap_or_else(|_| "[]".into());
+        let images_json = serde_json::to_string(&note.images).unwrap_or_else(|_| "[]".into());
+        let labels_json = serde_json::to_string(&note.labels).unwrap_or_else(|_| "[]".into());
+
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO notes (id, title, content, note_type, checklist_json, images_json, color, labels_json, pinned, archived, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT(id) DO UPDATE SET
+               title = excluded.title,
+               content = excluded.content,
+               note_type = excluded.note_type,
+               checklist_json = excluded.checklist_json,
+               images_json = excluded.images_json,
+               color = excluded.color,
+               labels_json = excluded.labels_json,
+               pinned = excluded.pinned,
+               archived = excluded.archived,
+               updated_at = excluded.updated_at",
+            params![
+                note.id,
+                note.title,
+                note.content,
+                note.note_type,
+                checklist_json,
+                images_json,
+                note.color,
+                labels_json,
+                if note.pinned { 1 } else { 0 },
+                if note.archived { 1 } else { 0 },
+                note.created_at as i64,
+                note.updated_at as i64,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(note)
+    }
+
+    pub fn toggle_pin_note(&self, id: &str) -> Result<bool, String> {
+        let now = now_unix_secs() as i64;
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE notes SET pinned = CASE WHEN pinned = 0 THEN 1 ELSE 0 END, updated_at = ?2 WHERE id = ?1",
+            params![id, now],
+        )
+        .map_err(|e| e.to_string())?;
+        let pinned: i64 = conn
+            .query_row("SELECT pinned FROM notes WHERE id = ?1", params![id], |r| r.get(0))
+            .unwrap_or(0);
+        Ok(pinned != 0)
+    }
+
+    pub fn toggle_archive_note(&self, id: &str) -> Result<bool, String> {
+        let now = now_unix_secs() as i64;
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE notes SET archived = CASE WHEN archived = 0 THEN 1 ELSE 0 END, pinned = CASE WHEN archived = 0 THEN 0 ELSE pinned END, updated_at = ?2 WHERE id = ?1",
+            params![id, now],
+        )
+        .map_err(|e| e.to_string())?;
+        let archived: i64 = conn
+            .query_row("SELECT archived FROM notes WHERE id = ?1", params![id], |r| r.get(0))
+            .unwrap_or(0);
+        Ok(archived != 0)
+    }
+
+    pub fn delete_note(&self, id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM notes WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoteChecklistEntry {
+    pub id: String,
+    pub text: String,
+    pub checked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoteItem {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub note_type: String,
+    pub checklist: Vec<NoteChecklistEntry>,
+    pub images: Vec<String>,
+    pub color: String,
+    pub labels: Vec<String>,
+    pub pinned: bool,
+    pub archived: bool,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClipboardHistoryItem {
+    pub id: String,
+    pub content_type: String,
+    pub content: String,
+    pub preview: String,
+    pub pinned: bool,
+    pub created_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyTransferStat {
+    pub day_epoch_secs: u64,
+    pub sent_bytes: u64,
+    pub received_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferAnalytics {
+    pub total_sent_bytes: u64,
+    pub total_received_bytes: u64,
+    pub total_sent_files: u64,
+    pub total_received_files: u64,
+    pub sent_sessions: u64,
+    pub received_sessions: u64,
+    pub failed_sessions: u64,
+    pub lan_bytes: u64,
+    pub wan_bytes: u64,
+    pub http_bytes: u64,
+    pub daily: Vec<DailyTransferStat>,
 }

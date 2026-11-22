@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { open } from '@tauri-apps/plugin-dialog';
+  import { openWithLastDir } from '../utils/filePicker';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { activeTransfers, historicalTransfers } from '../stores/transfers';
   import { appSettings, cliQueuedFiles, activeMainTab } from '../stores/state';
@@ -511,7 +511,7 @@
 
   async function handlePickFiles() {
     try {
-      const picked = await open({
+      const picked = await openWithLastDir({
         multiple: true,
         title: 'Select Files to Send via Raydrop',
       });
@@ -526,7 +526,7 @@
 
   async function handlePickFolder() {
     try {
-      const picked = await open({
+      const picked = await openWithLastDir({
         directory: true,
         multiple: false,
         title: 'Select Folder to Send via Raydrop',
@@ -546,7 +546,7 @@
 
   async function handleShareViaWeb() {
     try {
-      const picked = await open({
+      const picked = await openWithLastDir({
         multiple: true,
         title: 'Select Files or Folder to Share to Phone / Web',
       });
@@ -1527,7 +1527,6 @@
                           {/if}
                         </button>
                       {/if}
-                      <span class="text-[10px] font-mono text-slate-400">({formatBytes(h.total_bytes)})</span>
                     </div>
 
                     <div class="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400">
@@ -1548,8 +1547,14 @@
                   </div>
                 </div>
 
-                <!-- Quick Action Buttons -->
-                <div class="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                <!-- Dedicated File Size Column & Quick Action Buttons -->
+                <div class="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
+                  <span
+                    class="text-[11px] font-mono font-semibold text-slate-200 bg-slate-800/80 px-2.5 py-1 rounded-lg min-w-[74px] text-center"
+                    title="Total file size"
+                  >
+                    {formatBytes(h.total_bytes)}
+                  </span>
                   {#if h.status === 'completed'}
                     <span class="flex items-center gap-1 text-[11px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                       <CheckCircle2 class="w-3.5 h-3.5" />
@@ -1702,7 +1707,7 @@
 
   {#if showRefreshModal && refreshTask}
     <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div class="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5 text-left">
+      <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5 text-left">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2.5">
             <div class="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400">
@@ -1912,7 +1917,7 @@
       class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-4 select-none"
     >
       <div
-        class="w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+        class="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
       >
         <!-- Modal Header -->
         <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-950/60">
@@ -1981,7 +1986,7 @@
       class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 select-none"
     >
       <div
-        class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl flex flex-col gap-4"
+        class="w-full max-w-md max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl flex flex-col gap-4"
       >
         <div class="flex items-center justify-between pb-3 border-b border-slate-800">
           <div class="flex items-center gap-2">
@@ -2081,7 +2086,7 @@
       class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 select-none"
     >
       <div
-        class="w-full max-w-md bg-slate-900 border border-rose-500/40 rounded-2xl p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-in fade-in zoom-in-95 duration-200"
+        class="w-full max-w-md max-h-[90vh] overflow-y-auto bg-slate-900 border border-rose-500/40 rounded-2xl p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-in fade-in zoom-in-95 duration-200"
       >
         <div class="w-16 h-16 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 animate-pulse">
           <Power class="w-8 h-8" />

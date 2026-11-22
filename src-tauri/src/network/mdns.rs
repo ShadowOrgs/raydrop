@@ -37,23 +37,39 @@ pub fn start_mdns_daemon(app: AppHandle, state: Arc<AppState>) {
         if let Ok(Some(av_hash)) = state.db.get_setting("avatar_hash") {
             properties.insert("avatar_hash".to_string(), av_hash);
         }
+        if let Ok(exp) = state.db.compute_my_rank_exp() {
+            properties.insert("rank_exp".to_string(), exp.to_string());
+        }
+        if let Some(mac) = crate::commands::get_local_mac_address(&state.local_ip) {
+            properties.insert("mac".to_string(), mac);
+        }
 
-        if let Ok(service_info) = ServiceInfo::new(
-            SERVICE_TYPE,
-            &instance_name,
-            &host_name,
-            &state.local_ip,
-            state.listen_port,
-            Some(properties),
-        ) {
-            let service_info = service_info.enable_addr_auto();
-            if let Err(e) = mdns.register(service_info) {
-                warn!("mDNS service registration failed: {e}");
-            } else {
-                info!(
-                    "mDNS registered: {} on {}:{}",
-                    state.identity.device_id, state.local_ip, state.listen_port
-                );
+        let build_service_info = || {
+            ServiceInfo::new(
+                SERVICE_TYPE,
+                &instance_name,
+                &host_name,
+                &state.local_ip,
+                state.listen_port,
+                Some(properties.clone()),
+            )
+            .ok()
+            .map(|s| s.enable_addr_auto())
+        };
+
+        let mut registered_fullname: Option<String> = None;
+        if state.is_discoverable() {
+            if let Some(service_info) = build_service_info() {
+                let fullname = service_info.get_fullname().to_string();
+                if let Err(e) = mdns.register(service_info) {
+                    warn!("mDNS service registration failed: {e}");
+                } else {
+                    registered_fullname = Some(fullname);
+                    info!(
+                        "mDNS registered: {} on {}:{}",
+                        state.identity.device_id, state.local_ip, state.listen_port
+                    );
+                }
             }
         }
 
@@ -62,7 +78,32 @@ pub fn start_mdns_daemon(app: AppHandle, state: Arc<AppState>) {
             return;
         };
 
-        while let Ok(event) = receiver.recv() {
+        loop {
+            let currently_discoverable = state.is_discoverable();
+            if currently_discoverable && registered_fullname.is_none() {
+                if let Some(service_info) = build_service_info() {
+                    let fullname = service_info.get_fullname().to_string();
+                    if mdns.register(service_info).is_ok() {
+                        registered_fullname = Some(fullname);
+                        info!("mDNS re-registered (Visible mode)");
+                    }
+                }
+            } else if !currently_discoverable {
+                if let Some(fullname) = registered_fullname.take() {
+                    let _ = mdns.unregister(&fullname);
+                    info!("mDNS unregistered (Hidden/Offline mode)");
+                }
+            }
+
+            let event = match receiver.recv_timeout(std::time::Duration::from_millis(800)) {
+                Ok(ev) => ev,
+                Err(flume_or_timeout) => {
+                    if flume_or_timeout.to_string().contains("disconnected") {
+                        break;
+                    }
+                    continue;
+                }
+            };
             if let ServiceEvent::ServiceResolved(info) = event {
                 let Some(peer_id) = info.get_property_val_str("device_id") else {
                     continue;
@@ -109,7 +150,16 @@ pub fn start_mdns_daemon(app: AppHandle, state: Arc<AppState>) {
                         });
 
                     let peer_avatar_hash = info.get_property_val_str("avatar_hash").map(|s| s.to_string());
+                    let peer_rank_exp = info
+                        .get_property_val_str("rank_exp")
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or(0);
 
+                    let peer_mac = if is_own_device {
+                        info.get_property_val_str("mac").map(|s| s.to_string())
+                    } else {
+                        None
+                    };
                     let contact = Contact {
                         device_id: peer_id.to_string(),
                         alias_name: alias,
@@ -127,6 +177,8 @@ pub fn start_mdns_daemon(app: AppHandle, state: Arc<AppState>) {
                         last_seen_at: now_unix_secs(),
                         created_at: now_unix_secs(),
                         avatar_hash: peer_avatar_hash.or_else(|| existing.as_ref().and_then(|c| c.avatar_hash.clone())),
+                        rank_exp: peer_rank_exp.max(existing.as_ref().map(|c| c.rank_exp).unwrap_or(0)),
+                        mac_address: peer_mac.or_else(|| existing.as_ref().and_then(|c| c.mac_address.clone())),
                     };
 
                     let _ = state.db.upsert_contact(&contact);

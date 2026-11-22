@@ -175,7 +175,7 @@
   aria-modal="true"
 >
   <div
-    class="w-full max-w-3xl bg-slate-900 border border-indigo-500/30 rounded-2xl p-6 shadow-2xl flex flex-col gap-4 h-[85vh] max-h-[750px] overflow-hidden"
+    class="w-full max-w-3xl bg-slate-900 border border-indigo-500/30 rounded-2xl p-6 shadow-2xl flex flex-col gap-4 h-[85vh] max-h-[90vh] overflow-hidden"
   >
     <!-- Header -->
     <div

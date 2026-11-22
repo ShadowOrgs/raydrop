@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { openWithLastDir } from "../utils/filePicker";
   import { contacts } from "../stores/contacts";
-  import { appSettings } from "../stores/state";
+  import { appSettings, myRankExp } from "../stores/state";
+  import { getRankInfo } from "../utils/rank";
   import { peerAvatars, myAvatar, loadPeerAvatar } from "../stores/avatars";
   import { raydropApi } from "../utils/tauri-ipc";
   import {
@@ -312,7 +313,7 @@
     }
 
     try {
-      const selected = await open({
+      const selected = await openWithLastDir({
         multiple: true,
         directory: false,
         title: "Pilih File untuk Dibagikan ke Peserta Meeting",
@@ -797,9 +798,18 @@
 
                 <!-- Bottom Label -->
                 <div
-                  class="absolute bottom-1 left-1.5 right-1.5 flex items-center justify-between text-[11px] font-medium text-slate-200 bg-slate-950/80 backdrop-blur-sm px-1.5 py-0.5 rounded border border-slate-800"
+                  class="absolute bottom-1 left-1.5 right-1.5 flex items-center justify-between gap-1 text-[11px] font-medium text-slate-200 bg-slate-950/80 backdrop-blur-sm px-1.5 py-0.5 rounded border border-slate-800"
                 >
-                  <span class="truncate">You</span>
+                  <div class="flex items-center gap-1 min-w-0">
+                    <span class="truncate">You</span>
+                    <span
+                      class="shrink-0 inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold leading-none {getRankInfo($myRankExp).badgeStyle}"
+                      title="Raydrop Rank: {getRankInfo($myRankExp).tierName} Lv.{getRankInfo($myRankExp).level} ({getRankInfo($myRankExp).exp} EXP)"
+                    >
+                      <span>{getRankInfo($myRankExp).icon}</span>
+                      <span>Lv.{getRankInfo($myRankExp).level}</span>
+                    </span>
+                  </div>
                   {#if $isMicMuted}
                     <MicOff class="w-3 h-3 text-rose-400 shrink-0" />
                   {/if}
@@ -809,6 +819,7 @@
               <!-- Remote Peers Tiles -->
               {#each activeParticipantList as peer (peer.deviceId)}
                 {@const peerImg = peer.avatar || $peerAvatars[peer.deviceId]}
+                {@const peerRank = getRankInfo($contacts.find((c) => c.device_id === peer.deviceId)?.rank_exp ?? 0)}
                 <div
                   class="h-full aspect-video rounded-xl bg-slate-900/90 border-2 {peer.isHandRaised
                     ? 'border-amber-400 ring-2 ring-amber-400/40'
@@ -859,9 +870,18 @@
 
                   <!-- Bottom Label -->
                   <div
-                    class="absolute bottom-1 left-1.5 right-1.5 flex items-center justify-between text-[11px] font-medium text-slate-200 bg-slate-950/80 backdrop-blur-sm px-1.5 py-0.5 rounded border border-slate-800"
+                    class="absolute bottom-1 left-1.5 right-1.5 flex items-center justify-between gap-1 text-[11px] font-medium text-slate-200 bg-slate-950/80 backdrop-blur-sm px-1.5 py-0.5 rounded border border-slate-800"
                   >
-                    <span class="truncate">{peer.alias}</span>
+                    <div class="flex items-center gap-1 min-w-0">
+                      <span class="truncate">{peer.alias}</span>
+                      <span
+                        class="shrink-0 inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold leading-none {peerRank.badgeStyle}"
+                        title="Raydrop Rank: {peerRank.tierName} Lv.{peerRank.level} ({peerRank.exp} EXP)"
+                      >
+                        <span>{peerRank.icon}</span>
+                        <span>Lv.{peerRank.level}</span>
+                      </span>
+                    </div>
                     {#if peer.isMuted}
                       <MicOff class="w-3 h-3 text-rose-400 shrink-0" />
                     {/if}
@@ -925,6 +945,13 @@
                 class="absolute bottom-2.5 left-2.5 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-xl text-xs font-medium text-slate-200 border border-slate-800 flex items-center gap-1.5"
               >
                 <span>{$appSettings.alias_name || "You"} (You)</span>
+                <span
+                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold leading-none {getRankInfo($myRankExp).badgeStyle}"
+                  title="Raydrop Rank: {getRankInfo($myRankExp).tierName} Lv.{getRankInfo($myRankExp).level} ({getRankInfo($myRankExp).exp} EXP)"
+                >
+                  <span>{getRankInfo($myRankExp).icon}</span>
+                  <span>{getRankInfo($myRankExp).tierName} Lv.{getRankInfo($myRankExp).level}</span>
+                </span>
                 {#if $isHandRaised}
                   <span class="text-amber-400 animate-bounce">✋</span>
                 {/if}
@@ -942,6 +969,7 @@
             <!-- 2. Remote Participants Tiles -->
             {#each activeParticipantList as peer (peer.deviceId)}
               {@const peerImg = peer.avatar || $peerAvatars[peer.deviceId]}
+              {@const peerRank = getRankInfo($contacts.find((c) => c.device_id === peer.deviceId)?.rank_exp ?? 0)}
               <div
                 class="rounded-2xl bg-slate-900 border-2 {peer.isHandRaised
                   ? 'border-amber-400 ring-2 ring-amber-400/40'
@@ -992,6 +1020,13 @@
                   class="absolute bottom-2.5 left-2.5 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-xl text-xs font-medium text-slate-200 border border-slate-800 flex items-center gap-1.5"
                 >
                   <span>{peer.alias}</span>
+                  <span
+                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold leading-none {peerRank.badgeStyle}"
+                    title="Raydrop Rank: {peerRank.tierName} Lv.{peerRank.level} ({peerRank.exp} EXP)"
+                  >
+                    <span>{peerRank.icon}</span>
+                    <span>{peerRank.tierName} Lv.{peerRank.level}</span>
+                  </span>
                   {#if peer.isHandRaised}
                     <span class="text-amber-400 animate-bounce">✋</span>
                   {/if}
@@ -1171,17 +1206,17 @@
         <button
           type="button"
           on:click={toggleHandRaise}
-          class="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-semibold transition {$isHandRaised
+          class="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap {$isHandRaised
             ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
             : 'bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700'}"
           title="Raise Hand (H)"
         >
           <Hand
-            class="w-4 h-4 {$isHandRaised
+            class="w-4 h-4 shrink-0 {$isHandRaised
               ? 'text-amber-400'
               : 'text-slate-400'}"
           />
-          <span class="hidden md:inline ml-1.5">Raise Hand</span>
+          <span class="hidden md:inline">Raise Hand</span>
         </button>
 
         <!-- Reactions Picker Popover -->
@@ -1231,17 +1266,17 @@
         <button
           type="button"
           on:click={$isRecording ? stopRecording : startRecording}
-          class="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-semibold transition {$isRecording
+          class="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap {$isRecording
             ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
             : 'bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700'}"
           title="Record meeting audio/video locally to disk"
         >
           <CircleDot
-            class="w-4 h-4 {$isRecording
+            class="w-4 h-4 shrink-0 {$isRecording
               ? 'text-rose-500 animate-pulse'
               : 'text-slate-400'}"
           />
-          <span class="hidden md:inline ml-1.5"
+          <span class="hidden md:inline"
             >{$isRecording ? "Stop Rec" : "Record"}</span
           >
         </button>
@@ -1250,30 +1285,30 @@
         <button
           type="button"
           on:click={toggleMeetingPiP}
-          class="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-semibold transition {isMeetingPiP
+          class="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap {isMeetingPiP
             ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
             : 'bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700'}"
           title={isMeetingPiP ? "Exit Mini Player (PiP)" : "Floating Mini Player (PiP)"}
         >
           <PictureInPicture2
-            class="w-4 h-4 {isMeetingPiP ? 'text-cyan-400' : 'text-slate-400'}"
+            class="w-4 h-4 shrink-0 {isMeetingPiP ? 'text-cyan-400' : 'text-slate-400'}"
           />
-          <span class="hidden md:inline ml-1.5">PiP</span>
+          <span class="hidden md:inline">PiP</span>
         </button>
 
         <!-- Laser Pointer & Annotation -->
         <button
           type="button"
           on:click={() => (showMeetingAnnotation = !showMeetingAnnotation)}
-          class="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-semibold transition {showMeetingAnnotation
+          class="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 whitespace-nowrap {showMeetingAnnotation
             ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
             : 'bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700'}"
           title="Laser Pointer & Screen Annotation"
         >
           <PenTool
-            class="w-4 h-4 {showMeetingAnnotation ? 'text-rose-400' : 'text-slate-400'}"
+            class="w-4 h-4 shrink-0 {showMeetingAnnotation ? 'text-rose-400' : 'text-slate-400'}"
           />
-          <span class="hidden md:inline ml-1.5">Annotate</span>
+          <span class="hidden md:inline">Annotate</span>
         </button>
       </div>
 

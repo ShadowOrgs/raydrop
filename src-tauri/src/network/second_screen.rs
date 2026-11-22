@@ -244,12 +244,24 @@ fn build_viewer_html(token: &str) -> String {
   #wrap {{ width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; position: relative; }}
   #screen {{ max-width: 100%; max-height: 100%; object-fit: contain; pointer-events: none; }}
   #screen.fill {{ width: 100%; height: 100%; object-fit: fill; }}
-  #bar {{ position: fixed; top: 10px; right: 12px; z-index: 20; display: flex; gap: 8px; opacity: 0.75; transition: opacity 0.2s; }}
+  #bar {{ position: fixed; top: 10px; right: 12px; z-index: 20; display: flex; gap: 8px; opacity: 0.85; transition: opacity 0.22s ease, transform 0.22s ease; }}
   #bar:hover {{ opacity: 1; }}
+  #bar.fs-mode {{ top: 24px; right: auto; left: 50%; transform: translateX(-50%) translateY(0); }}
+  #bar.hidden {{ opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(-14px); }}
+  #arrowBtn {{ position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 30; width: 48px; height: 18px; padding: 0; display: none; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.88); color: #94a3b8; border: 1px solid rgba(51, 65, 85, 0.85); border-top: none; border-radius: 0 0 8px 8px; backdrop-filter: blur(8px); cursor: pointer; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45); transition: background 0.15s, color 0.15s; }}
+  #arrowBtn.visible {{ display: flex; }}
+  #arrowBtn.open {{ color: #38bdf8; }}
+  #arrowBtn svg {{ width: 13px; height: 13px; transition: transform 0.2s ease; }}
+  #arrowBtn.open svg {{ transform: rotate(180deg); }}
   button {{ background: rgba(15, 23, 42, 0.85); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 10px; padding: 6px 12px; font-size: 12px; font-weight: 600; backdrop-filter: blur(8px); cursor: pointer; }}
 </style>
 </head>
 <body>
+  <button id="arrowBtn" title="Toggle display controls" aria-label="Toggle display controls">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 9 12 15 18 9"></polyline>
+    </svg>
+  </button>
   <div id="bar">
     <button id="fitBtn">Fill Screen</button>
     <button id="fsBtn">Fullscreen</button>
@@ -261,8 +273,53 @@ fn build_viewer_html(token: &str) -> String {
   const TOKEN = "{token}";
   const wrap = document.getElementById("wrap");
   const img = document.getElementById("screen");
+  const bar = document.getElementById("bar");
+  const arrowBtn = document.getElementById("arrowBtn");
   const fitBtn = document.getElementById("fitBtn");
   const fsBtn = document.getElementById("fsBtn");
+
+  let isFs = false;
+  let showBarInFs = false;
+
+  function isNativeFullscreen() {{
+    return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  }}
+
+  function syncControlsUi() {{
+    fsBtn.textContent = isFs ? "Exit Fullscreen" : "Fullscreen";
+    if (isFs) {{
+      bar.classList.add("fs-mode");
+      arrowBtn.classList.add("visible");
+      if (showBarInFs) {{
+        bar.classList.remove("hidden");
+        arrowBtn.classList.add("open");
+      }} else {{
+        bar.classList.add("hidden");
+        arrowBtn.classList.remove("open");
+      }}
+    }} else {{
+      bar.classList.remove("fs-mode", "hidden");
+      arrowBtn.classList.remove("visible", "open");
+      showBarInFs = false;
+    }}
+  }}
+
+  function handleFullscreenChange() {{
+    isFs = isNativeFullscreen();
+    if (isFs) {{
+      showBarInFs = false;
+    }}
+    syncControlsUi();
+  }}
+
+  document.addEventListener("fullscreenchange", handleFullscreenChange);
+  document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+
+  arrowBtn.addEventListener("click", (e) => {{
+    e.stopPropagation();
+    showBarInFs = !showBarInFs;
+    syncControlsUi();
+  }});
 
   fitBtn.addEventListener("click", (e) => {{
     e.stopPropagation();
@@ -272,10 +329,41 @@ fn build_viewer_html(token: &str) -> String {
 
   fsBtn.addEventListener("click", (e) => {{
     e.stopPropagation();
-    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {{
-      document.documentElement.requestFullscreen().catch(() => {{}});
-    }} else if (document.exitFullscreen) {{
-      document.exitFullscreen().catch(() => {{}});
+    const docEl = document.documentElement;
+    if (!isFs) {{
+      const reqFs = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
+      if (reqFs) {{
+        Promise.resolve(reqFs.call(docEl)).then(() => {{
+          isFs = true;
+          showBarInFs = false;
+          syncControlsUi();
+        }}).catch(() => {{
+          isFs = true;
+          showBarInFs = false;
+          syncControlsUi();
+        }});
+      }} else {{
+        isFs = true;
+        showBarInFs = false;
+        syncControlsUi();
+      }}
+    }} else {{
+      const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
+      if (isNativeFullscreen() && exitFs) {{
+        Promise.resolve(exitFs.call(document)).then(() => {{
+          isFs = false;
+          showBarInFs = false;
+          syncControlsUi();
+        }}).catch(() => {{
+          isFs = false;
+          showBarInFs = false;
+          syncControlsUi();
+        }});
+      }} else {{
+        isFs = false;
+        showBarInFs = false;
+        syncControlsUi();
+      }}
     }}
   }});
 

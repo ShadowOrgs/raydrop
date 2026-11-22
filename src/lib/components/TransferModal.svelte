@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
+  import { openWithLastDir } from "../utils/filePicker";
   import {
     appSettings,
     incomingRequestQueue,
@@ -30,7 +31,9 @@
   let alwaysAutoAccept = false;
 
   $: currentIncoming = $incomingRequestQueue[0] ?? null;
-  $: currentIncomingContact = currentIncoming ? $contacts.find((c) => c.device_id === currentIncoming.sender_device_id) : null;
+  $: currentIncomingContact = currentIncoming
+    ? $contacts.find((c) => c.device_id === currentIncoming.sender_device_id)
+    : null;
   $: if (currentIncoming && !customTargetDir) {
     customTargetDir = $appSettings.download_dir;
   }
@@ -42,13 +45,13 @@
     } catch (_) {}
     const parts = unescaped.split(/[/\\]/);
     const last = parts[parts.length - 1] || path;
-    const colonParts = last.split(':');
+    const colonParts = last.split(":");
     return colonParts[colonParts.length - 1] || last;
   }
 
   async function handleAddMoreFiles() {
     try {
-      const picked = await open({
+      const picked = await openWithLastDir({
         multiple: true,
         title: "Add More Files to Send",
       });
@@ -146,7 +149,7 @@
     class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
   >
     <div
-      class="w-full max-w-lg bg-slate-900 border border-cyan-500/30 rounded-2xl p-6 shadow-2xl"
+      class="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-slate-900 border border-cyan-500/30 rounded-2xl p-6 shadow-2xl"
     >
       <div class="flex items-center gap-3">
         <div
@@ -282,7 +285,7 @@
     role="presentation"
   >
     <div
-      class="w-full max-w-lg bg-slate-900 border border-cyan-500/30 rounded-2xl p-6 shadow-2xl space-y-4"
+      class="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-slate-900 border border-cyan-500/30 rounded-2xl p-6 shadow-2xl space-y-4"
     >
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
@@ -326,14 +329,19 @@
           class="bg-slate-950 border border-slate-800 rounded-xl p-2.5 max-h-32 overflow-y-auto space-y-1.5"
         >
           {#each $cliQueuedFiles as path, idx}
-            <div class="flex items-center justify-between gap-2 text-xs text-slate-200 bg-slate-900/60 px-2.5 py-1.5 rounded-lg border border-slate-800/80">
+            <div
+              class="flex items-center justify-between gap-2 text-xs text-slate-200 bg-slate-900/60 px-2.5 py-1.5 rounded-lg border border-slate-800/80"
+            >
               <div class="flex items-center gap-2 min-w-0">
                 <FileText class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
                 <span class="font-medium truncate">{getBaseName(path)}</span>
               </div>
               <button
                 type="button"
-                on:click={() => cliQueuedFiles.update((prev) => prev.filter((_, i) => i !== idx))}
+                on:click={() =>
+                  cliQueuedFiles.update((prev) =>
+                    prev.filter((_, i) => i !== idx),
+                  )}
                 class="p-0.5 rounded text-slate-500 hover:text-rose-400 transition-colors shrink-0"
                 title="Remove"
               >
@@ -371,7 +379,11 @@
                     class="relative w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden"
                   >
                     {#if $peerAvatars[peer.device_id]}
-                      <img src={$peerAvatars[peer.device_id]} alt="" class="w-full h-full object-cover" />
+                      <img
+                        src={$peerAvatars[peer.device_id]}
+                        alt=""
+                        class="w-full h-full object-cover"
+                      />
                     {:else if peer.is_own_device}
                       <Laptop class="w-3.5 h-3.5 text-cyan-400" />
                     {:else if peer.network_type === "lan"}
@@ -387,7 +399,9 @@
                   </div>
                   <div class="min-w-0">
                     <p class="text-xs font-semibold text-slate-100 truncate">
-                      {peer.custom_name ? `${peer.custom_name} (${peer.alias_name})` : peer.alias_name}
+                      {peer.custom_name
+                        ? `${peer.custom_name} (${peer.alias_name})`
+                        : peer.alias_name}
                     </p>
                     <p class="text-[10px] font-mono text-slate-400 truncate">
                       {peer.user_email ||
@@ -414,7 +428,9 @@
           <option value="">-- Or Select from Contact / Device List --</option>
           {#each $contacts as peer}
             <option value={peer.device_id}>
-              {peer.is_own_device ? "💻 [My Device] " : ""}{peer.custom_name ? `${peer.custom_name} (${peer.alias_name})` : peer.alias_name}
+              {peer.is_own_device ? "💻 [My Device] " : ""}{peer.custom_name
+                ? `${peer.custom_name} (${peer.alias_name})`
+                : peer.alias_name}
               {peer.user_email
                 ? `(${peer.user_email})`
                 : `(${peer.network_type.toUpperCase()})`}

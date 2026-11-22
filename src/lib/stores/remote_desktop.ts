@@ -56,14 +56,29 @@ let activePeerConnection: RTCPeerConnection | null = null;
 let activeDataChannel: RTCDataChannel | null = null;
 let activeVideoSender: RTCRtpSender | null = null;
 let pingInterval: any = null;
+let authRetryTimer: any = null;
 let pendingIceCandidates: RTCIceCandidateInit[] = [];
 let isListenerInitialized = false;
 let authTimeoutTimer: any = null;
+const recentSignalKeys = new Set<string>();
+
+function isDuplicateSignal(sessionId: string, type: string): boolean {
+  if (type === 'remote_webrtc_candidate') return false;
+  const key = `${sessionId}:${type}`;
+  if (recentSignalKeys.has(key)) return true;
+  recentSignalKeys.add(key);
+  setTimeout(() => recentSignalKeys.delete(key), 30_000);
+  return false;
+}
 
 function clearAuthTimer() {
   if (authTimeoutTimer) {
     clearTimeout(authTimeoutTimer);
     authTimeoutTimer = null;
+  }
+  if (authRetryTimer) {
+    clearTimeout(authRetryTimer);
+    authRetryTimer = null;
   }
 }
 
@@ -115,6 +130,11 @@ export function initRemoteDesktopListener() {
     const rawSessionId = session_id.replace(/^remote:/, '');
     const currentSession = get(activeRemoteSession);
 
+    // Deduplicate dual-path (WAN Relay + LAN TCP) signaling packets
+    if (isDuplicateSignal(rawSessionId, payload.type)) {
+      return;
+    }
+
     // 1. Host receives authentication request from a client
     if (payload.type === 'remote_request_auth') {
       await handleIncomingAuthRequest(from_device_id, rawSessionId, payload);
@@ -155,9 +175,11 @@ export function initRemoteDesktopListener() {
       return;
     }
 
-    // 7. Session terminated by peer
+    // 7. Session terminated by peer (only if it matches the currently active session)
     if (payload.type === 'remote_session_ended') {
-      disconnectRemoteSession();
+      if (currentSession && currentSession.sessionId === rawSessionId) {
+        disconnectRemoteSession();
+      }
       return;
     }
 
@@ -589,6 +611,7 @@ async function setupHostPeerConnection(
   };
 
   pc.onconnectionstatechange = () => {
+    if (activePeerConnection !== pc) return;
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       disconnectRemoteSession();
     } else if (pc.connectionState === 'disconnected') {
@@ -614,6 +637,137 @@ async function setupHostPeerConnection(
 
 let hostWatchdogInterval: any = null;
 let lastClientPingAt = 0;
+let stopHostClipboardSync: (() => void) | null = null;
+let stopClientClipboardSync: (() => void) | null = null;
+let triggerClientClipboardCheck: (() => void) | null = null;
+
+interface ClipSyncController {
+  onRemoteReceived: (content: string) => Promise<void>;
+  handleChunk: (msg: any) => Promise<void>;
+  checkNow: () => Promise<void>;
+  stop: () => void;
+}
+
+function createAutoClipboardSync(dc: RTCDataChannel): ClipSyncController {
+  let lastSeq = 0;
+  let lastContent = '';
+  let suppressUntil = 0;
+  let stopped = false;
+  let polling = false;
+  const incomingChunks = new Map<string, { total: number; parts: string[]; received: number }>();
+
+  const sendContent = (content: string) => {
+    if (dc.readyState !== 'open' || !content) return;
+    // Cap at ~6MB base64 to keep DataChannel responsive
+    if (content.length > 6_000_000) return;
+    try {
+      if (content.length <= 48_000) {
+        dc.send(JSON.stringify({ t: 'clip_sync', content }));
+      } else {
+        const chunkSize = 48_000;
+        const total = Math.ceil(content.length / chunkSize);
+        const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        for (let i = 0; i < total; i++) {
+          dc.send(
+            JSON.stringify({
+              t: 'clip_chunk',
+              id,
+              idx: i,
+              total,
+              data: content.slice(i * chunkSize, (i + 1) * chunkSize),
+            })
+          );
+        }
+      }
+    } catch (err) {
+      console.warn('Auto clipboard send error:', err);
+    }
+  };
+
+  const checkNow = async () => {
+    if (stopped || polling || dc.readyState !== 'open') return;
+    polling = true;
+    try {
+      const res = await raydropApi.readSystemClipboardIfChanged(lastSeq).catch(() => null);
+      if (res && Array.isArray(res) && res.length === 2) {
+        const [seq, content] = res;
+        lastSeq = seq;
+        if (content && content !== lastContent && Date.now() > suppressUntil) {
+          lastContent = content;
+          sendContent(content);
+        }
+      }
+    } finally {
+      polling = false;
+    }
+  };
+
+  // Seed initial clipboard sequence/content without pushing stale pre-session clipboard
+  (async () => {
+    try {
+      const res = await raydropApi.readSystemClipboardIfChanged(0).catch(() => null);
+      if (res && Array.isArray(res) && res.length === 2) {
+        lastSeq = res[0];
+        lastContent = res[1];
+      } else {
+        lastSeq = await raydropApi.getClipboardSequenceNumber().catch(() => 0);
+      }
+    } catch (_) {}
+  })();
+
+  const timer = setInterval(checkNow, 450);
+
+  const onRemoteReceived = async (content: string) => {
+    if (!content || content === lastContent) return;
+    suppressUntil = Date.now() + 1000;
+    lastContent = content;
+    await raydropApi.writeSystemClipboard(content).catch(() => {});
+    lastSeq = await raydropApi.getClipboardSequenceNumber().catch(() => lastSeq);
+  };
+
+  const handleChunk = async (msg: any) => {
+    if (!msg || !msg.id || typeof msg.idx !== 'number' || typeof msg.total !== 'number' || typeof msg.data !== 'string') {
+      return;
+    }
+    let entry = incomingChunks.get(msg.id);
+    if (!entry) {
+      entry = { total: msg.total, parts: new Array(msg.total), received: 0 };
+      incomingChunks.set(msg.id, entry);
+      // Cleanup stale incomplete chunks
+      if (incomingChunks.size > 8) {
+        const firstKey = incomingChunks.keys().next().value;
+        if (firstKey) incomingChunks.delete(firstKey);
+      }
+    }
+    if (msg.idx >= 0 && msg.idx < entry.total && entry.parts[msg.idx] === undefined) {
+      entry.parts[msg.idx] = msg.data;
+      entry.received++;
+    }
+    if (entry.received >= entry.total) {
+      incomingChunks.delete(msg.id);
+      await onRemoteReceived(entry.parts.join(''));
+    }
+  };
+
+  return {
+    onRemoteReceived,
+    handleChunk,
+    checkNow,
+    stop: () => {
+      stopped = true;
+      clearInterval(timer);
+      incomingChunks.clear();
+    },
+  };
+}
+
+export function triggerLocalClipboardSyncNow() {
+  if (triggerClientClipboardCheck) {
+    setTimeout(() => {
+      triggerClientClipboardCheck?.();
+    }, 80);
+  }
+}
 
 function setupHostDataChannel(dc: RTCDataChannel) {
   dc.onopen = async () => {
@@ -638,12 +792,22 @@ function setupHostDataChannel(dc: RTCDataChannel) {
     raydropApi.startHostAudioLoopback().catch((err) => {
       console.warn('Native host audio loopback start warning:', err);
     });
+
+    // Start automatic bidirectional clipboard sync (Host -> Client)
+    if (stopHostClipboardSync) stopHostClipboardSync();
+    const hostClipSync = createAutoClipboardSync(dc);
+    stopHostClipboardSync = hostClipSync.stop;
+    (dc as any)._hostClipSync = hostClipSync;
   };
 
   dc.onclose = () => {
     if (hostWatchdogInterval) {
       clearInterval(hostWatchdogInterval);
       hostWatchdogInterval = null;
+    }
+    if (stopHostClipboardSync) {
+      stopHostClipboardSync();
+      stopHostClipboardSync = null;
     }
     raydropApi.setHostCursorHidden(false).catch(() => { });
     raydropApi.releaseRemoteModifiers().catch(() => { });
@@ -700,10 +864,21 @@ function setupHostDataChannel(dc: RTCDataChannel) {
         return;
       }
 
-      // Clipboard Write from Remote Client (Text or Data URL Image)
-      if (data.t === 'clip_write') {
-        if (data.content) {
+      // Auto Clipboard Sync or Write from Remote Client (Text or Data URL Image)
+      if ((data.t === 'clip_sync' || data.t === 'clip_write') && data.content) {
+        const sync = (dc as any)._hostClipSync as ClipSyncController | undefined;
+        if (sync) {
+          await sync.onRemoteReceived(data.content);
+        } else {
           await raydropApi.writeSystemClipboard(data.content).catch(() => { });
+        }
+        return;
+      }
+
+      if (data.t === 'clip_chunk') {
+        const sync = (dc as any)._hostClipSync as ClipSyncController | undefined;
+        if (sync) {
+          await sync.handleChunk(data);
         }
         return;
       }
@@ -786,13 +961,22 @@ export async function connectToRemoteHost(targetDeviceId: string, pin: string) {
   }, timeoutMs);
 
   // Send authentication request with PIN
-  sendRemoteSignal(targetDeviceId, sessionId, {
+  const authPayload = {
     type: 'remote_request_auth',
     sessionId,
     fromDeviceId: myDeviceId,
     fromAlias: myAlias,
     pin: pin.trim(),
-  });
+  };
+  sendRemoteSignal(targetDeviceId, sessionId, authPayload);
+
+  // Retry once after 4s if still waiting on verifying_pin (guards against transient signaling drop)
+  authRetryTimer = setTimeout(() => {
+    const sess = get(activeRemoteSession);
+    if (sess?.sessionId === sessionId && get(remoteConnectionStatus) === 'verifying_pin') {
+      sendRemoteSignal(targetDeviceId, sessionId, authPayload);
+    }
+  }, 4000);
 }
 
 async function handleIncomingOffer(
@@ -832,6 +1016,7 @@ async function handleIncomingOffer(
   };
 
   pc.onconnectionstatechange = () => {
+    if (activePeerConnection !== pc) return;
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       remoteConnectionStatus.set('disconnected');
       cleanupPeerConnection();
@@ -972,6 +1157,13 @@ function setupClientDataChannel(dc: RTCDataChannel) {
         dc.send(JSON.stringify({ t: 'ping', time: Date.now() }));
       }
     }, 2000);
+
+    // Start automatic bidirectional clipboard sync (Client -> Host)
+    if (stopClientClipboardSync) stopClientClipboardSync();
+    const clientClipSync = createAutoClipboardSync(dc);
+    stopClientClipboardSync = clientClipSync.stop;
+    triggerClientClipboardCheck = clientClipSync.checkNow;
+    (dc as any)._clientClipSync = clientClipSync;
   };
 
   dc.onmessage = async (event) => {
@@ -986,10 +1178,22 @@ function setupClientDataChannel(dc: RTCDataChannel) {
         return;
       }
 
-      // Received clipboard from Host
-      if (data.t === 'clip_read_res' && data.content) {
-        await raydropApi.writeSystemClipboard(data.content).catch(() => { });
-        alert('📋 Host clipboard contents copied to your local clipboard!');
+      // Auto-received clipboard from Host (Text or Image)
+      if ((data.t === 'clip_sync' || data.t === 'clip_read_res') && data.content) {
+        const sync = (dc as any)._clientClipSync as ClipSyncController | undefined;
+        if (sync) {
+          await sync.onRemoteReceived(data.content);
+        } else {
+          await raydropApi.writeSystemClipboard(data.content).catch(() => { });
+        }
+        return;
+      }
+
+      if (data.t === 'clip_chunk') {
+        const sync = (dc as any)._clientClipSync as ClipSyncController | undefined;
+        if (sync) {
+          await sync.handleChunk(data);
+        }
         return;
       }
 
@@ -1011,6 +1215,11 @@ function setupClientDataChannel(dc: RTCDataChannel) {
 
   dc.onclose = () => {
     if (pingInterval) clearInterval(pingInterval);
+    if (stopClientClipboardSync) {
+      stopClientClipboardSync();
+      stopClientClipboardSync = null;
+    }
+    triggerClientClipboardCheck = null;
   };
 }
 
@@ -1081,7 +1290,10 @@ export function stopHostScreenCapture() {
   stopBackgroundKeepAlive();
   const stream = get(hostScreenStream);
   if (stream) {
-    stream.getTracks().forEach((t) => t.stop());
+    stream.getTracks().forEach((t) => {
+      t.onended = null;
+      t.stop();
+    });
   }
   hostScreenStream.set(null);
   isHostSharingScreen.set(false);

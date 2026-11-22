@@ -1,6 +1,90 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
+export interface ClipboardHistoryItem {
+  id: string;
+  content_type: 'text' | 'image';
+  content: string;
+  preview: string;
+  pinned: boolean;
+  created_at: number;
+}
+
+export interface NoteChecklistEntry {
+  id: string;
+  text: string;
+  checked: boolean;
+}
+
+export interface NoteItem {
+  id: string;
+  title: string;
+  content: string;
+  note_type: 'note' | 'checklist';
+  checklist: NoteChecklistEntry[];
+  images: string[];
+  color: string;
+  labels: string[];
+  pinned: boolean;
+  archived: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface DiskTelemetry {
+  name: string;
+  mount_point: string;
+  total_bytes: number;
+  available_bytes: number;
+  used_bytes: number;
+  usage_percent: number;
+}
+
+export interface SystemTelemetry {
+  cpu_usage_percent: number;
+  cpu_brand: string;
+  cpu_cores_physical: number;
+  cpu_cores_logical: number;
+  cpu_freq_mhz: number;
+  ram_used_bytes: number;
+  ram_total_bytes: number;
+  ram_usage_percent: number;
+  swap_used_bytes: number;
+  swap_total_bytes: number;
+  gpu_name: string;
+  gpu_usage_percent: number;
+  net_rx_bytes_per_sec: number;
+  net_tx_bytes_per_sec: number;
+  hostname: string;
+  os_name: string;
+  os_version: string;
+  kernel_version: string;
+  arch: string;
+  uptime_secs: number;
+  cpu_temp_celsius?: number | null;
+  disks: DiskTelemetry[];
+}
+
+export interface DailyTransferStat {
+  day_epoch_secs: number;
+  sent_bytes: number;
+  received_bytes: number;
+}
+
+export interface TransferAnalytics {
+  total_sent_bytes: number;
+  total_received_bytes: number;
+  total_sent_files: number;
+  total_received_files: number;
+  sent_sessions: number;
+  received_sessions: number;
+  failed_sessions: number;
+  lan_bytes: number;
+  wan_bytes: number;
+  http_bytes: number;
+  daily: DailyTransferStat[];
+}
+
 export interface AppSettings {
   device_id: string;
   alias_name: string;
@@ -16,6 +100,7 @@ export interface AppSettings {
   stun_addr: string;
   auto_categorize?: boolean;
   max_concurrent_downloads?: number;
+  theme?: string;
 }
 
 export interface AppStateSnapshot {
@@ -27,6 +112,7 @@ export interface AppStateSnapshot {
   wan_reflexive_addr: string | null;
   signaling_connected: boolean;
   queued_cli_files: string[];
+  my_rank_exp?: number;
 }
 
 export interface Contact {
@@ -46,6 +132,8 @@ export interface Contact {
   last_seen_at: number;
   created_at: number;
   avatar_hash?: string | null;
+  rank_exp?: number;
+  mac_address?: string | null;
 }
 
 export interface CloudDeviceNode {
@@ -454,6 +542,19 @@ export const raydropApi = {
     invoke<WebShareInfo>('start_web_share', { paths }),
   stopWebShare: () => invoke<void>('stop_web_share'),
   readSystemClipboard: () => invoke<string>('read_system_clipboard'),
+  readSystemClipboardIfChanged: (lastSeq: number) =>
+    invoke<[number, string] | null>('read_system_clipboard_if_changed', { lastSeq }),
+  getClipboardSequenceNumber: () => invoke<number>('get_clipboard_sequence_number'),
+  listClipboardHistory: () => invoke<ClipboardHistoryItem[]>('list_clipboard_history'),
+  copyClipboardHistoryItem: (id: string) => invoke<void>('copy_clipboard_history_item', { id }),
+  togglePinClipboardItem: (id: string) => invoke<boolean>('toggle_pin_clipboard_item', { id }),
+  deleteClipboardHistoryItem: (id: string) => invoke<void>('delete_clipboard_history_item', { id }),
+  clearClipboardHistory: () => invoke<void>('clear_clipboard_history'),
+  listNotes: (includeArchived: boolean) => invoke<NoteItem[]>('list_notes', { includeArchived }),
+  saveNote: (note: NoteItem) => invoke<NoteItem>('save_note', { note }),
+  togglePinNote: (id: string) => invoke<boolean>('toggle_pin_note', { id }),
+  toggleArchiveNote: (id: string) => invoke<boolean>('toggle_archive_note', { id }),
+  deleteNote: (id: string) => invoke<void>('delete_note', { id }),
   writeSystemClipboard: (content: string) =>
     invoke<void>('write_system_clipboard', { content, text: content }),
   saveBase64Image: (dataUrl: string, customFilename?: string) =>
@@ -585,8 +686,12 @@ export const raydropApi = {
     invoke<void>('set_host_target_monitor', { monitorIndex }),
   executeRemotePowerAction: (action: string) =>
     invoke<void>('execute_remote_power_action', { action }),
-  sendWakeOnLan: (macAddress: string) =>
-    invoke<void>('send_wake_on_lan', { macAddress }),
+  sendWakeOnLan: (macAddress: string, targetHost?: string, port?: number) =>
+    invoke<void>('send_wake_on_lan', {
+      macAddress,
+      targetHost: targetHost?.trim() ? targetHost.trim() : null,
+      port: port && port > 0 ? port : null,
+    }),
   startHostAudioLoopback: () =>
     invoke<void>('start_host_audio_loopback'),
   stopHostAudioLoopback: () =>
@@ -597,6 +702,8 @@ export const raydropApi = {
     invoke<void>('stop_second_screen_server'),
   pushSecondScreenFrame: (frameBase64: string) =>
     invoke<void>('push_second_screen_frame', { frameBase64 }),
+  recordActivityTick: (activeFeatures: string[], seconds: number) =>
+    invoke<number>('record_activity_tick', { activeFeatures, seconds }),
   openSystemDisplaySettings: () =>
     invoke<void>('open_system_display_settings'),
   startNativeScreenCapture: () =>
@@ -607,6 +714,12 @@ export const raydropApi = {
     invoke<void>('ack_native_screen_frame'),
   isSecureDesktopActive: () =>
     invoke<boolean>('is_secure_desktop_active'),
+  setUiTheme: (theme: string) =>
+    invoke<string>('set_ui_theme', { theme }),
+  getSystemTelemetry: () =>
+    invoke<SystemTelemetry>('get_system_telemetry'),
+  getTransferAnalytics: () =>
+    invoke<TransferAnalytics>('get_transfer_analytics'),
   checkUnattendedBootService: () =>
     invoke<boolean>('check_unattended_boot_service'),
   installUnattendedBootService: () =>
