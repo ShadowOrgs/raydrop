@@ -40,13 +40,10 @@ Write-Host "==========================================================" -Foregro
 # 2. Auto-sync version across all project files to prevent build mismatches
 Write-Host "Syncing version $ver across all project files..." -ForegroundColor Yellow
 
-# package-lock.json
+# package-lock.json (sync root version safely via npm without touching dependency versions)
 $pkgLockPath = "$repoRoot/package-lock.json"
 if (Test-Path $pkgLockPath) {
-    $lockContent = Read-Utf8 $pkgLockPath
-    $lockContent = $lockContent -replace '(?m)^  "version":\s*"[^"]+"', "  `"version`": `"$ver`""
-    $lockContent = $lockContent -replace '(?m)^      "version":\s*"[^"]+"', "      `"version`": `"$ver`""
-    Write-Utf8NoBom $pkgLockPath $lockContent
+    npm install --package-lock-only --ignore-scripts | Out-Null
 }
 
 # tauri.conf.json
