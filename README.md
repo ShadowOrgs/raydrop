@@ -360,6 +360,18 @@ Contributions, bug reports, and feature suggestions are always welcome!
 
 ---
 
+## 🙏 Acknowledgments & Open-Source Credits
+
+Raydrop is made possible by the following amazing open-source projects and libraries:
+
+- **[Virtual Display Driver (MttVDD)](https://github.com/VirtualDrivers/Virtual-Display-Driver)** by MikeTheTech & VirtualDrivers contributors — Powers Raydrop's automatic virtual 2nd monitor on Windows for **Extend to iPad / Tablet**.
+- **[Tauri v2](https://tauri.app/)**, **[Svelte](https://svelte.dev/)**, **[Vite](https://vite.dev/)**, **[Tailwind CSS](https://tailwindcss.com/)**, and **[Lucide Icons](https://lucide.dev/)** — Cross-platform desktop/mobile runtime and UI stack.
+- **[Tokio](https://tokio.rs/)**, **[Quinn](https://github.com/quinn-rs/quinn)** (QUIC), **[tokio-tungstenite](https://github.com/snapview/tokio-tungstenite)**, **[mDNS-SD](https://github.com/keepsimple1/mdns-sd)**, **[librqbit](https://github.com/ikatson/rqbit)**, and **[Reqwest](https://github.com/seanmonstar/reqwest)** — High-speed async P2P transport, LAN discovery, WebSocket signaling, and BitTorrent engine.
+- **[Rustls](https://github.com/rustls/rustls)**, **[ChaCha20-Poly1305](https://github.com/RustCrypto/AEADs)**, **[ed25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek)**, **[x25519-dalek](https://github.com/dalek-cryptography/x25519-dalek)**, **[BLAKE3](https://github.com/BLAKE3-team/BLAKE3)**, and **[rcgen](https://github.com/rustls/rcgen)** — End-to-end encryption, key exchange, and integrity verification.
+- **[image-rs](https://github.com/image-rs/image)**, **[zip-rs](https://github.com/zip-rs/zip2)**, **[CPAL](https://github.com/RustAudio/cpal)**, **[arboard](https://github.com/1Password/arboard)**, **[rusqlite](https://github.com/rusqlite/rusqlite)**, **[sysinfo](https://github.com/GuillaumeGomez/sysinfo)**, **[notify](https://github.com/notify-rs/notify)**, **[qrcode](https://github.com/soldair/node-qrcode)**, and **[marked](https://github.com/markedjs/marked)** — Image conversion & compression, archive bundling, WASAPI audio loopback, clipboard sync, SQLite storage, and system monitoring.
+
+---
+
 ## 📄 License
 
 Raydrop is open-source software licensed under the [MIT License](LICENSE).
