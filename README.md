@@ -60,12 +60,14 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 
 ## ✨ Key Features
 
-### 🆕 Productivity, Analytics & Privacy Suite (New in v1.2.49)
+### 🆕 Productivity, Analytics & Privacy Suite (Updated in v1.2.50)
+- **Smooth Startup Initialization Overlay:** Displays a clean fullscreen loading overlay until all P2P modules, contacts, and transfer history are ready, eliminating startup UI freezes and avoiding unwanted startup screen-share prompts.
+- **Transfer History Delete & Clear History:** Delete individual entries or clear completed records from Transfer History while preserving persistent lifetime analytics.
 - **System Monitor & Persistent Transfer Analytics Dashboard:** Monitor live CPU, RAM, GPU, Disk, and Network throughput charts (loaded lazily when opened) alongside persistent local analytics for total gigabytes sent and received.
 - **Raydrop Rank & EXP Badges:** Earn EXP across File Transfers (`+2 EXP/MB`), Chat (`+5 EXP/msg`), Remote Desktop, Meetings, Tablet Extend (`+10 EXP/min`), and Sync/Share (`+25 EXP`). Rank badges (`Bronze` → `Mythic`) appear in your Profile Menu, Contacts, Chat, and Meeting tiles.
 - **Cross-Platform Copy History (Win+V):** Persistent clipboard history for Windows, macOS, and Linux—automatically captures copied text and images, supports search, Pin/Unpin, and 1-click re-copy.
 - **Notes & Task Lists (Google Keep Style):** Create color-coded notes, interactive task checklists, `#labels`, and paste screenshots (`Ctrl+V`) directly into notes.
-- **Hidden & Offline Private Mode:** Clicking `Visible` toggles to `Hidden • Offline`, immediately disconnecting WAN signaling and unregistering LAN mDNS so other users see you as offline.
+- **Hidden & Offline Private Mode:** Clicking `Visible` toggles to `Hidden • Offline`, immediately disconnecting WAN signaling, unregistering LAN mDNS, and disabling Remote Desktop initiation until you switch back to `Visible`.
 - **WAN Wake-on-LAN (DDNS + Custom Port) & Auto MAC:** Automatically detects and pre-fills MAC addresses across your own devices and supports DDNS hostnames + custom UDP ports for waking PCs over WAN.
 - **Native OS Download Notifications:** Triggers Windows/macOS/Linux desktop notifications upon completion for P2P Transfers, HTTP Accelerator downloads, and BitTorrent downloads.
 

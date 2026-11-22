@@ -289,6 +289,7 @@
     isOnline: boolean;
     lastSeenAt?: number;
   }) {
+    if (!$appSettings.discoverable || !peer.isOnline) return;
     selectedPeer = peer;
     selectedTargetDeviceId = peer.id;
     inputPin = "";
@@ -296,6 +297,7 @@
   }
 
   function openManualConnectModal() {
+    if (!$appSettings.discoverable) return;
     manualDeviceIdInput = "";
     isManualConnectModalOpen = true;
   }
@@ -327,11 +329,6 @@
     hostEnabled = $remoteHostSettings.enabled;
     hostPin = $remoteHostSettings.pin;
     hostUnattended = $remoteHostSettings.unattended;
-
-    if (hostEnabled && !$isHostSharingScreen) {
-      // Warm up host screen capture in background so unattended access is instant
-      startHostScreenCapture().catch(() => {});
-    }
 
     raydropApi.checkUnattendedBootService().then((res) => {
       isBootServiceInstalled = res;
@@ -1451,12 +1448,20 @@
           class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"
         >
           {#each filteredPeers as peer}
+            {@const canRemote = $appSettings.discoverable && peer.isOnline}
             <!-- Device Card with User Avatar -->
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <!-- svelte-ignore a11y-no-static-element-interactions -->
             <div
-              on:click={() => openConnectModalForPeer(peer)}
-              class="p-4 rounded-2xl bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800/90 hover:border-cyan-500/50 transition-all duration-200 cursor-pointer shadow-lg hover:shadow-cyan-500/10 group flex flex-col justify-between space-y-3 relative overflow-hidden"
+              on:click={() => canRemote && openConnectModalForPeer(peer)}
+              class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/90 transition-all duration-200 shadow-lg group flex flex-col justify-between space-y-3 relative overflow-hidden {canRemote
+                ? 'hover:bg-slate-800/80 hover:border-cyan-500/50 hover:shadow-cyan-500/10 cursor-pointer'
+                : 'opacity-75 cursor-not-allowed'}"
+              title={!$appSettings.discoverable
+                ? "Your device is Hidden (Offline) — switch to Visible to remote"
+                : !peer.isOnline
+                  ? "Device is offline / hidden"
+                  : "Click to connect Remote Desktop"}
             >
               <!-- Card Top: Avatar with Online Badge + Device Type Pill -->
               <div class="flex items-start justify-between gap-3">
@@ -1555,7 +1560,9 @@
                     </button>
                   {/if}
                   <div
-                    class="w-7 h-7 rounded-lg bg-cyan-500/10 group-hover:bg-cyan-500 text-cyan-400 group-hover:text-slate-950 flex items-center justify-center transition shadow-sm"
+                    class="w-7 h-7 rounded-lg flex items-center justify-center transition shadow-sm {canRemote
+                      ? 'bg-cyan-500/10 group-hover:bg-cyan-500 text-cyan-400 group-hover:text-slate-950'
+                      : 'bg-slate-800 text-slate-600'}"
                   >
                     <Play class="w-3.5 h-3.5 fill-current ml-0.5" />
                   </div>

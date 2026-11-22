@@ -263,12 +263,18 @@
     <!-- 4. Remote Desktop -->
     <button
       type="button"
-      on:click={() => activeMainTab.set("remote")}
-      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
-      'remote'
-        ? 'bg-gradient-to-r from-cyan-500/25 to-blue-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
-      title="Raydrop P2P Remote Desktop"
+      disabled={!$appSettings.discoverable}
+      on:click={() => {
+        if ($appSettings.discoverable) activeMainTab.set("remote");
+      }}
+      class="relative p-2 rounded-xl transition-all {!$appSettings.discoverable
+        ? 'opacity-40 cursor-not-allowed text-slate-600'
+        : $activeMainTab === 'remote'
+          ? 'bg-gradient-to-r from-cyan-500/25 to-blue-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15 cursor-pointer'
+          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 cursor-pointer'}"
+      title={!$appSettings.discoverable
+        ? "Remote Desktop disabled while Hidden (Offline) — switch to Visible first"
+        : "Raydrop P2P Remote Desktop"}
     >
       <Monitor
         class="w-4 h-4 {$activeMainTab === 'remote'

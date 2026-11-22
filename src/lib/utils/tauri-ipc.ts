@@ -444,6 +444,8 @@ export const raydropApi = {
   cancelTransfer: (sessionId: string) =>
     invoke<void>('cancel_transfer', { sessionId }),
   getTransferHistory: () => invoke<TransferRecord[]>('get_transfer_history'),
+  deleteTransferRecord: (id: string) => invoke<void>('delete_transfer_record', { id }),
+  clearTransferHistory: () => invoke<void>('clear_transfer_history'),
   registerOsContextMenu: () => invoke<string>('register_os_context_menu'),
   getWin11DirectMenu: () => invoke<boolean>('get_win11_direct_menu'),
   toggleWin11DirectMenu: (enabled: boolean) =>

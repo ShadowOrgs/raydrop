@@ -104,6 +104,8 @@
   }
 
   let statusSyncTimer: any = null;
+  let isAppReady = false;
+  let initStatusText = "Menyiapkan komponen & layanan Raydrop...";
 
   onDestroy(() => {
     if (statusSyncTimer) {
@@ -112,8 +114,14 @@
   });
 
   onMount(async () => {
-    // 0. Initialize WebRTC P2P Voice & Online Meeting Signaling
-    setupMeetingSignalListener();
+    const readyFailSafe = setTimeout(() => {
+      isAppReady = true;
+    }, 8000);
+
+    try {
+      initStatusText = "Menghubungkan listener & sistem P2P...";
+      // 0. Initialize WebRTC P2P Voice & Online Meeting Signaling
+      setupMeetingSignalListener();
 
     // 1. Immediately subscribe to all real-time backend events FIRST to prevent startup race conditions
     await raydropApi.listenEvent<boolean>(
@@ -161,6 +169,7 @@
       appSettings.update((s) => ({ ...s, autostart: enabled }));
     });
 
+    initStatusText = "Memuat status perangkat & tema...";
     // 2. Fetch fresh app state & populate stores
     const snap = await raydropApi.getAppState();
     appSettings.set(snap.settings);
@@ -201,6 +210,7 @@
       }
     }
 
+    initStatusText = "Memuat kontak & riwayat transfer...";
     contacts.set(await raydropApi.getContacts());
     transfers.set(await raydropApi.getTransferHistory());
     await fetchUnreadCounts();
@@ -208,10 +218,11 @@
     if (!snap.settings.auth_token) {
       authModalOpen.set(true);
     } else {
-      await refreshCloudState(
-        snap.settings.signaling_url,
-        snap.settings.auth_token,
-      );
+      initStatusText = "Sinkronisasi perangkat & cloud...";
+      await Promise.race([
+        refreshCloudState(snap.settings.signaling_url, snap.settings.auth_token),
+        new Promise((r) => setTimeout(r, 2500)),
+      ]);
     }
 
     // 3. Periodic synchronization timer (every 4s) to ensure signaling & network status never get stuck
@@ -467,10 +478,21 @@
     }
 
     // Initialize Torrent Engine & listeners
-    initTorrentStore().catch(() => {});
-    initAvatarStore().catch(() => {});
+    initStatusText = "Menyiapkan modul transfer & remote...";
+    await Promise.allSettled([
+      initTorrentStore(),
+      initAvatarStore(),
+      loadRemoteDesktopSettings(),
+    ]);
     initRemoteDesktopListener();
-    loadRemoteDesktopSettings().catch(() => {});
+    } catch (err) {
+      console.warn("App initialization warning:", err);
+    } finally {
+      clearTimeout(readyFailSafe);
+      setTimeout(() => {
+        isAppReady = true;
+      }, 150);
+    }
 
     // Auto-check for software updates silently on startup after brief initialization
     setTimeout(() => {
@@ -704,6 +726,30 @@
   <BrowserExtensionModal />
   <MeetingInviteModal />
   <WolModal />
+
+  {#if !isAppReady}
+    <div
+      class="fixed inset-0 z-[100] bg-slate-950/95 backdrop-blur-xl flex flex-col items-center justify-center p-6 select-none"
+      aria-busy="true"
+      aria-label="Loading Raydrop"
+    >
+      <div class="flex flex-col items-center gap-4 max-w-xs w-full text-center">
+        <div class="relative w-16 h-16 flex items-center justify-center">
+          <div class="absolute inset-0 rounded-2xl border-2 border-cyan-500/30 animate-ping"></div>
+          <div class="w-16 h-16 rounded-2xl bg-slate-900 border border-cyan-500/40 shadow-2xl shadow-cyan-500/20 flex items-center justify-center overflow-hidden">
+            <img src="/logo.png" alt="Raydrop" class="w-10 h-10 object-contain" />
+          </div>
+        </div>
+        <div class="space-y-1">
+          <h2 class="text-base font-bold text-white tracking-tight">Raydrop</h2>
+          <p class="text-xs text-slate-400">{initStatusText}</p>
+        </div>
+        <div class="w-48 h-1 rounded-full bg-slate-800 overflow-hidden">
+          <div class="h-full w-1/2 rounded-full bg-gradient-to-r from-cyan-500 to-indigo-500 animate-pulse"></div>
+        </div>
+      </div>
+    </div>
+  {/if}
 
   <!-- Mobile Bottom Navigation Bar (md:hidden) -->
   <nav

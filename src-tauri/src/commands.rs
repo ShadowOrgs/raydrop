@@ -543,6 +543,21 @@ pub fn get_transfer_history(
 }
 
 #[tauri::command]
+pub fn delete_transfer_record(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> Result<(), String> {
+    state.db.delete_transfer_record(&id)
+}
+
+#[tauri::command]
+pub fn clear_transfer_history(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state.db.clear_transfer_history()
+}
+
+#[tauri::command]
 pub fn register_os_context_menu() -> Result<String, String> {
     register_context_menu()
 }

@@ -948,6 +948,23 @@ impl Database {
         .map_err(|e| e.to_string())
     }
 
+    pub fn delete_transfer_record(&self, id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM transfer_history WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn clear_transfer_history(&self) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM transfer_history WHERE status NOT IN ('in_progress', 'paused')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     pub fn list_transfers(&self) -> Result<Vec<TransferRecord>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn

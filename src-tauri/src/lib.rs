@@ -526,6 +526,8 @@ pub fn run() {
             commands::respond_transfer_request,
             commands::cancel_transfer,
             commands::get_transfer_history,
+            commands::delete_transfer_record,
+            commands::clear_transfer_history,
             commands::register_os_context_menu,
             commands::open_file_path,
             commands::open_folder_path,

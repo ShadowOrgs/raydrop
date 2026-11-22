@@ -1,7 +1,7 @@
 <script lang="ts">
   import { openWithLastDir } from '../utils/filePicker';
   import { convertFileSrc } from '@tauri-apps/api/core';
-  import { activeTransfers, historicalTransfers } from '../stores/transfers';
+  import { activeTransfers, historicalTransfers, removeTransferRecord, clearCompletedTransfers } from '../stores/transfers';
   import { appSettings, cliQueuedFiles, activeMainTab } from '../stores/state';
   import { torrentTasks, httpTasks, magnetModalOpen, browserExtensionModalOpen } from '../stores/torrents';
   import { raydropApi, formatBytes, formatEta, type TransferRecord, type WebShareInfo, type TorrentTaskInfo, type HttpDownloadTaskInfo } from '../utils/tauri-ipc';
@@ -43,6 +43,7 @@
     Puzzle,
     Link,
     ZoomIn,
+    Trash2,
     ZoomOut,
     Eye,
     Image as ImageIcon,
@@ -1405,9 +1406,9 @@
             type="button"
             on:click={async () => {
               await raydropApi.clearTransferHistory();
-              historicalTransfers.set([]);
+              clearCompletedTransfers();
             }}
-            class="text-[11px] text-slate-500 hover:text-rose-400 transition"
+            class="text-[11px] text-slate-500 hover:text-rose-400 transition cursor-pointer"
           >
             Clear History
           </button>
@@ -1608,6 +1609,17 @@
                       Cancelled
                     </span>
                   {/if}
+                  <button
+                    type="button"
+                    on:click={async () => {
+                      await raydropApi.deleteTransferRecord(h.id);
+                      removeTransferRecord(h.id);
+                    }}
+                    class="p-1 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-500/30 transition cursor-pointer"
+                    title="Delete from Transfer History"
+                  >
+                    <Trash2 class="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
 

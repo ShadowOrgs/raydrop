@@ -53,6 +53,16 @@ export function upsertTransferRecord(rec: TransferRecord) {
   });
 }
 
+export function removeTransferRecord(id: string) {
+  transfers.update((list) => list.filter((t) => t.id !== id));
+}
+
+export function clearCompletedTransfers() {
+  transfers.update((list) =>
+    list.filter((t) => t.status === 'in_progress' || t.status === 'paused')
+  );
+}
+
 export const activeTransfers = derived(transfers, ($transfers) =>
   $transfers.filter((t) => t.status === 'in_progress' || t.status === 'paused')
 );
