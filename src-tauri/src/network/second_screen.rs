@@ -4,7 +4,7 @@
 
 use base64::Engine;
 use serde::Serialize;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -20,6 +20,8 @@ pub struct SecondScreenInfo {
 pub struct SecondScreenState {
     pub active_flag: Mutex<Option<Arc<AtomicBool>>>,
     pub frame_tx: Mutex<Option<watch::Sender<Vec<u8>>>>,
+    pub native_capture_enabled: Arc<AtomicBool>,
+    pub native_monitor_index: Arc<AtomicI32>,
 }
 
 impl SecondScreenState {
@@ -27,7 +29,16 @@ impl SecondScreenState {
         Self {
             active_flag: Mutex::new(None),
             frame_tx: Mutex::new(None),
+            native_capture_enabled: Arc::new(AtomicBool::new(false)),
+            native_monitor_index: Arc::new(AtomicI32::new(0)),
         }
+    }
+
+    pub fn set_native_capture(&self, enabled: bool, monitor_index: Option<i32>) {
+        if let Some(idx) = monitor_index {
+            self.native_monitor_index.store(idx, Ordering::Relaxed);
+        }
+        self.native_capture_enabled.store(enabled, Ordering::SeqCst);
     }
 
     pub fn push_frame_b64(&self, b64: &str) {
@@ -42,6 +53,7 @@ impl SecondScreenState {
     }
 
     pub fn stop(&self) {
+        self.native_capture_enabled.store(false, Ordering::SeqCst);
         if let Ok(mut guard) = self.active_flag.lock() {
             if let Some(flag) = guard.take() {
                 flag.store(false, Ordering::SeqCst);
@@ -55,6 +67,8 @@ impl SecondScreenState {
 
 pub async fn start_second_screen_server(
     second_screen: Arc<SecondScreenState>,
+    native_capture: bool,
+    monitor_index: i32,
 ) -> Result<SecondScreenInfo, String> {
     // Stop any previous server
     second_screen.stop();
@@ -82,7 +96,15 @@ pub async fn start_second_screen_server(
     let (frame_tx, frame_rx) = watch::channel::<Vec<u8>>(Vec::new());
 
     *second_screen.active_flag.lock().unwrap() = Some(active_flag.clone());
-    *second_screen.frame_tx.lock().unwrap() = Some(frame_tx);
+    *second_screen.frame_tx.lock().unwrap() = Some(frame_tx.clone());
+    second_screen.set_native_capture(native_capture, Some(monitor_index));
+
+    crate::remote_capture::spawn_second_screen_gdi_capture(
+        active_flag.clone(),
+        second_screen.native_capture_enabled.clone(),
+        second_screen.native_monitor_index.clone(),
+        frame_tx,
+    );
 
     let token_clone = token.clone();
     tokio::spawn(async move {

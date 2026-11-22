@@ -2,8 +2,8 @@
 //! Captures the host desktop silently in the background without triggering browser
 //! `getDisplayMedia()` permission popups, enabling true unattended remote access after reboot.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
 static CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -297,4 +297,194 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Captures a specific monitor index directly via Windows GDI (`GetDC(0)` + `StretchBlt`)
+/// and pushes JPEG bytes to the Second Screen `watch::Sender`.
+/// Avoids Chromium/WebView2 `getDisplayMedia()` WGC black-screen issues on virtual displays (e.g. MttVDD).
+pub fn spawn_second_screen_gdi_capture(
+    active_flag: Arc<AtomicBool>,
+    enabled_flag: Arc<AtomicBool>,
+    monitor_index: Arc<AtomicI32>,
+    frame_tx: tokio::sync::watch::Sender<Vec<u8>>,
+) {
+    #[cfg(target_os = "windows")]
+    {
+        std::thread::spawn(move || {
+            use image::codecs::jpeg::JpegEncoder;
+            use image::ExtendedColorType;
+
+            const SRCCOPY: u32 = 0x00CC0020;
+            const HALFTONE: i32 = 4;
+
+            let mut bgra: Vec<u8> = Vec::new();
+            let mut rgb: Vec<u8> = Vec::new();
+            let mut jpeg_buf: Vec<u8> = Vec::with_capacity(65536);
+            let mut last_frame_hash: u64 = 0;
+            let mut last_monitor_idx: i32 = -999;
+            let mut last_force_emit =
+                std::time::Instant::now() - std::time::Duration::from_secs(2);
+
+            while active_flag.load(Ordering::Relaxed) {
+                if !enabled_flag.load(Ordering::Relaxed) {
+                    last_frame_hash = 0;
+                    std::thread::sleep(std::time::Duration::from_millis(60));
+                    continue;
+                }
+
+                let loop_start = std::time::Instant::now();
+                let idx = monitor_index.load(Ordering::Relaxed);
+                if idx != last_monitor_idx {
+                    last_monitor_idx = idx;
+                    last_frame_hash = 0;
+                }
+
+                let monitors = crate::remote_input::list_monitors();
+                let target_mon = if idx >= 0 {
+                    monitors.get(idx as usize).or_else(|| monitors.first())
+                } else {
+                    monitors.first()
+                };
+
+                let (src_x, src_y, src_w, src_h) = match target_mon {
+                    Some(m) if m.width > 0 && m.height > 0 => (m.x, m.y, m.width, m.height),
+                    _ => unsafe {
+                        let w = win_gdi::GetSystemMetrics(0).max(1280);
+                        let h = win_gdi::GetSystemMetrics(1).max(720);
+                        (0, 0, w, h)
+                    },
+                };
+
+                let scale = if src_w > 1600 {
+                    1600.0 / src_w as f32
+                } else {
+                    1.0
+                };
+                let dst_w = ((src_w as f32 * scale).round() as i32).max(2) & !1;
+                let dst_h = ((src_h as f32 * scale).round() as i32).max(2) & !1;
+
+                unsafe {
+                    let hdc_screen = win_gdi::GetDC(0);
+                    if hdc_screen != 0 {
+                        let hdc_mem = win_gdi::CreateCompatibleDC(hdc_screen);
+                        let hbm = win_gdi::CreateCompatibleBitmap(hdc_screen, dst_w, dst_h);
+
+                        if hdc_mem != 0 && hbm != 0 {
+                            let old_obj = win_gdi::SelectObject(hdc_mem, hbm);
+                            win_gdi::SetStretchBltMode(hdc_mem, HALFTONE);
+                            let ok = win_gdi::StretchBlt(
+                                hdc_mem,
+                                0,
+                                0,
+                                dst_w,
+                                dst_h,
+                                hdc_screen,
+                                src_x,
+                                src_y,
+                                src_w,
+                                src_h,
+                                SRCCOPY,
+                            );
+
+                            if ok != 0 {
+                                let mut bmi = win_gdi::BITMAPINFO {
+                                    bmi_header: win_gdi::BITMAPINFOHEADER {
+                                        bi_size: std::mem::size_of::<win_gdi::BITMAPINFOHEADER>()
+                                            as u32,
+                                        bi_width: dst_w,
+                                        bi_height: -dst_h,
+                                        bi_planes: 1,
+                                        bi_bit_count: 32,
+                                        bi_compression: 0,
+                                        bi_size_image: 0,
+                                        bi_x_pels_per_meter: 0,
+                                        bi_y_pels_per_meter: 0,
+                                        bi_clr_used: 0,
+                                        bi_clr_important: 0,
+                                    },
+                                    bmi_colors: [0],
+                                };
+
+                                let needed_bgra = (dst_w * dst_h * 4) as usize;
+                                if bgra.len() != needed_bgra {
+                                    bgra.resize(needed_bgra, 0);
+                                }
+                                let lines = win_gdi::GetDIBits(
+                                    hdc_mem,
+                                    hbm,
+                                    0,
+                                    dst_h as u32,
+                                    bgra.as_mut_ptr(),
+                                    &mut bmi,
+                                    0,
+                                );
+
+                                if lines > 0 {
+                                    let mut h: u64 = 0xcbf29ce484222325;
+                                    for &b in bgra.iter().step_by(64) {
+                                        h ^= b as u64;
+                                        h = h.wrapping_mul(0x100000001b3);
+                                    }
+
+                                    if h != last_frame_hash
+                                        || last_force_emit.elapsed()
+                                            >= std::time::Duration::from_millis(1000)
+                                    {
+                                        last_frame_hash = h;
+                                        last_force_emit = std::time::Instant::now();
+
+                                        rgb.clear();
+                                        let needed_rgb = (dst_w * dst_h * 3) as usize;
+                                        if rgb.capacity() < needed_rgb {
+                                            rgb.reserve(needed_rgb - rgb.capacity());
+                                        }
+                                        for px in bgra.chunks_exact(4) {
+                                            rgb.push(px[2]);
+                                            rgb.push(px[1]);
+                                            rgb.push(px[0]);
+                                        }
+
+                                        jpeg_buf.clear();
+                                        let mut encoder =
+                                            JpegEncoder::new_with_quality(&mut jpeg_buf, 76);
+                                        if encoder
+                                            .encode(
+                                                &rgb,
+                                                dst_w as u32,
+                                                dst_h as u32,
+                                                ExtendedColorType::Rgb8,
+                                            )
+                                            .is_ok()
+                                        {
+                                            let _ = frame_tx.send(jpeg_buf.clone());
+                                        }
+                                    }
+                                }
+                            }
+
+                            win_gdi::SelectObject(hdc_mem, old_obj);
+                        }
+
+                        if hbm != 0 {
+                            win_gdi::DeleteObject(hbm);
+                        }
+                        if hdc_mem != 0 {
+                            win_gdi::DeleteDC(hdc_mem);
+                        }
+                        win_gdi::ReleaseDC(0, hdc_screen);
+                    }
+                }
+
+                let elapsed = loop_start.elapsed();
+                if elapsed < std::time::Duration::from_millis(42) {
+                    std::thread::sleep(std::time::Duration::from_millis(42) - elapsed);
+                }
+            }
+        });
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (active_flag, enabled_flag, monitor_index, frame_tx);
+    }
 }

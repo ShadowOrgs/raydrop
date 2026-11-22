@@ -736,8 +736,13 @@ export const raydropApi = {
     invoke<void>('start_host_audio_loopback'),
   stopHostAudioLoopback: () =>
     invoke<void>('stop_host_audio_loopback'),
-  startSecondScreenServer: () =>
-    invoke<{ url: string; token: string; port: number }>('start_second_screen_server'),
+  startSecondScreenServer: (nativeCapture = false, monitorIndex = 0) =>
+    invoke<{ url: string; token: string; port: number }>('start_second_screen_server', {
+      nativeCapture,
+      monitorIndex,
+    }),
+  setSecondScreenSource: (nativeCapture: boolean, monitorIndex?: number) =>
+    invoke<void>('set_second_screen_source', { nativeCapture, monitorIndex }),
   stopSecondScreenServer: () =>
     invoke<void>('stop_second_screen_server'),
   pushSecondScreenFrame: (frameBase64: string) =>

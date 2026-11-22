@@ -3817,9 +3817,28 @@ pub async fn stop_host_audio_loopback() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn start_second_screen_server(
+    native_capture: Option<bool>,
+    monitor_index: Option<i32>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::network::second_screen::SecondScreenInfo, String> {
-    crate::network::second_screen::start_second_screen_server(state.second_screen.clone()).await
+    crate::network::second_screen::start_second_screen_server(
+        state.second_screen.clone(),
+        native_capture.unwrap_or(false),
+        monitor_index.unwrap_or(0),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn set_second_screen_source(
+    native_capture: bool,
+    monitor_index: Option<i32>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .second_screen
+        .set_native_capture(native_capture, monitor_index);
+    Ok(())
 }
 
 #[tauri::command]

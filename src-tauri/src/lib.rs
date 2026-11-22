@@ -655,6 +655,7 @@ pub fn run() {
             commands::start_host_audio_loopback,
             commands::stop_host_audio_loopback,
             commands::start_second_screen_server,
+            commands::set_second_screen_source,
             commands::stop_second_screen_server,
             commands::push_second_screen_frame,
             commands::record_activity_tick,

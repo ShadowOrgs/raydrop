@@ -525,16 +525,53 @@
   async function selectSecondScreenTouchMonitor(idx: number) {
     selectedSecondScreenMonitorIdx = idx;
     await raydropApi.setHostTargetMonitor(idx).catch(() => {});
+    if (isSecondScreenActive) {
+      if (secondScreenTimer) {
+        clearInterval(secondScreenTimer);
+        secondScreenTimer = null;
+      }
+      if (secondScreenStream) {
+        secondScreenStream.getTracks().forEach((t) => t.stop());
+        secondScreenStream = null;
+      }
+      if (secondScreenVideoEl) {
+        secondScreenVideoEl.srcObject = null;
+      }
+      await raydropApi.setSecondScreenSource(true, idx).catch(() => {});
+    }
   }
 
-  async function startSecondScreenSharing() {
+  async function startSecondScreenSharing(forcePicker = false) {
     secondScreenError = "";
     isSecondScreenLoading = true;
     try {
       await refreshSecondScreenMonitors();
+      if (secondScreenTimer) {
+        clearInterval(secondScreenTimer);
+        secondScreenTimer = null;
+      }
       if (secondScreenStream) {
         secondScreenStream.getTracks().forEach((t) => t.stop());
         secondScreenStream = null;
+      }
+
+      // When multiple monitors exist (Extended Display, e.g. MttVDD Display 2), use native Windows GDI capture directly.
+      // Chromium getDisplayMedia() WGC frequently outputs solid black frames on virtual indirect displays (IddCx).
+      if (!forcePicker && secondScreenMonitors.length > 1) {
+        const targetIdx = selectedSecondScreenMonitorIdx;
+        if (isSecondScreenActive && secondScreenUrl) {
+          await raydropApi.setSecondScreenSource(true, targetIdx).catch(() => {});
+        } else {
+          const info = await raydropApi.startSecondScreenServer(true, targetIdx);
+          secondScreenUrl = info.url;
+          secondScreenQrDataUrl = await QRCode.toDataURL(info.url, {
+            width: 240,
+            margin: 2,
+            color: { dark: "#0f172a", light: "#ffffff" },
+          });
+          isSecondScreenActive = true;
+        }
+        return;
       }
 
       const stream: MediaStream = await (navigator.mediaDevices as any).getDisplayMedia({
@@ -550,14 +587,18 @@
       }
       secondScreenStream = stream;
 
-      const info = await raydropApi.startSecondScreenServer();
-      secondScreenUrl = info.url;
-      secondScreenQrDataUrl = await QRCode.toDataURL(info.url, {
-        width: 240,
-        margin: 2,
-        color: { dark: "#0f172a", light: "#ffffff" },
-      });
-      isSecondScreenActive = true;
+      if (isSecondScreenActive && secondScreenUrl) {
+        await raydropApi.setSecondScreenSource(false).catch(() => {});
+      } else {
+        const info = await raydropApi.startSecondScreenServer(false, selectedSecondScreenMonitorIdx);
+        secondScreenUrl = info.url;
+        secondScreenQrDataUrl = await QRCode.toDataURL(info.url, {
+          width: 240,
+          margin: 2,
+          color: { dark: "#0f172a", light: "#ffffff" },
+        });
+        isSecondScreenActive = true;
+      }
 
       if (!secondScreenVideoEl) {
         secondScreenVideoEl = document.createElement("video");
@@ -2472,7 +2513,7 @@
 
               <button
                 type="button"
-                on:click={startSecondScreenSharing}
+                on:click={() => startSecondScreenSharing(true)}
                 class="w-full py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-[11px] font-semibold transition cursor-pointer"
               >
                 🔄 Switch Shared Screen or App Window
