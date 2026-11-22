@@ -195,6 +195,8 @@ export function initRemoteDesktopListener() {
   raydropApi.listenEvent<string>('host_audio_chunk', (b64) => {
     const sess = get(activeRemoteSession);
     if (sess?.isHost && activeDataChannel && activeDataChannel.readyState === 'open' && b64) {
+      // Drop stale audio frames if DataChannel is congested so input & audio don't build multi-second lag
+      if (activeDataChannel.bufferedAmount > 256 * 1024) return;
       try {
         activeDataChannel.send(JSON.stringify({ t: 'aud', d: b64 }));
       } catch (_) { }
@@ -234,6 +236,7 @@ export function stopBackgroundKeepAlive() {
 }
 
 let nativeCanvasEl: HTMLCanvasElement | null = null;
+let nativeCanvasCtx: CanvasRenderingContext2D | null = null;
 let isNativeFrameListenerSet = false;
 let pendingFrameDraw = false;
 
@@ -243,11 +246,13 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
       nativeCanvasEl = document.createElement('canvas');
       nativeCanvasEl.width = 1280;
       nativeCanvasEl.height = 720;
-      const ctx = nativeCanvasEl.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(0, 0, 1280, 720);
+      nativeCanvasCtx = nativeCanvasEl.getContext('2d', { alpha: false });
+      if (nativeCanvasCtx) {
+        nativeCanvasCtx.fillStyle = '#000000';
+        nativeCanvasCtx.fillRect(0, 0, 1280, 720);
       }
+    } else if (!nativeCanvasCtx) {
+      nativeCanvasCtx = nativeCanvasEl.getContext('2d', { alpha: false });
     }
 
     if (!isNativeFrameListenerSet) {
@@ -264,16 +269,22 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
             if (nativeCanvasEl.width !== img.width || nativeCanvasEl.height !== img.height) {
               nativeCanvasEl.width = img.width;
               nativeCanvasEl.height = img.height;
+              nativeCanvasCtx = nativeCanvasEl.getContext('2d', { alpha: false });
             }
-            const ctx = nativeCanvasEl.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(img, 0, 0);
+            if (nativeCanvasCtx) {
+              nativeCanvasCtx.drawImage(img, 0, 0);
             }
           }
+          img.onload = null;
+          img.onerror = null;
+          img.src = '';
           pendingFrameDraw = false;
           raydropApi.ackNativeScreenFrame().catch(() => { });
         };
         img.onerror = () => {
+          img.onload = null;
+          img.onerror = null;
+          img.src = '';
           pendingFrameDraw = false;
           raydropApi.ackNativeScreenFrame().catch(() => { });
         };
@@ -322,9 +333,9 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
       video: {
         cursor: 'never', // Completely removes host OS cursor from video capture frames
         displaySurface: 'monitor',
-        frameRate: { ideal: 60, max: 60 },
-        width: { ideal: 1920, max: 2560 },
-        height: { ideal: 1080, max: 1440 },
+        frameRate: { ideal: 30, max: 30 },
+        width: { ideal: 1920, max: 1920 },
+        height: { ideal: 1080, max: 1080 },
       },
       audio: true,
       selfBrowserSurface: 'exclude',
@@ -1137,6 +1148,11 @@ function playIncomingPcmChunk(b64: string) {
     const src = clientAudioCtx.createBufferSource();
     src.buffer = audioBuf;
     src.connect(clientAudioCtx.destination);
+    src.onended = () => {
+      try {
+        src.disconnect();
+      } catch (_) { }
+    };
 
     const now = clientAudioCtx.currentTime;
     if (nextAudioPlayTime < now || nextAudioPlayTime - now > 0.25) {
@@ -1227,6 +1243,10 @@ function setupClientDataChannel(dc: RTCDataChannel) {
 
 export function sendInputToHost(eventData: any) {
   if (activeDataChannel && activeDataChannel.readyState === 'open') {
+    // Drop high-frequency mouse moves when DataChannel buffer is backed up; never drop clicks/keys
+    if (eventData?.t === 'mm' && activeDataChannel.bufferedAmount > 128 * 1024) {
+      return;
+    }
     activeDataChannel.send(JSON.stringify(eventData));
   }
 }

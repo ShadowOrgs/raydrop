@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="VirtualDisplayDriverMarker" Guid="8f3e9b2a-4c1d-4e7a-9b52-3a6d1f8c0e44">
+        <RegistryValue Root="HKCU" Key="Software\raydrop\Raydrop" Name="VddHook" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <ComponentGroup Id="VirtualDisplayDriverSetup">
+      <ComponentRef Id="VirtualDisplayDriverMarker" />
+    </ComponentGroup>
+
+    <CustomAction
+      Id="InstallVirtualDisplayDriver"
+      Directory="INSTALLDIR"
+      Execute="deferred"
+      Impersonate="no"
+      Return="ignore"
+      ExeCommand='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "[INSTALLDIR]_up_\assets\VirtualDisplayDriver\install-vdd.ps1"' />
+
+    <InstallExecuteSequence>
+      <Custom Action="InstallVirtualDisplayDriver" Before="InstallFinalize">NOT REMOVE</Custom>
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>

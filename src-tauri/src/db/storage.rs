@@ -1597,11 +1597,11 @@ impl Database {
         )
         .map_err(|e| e.to_string())?;
 
-        // Keep at most 100 unpinned items
+        // Keep at most 30 unpinned items (pinned items are never auto-deleted)
         let _ = conn.execute(
             "DELETE FROM clipboard_history
              WHERE pinned = 0 AND id NOT IN (
-                 SELECT id FROM clipboard_history WHERE pinned = 0 ORDER BY created_at DESC LIMIT 100
+                 SELECT id FROM clipboard_history WHERE pinned = 0 ORDER BY created_at DESC LIMIT 30
              )",
             [],
         );
@@ -1611,6 +1611,13 @@ impl Database {
 
     pub fn list_clipboard_history(&self, limit: usize) -> Result<Vec<ClipboardHistoryItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let _ = conn.execute(
+            "DELETE FROM clipboard_history
+             WHERE pinned = 0 AND id NOT IN (
+                 SELECT id FROM clipboard_history WHERE pinned = 0 ORDER BY created_at DESC LIMIT 30
+             )",
+            [],
+        );
         let mut stmt = conn
             .prepare(
                 "SELECT id, content_type, content, preview, pinned, created_at

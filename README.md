@@ -76,7 +76,9 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 
 ## ✨ Key Features
 
-### 🆕 Productivity, Analytics & Privacy Suite (Updated in v1.2.51)
+### 🆕 Productivity, Analytics & Privacy Suite (Updated in v1.2.52)
+- **Auto-Installed Virtual Display Driver & Lag-Free Long Sessions:** Windows `.msi` installer automatically bundles and installs `MttVDD` (skipping if already installed) for instant **Extend to iPad / Tablet**, paired with instant Stop Streaming, DataChannel backpressure, Extend Display frame-skipping, and 1080p@30fps WebRTC tuning to keep long sessions smooth.
+- **Smart Clipboard History Cap (Max 30 Unpinned):** Automatically prunes the oldest unpinned clipboard entries past 30 items while keeping all pinned items intact.
 - **File Converter, Image Resizer/Compressor & Mobile Icon Pack (ZIP):** Convert images batch-wise (`PNG ↔ ICO / JPG / WEBP / BMP / GIF`), resize & compress with quality controls, generate complete Android (`mipmap-*` + Play Store 512px) & iOS (`AppIcon.appiconset` + `Contents.json`) icon packs in one `.zip`, convert `DOC/DOCX ↔ PDF` (via Microsoft Word / LibreOffice), and launch directly from the OS Explorer right-click menu (**Convert / Optimize with Raydrop**).
 - **Explorer Image File Clipboard Sync (`CF_HDROP`):** Copy an image file directly in Windows Explorer (`Ctrl+C`) and paste it into the Remote Desktop Host seamlessly.
 - **Smooth Startup Initialization Overlay & Dynamic Versioning:** Displays a clean fullscreen loading overlay until all P2P modules, contacts, and transfer history are ready, with live Tauri app version detection.
@@ -255,10 +257,10 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.23/Raydrop_1.2.23_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.23/Raydrop_1.2.23_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.23/Raydrop_1.2.23_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.23/Raydrop_1.2.23_amd64.AppImage) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.52/Raydrop_1.2.52_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.52/Raydrop_1.2.52_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.52/Raydrop_1.2.52_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.52/Raydrop_1.2.52_amd64.AppImage) |
 | **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.23/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**

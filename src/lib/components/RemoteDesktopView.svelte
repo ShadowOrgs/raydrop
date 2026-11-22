@@ -118,12 +118,17 @@
   let isPowerMenuOpen = false;
   let isSecondScreenModalOpen = false;
   let isSecondScreenActive = false;
+  let isSecondScreenLoading = false;
   let secondScreenUrl = "";
   let secondScreenQrDataUrl = "";
   let secondScreenError = "";
+  let showVirtualDisplayGuide = false;
   let secondScreenTimer: any = null;
+  let secondScreenInFlight = false;
+  let secondScreenLastSendAt = 0;
   let secondScreenVideoEl: HTMLVideoElement | null = null;
   let secondScreenCanvasEl: HTMLCanvasElement | null = null;
+  let secondScreenCtx: CanvasRenderingContext2D | null = null;
   let secondScreenStream: MediaStream | null = null;
   let secondScreenMonitors: { index: number; name: string; width: number; height: number; is_primary: boolean }[] = [];
   let selectedSecondScreenMonitorIdx = 0;
@@ -524,6 +529,7 @@
 
   async function startSecondScreenSharing() {
     secondScreenError = "";
+    isSecondScreenLoading = true;
     try {
       await refreshSecondScreenMonitors();
       if (secondScreenStream) {
@@ -563,11 +569,21 @@
 
       if (!secondScreenCanvasEl) {
         secondScreenCanvasEl = document.createElement("canvas");
+        secondScreenCtx = null;
+      }
+      if (!secondScreenCtx) {
+        secondScreenCtx = secondScreenCanvasEl.getContext("2d", { alpha: false });
       }
 
+      secondScreenInFlight = false;
+      secondScreenLastSendAt = 0;
       if (secondScreenTimer) clearInterval(secondScreenTimer);
       secondScreenTimer = setInterval(() => {
         if (!isSecondScreenActive || !secondScreenVideoEl || !secondScreenCanvasEl) return;
+        if (secondScreenVideoEl.readyState < 2) return;
+        // Backpressure: skip frame if previous IPC encode/send is still in-flight
+        if (secondScreenInFlight && Date.now() - secondScreenLastSendAt < 500) return;
+
         const vw = secondScreenVideoEl.videoWidth;
         const vh = secondScreenVideoEl.videoHeight;
         if (!vw || !vh) return;
@@ -576,20 +592,30 @@
         const ch = Math.round(vh * scale);
         if (secondScreenCanvasEl.width !== cw) secondScreenCanvasEl.width = cw;
         if (secondScreenCanvasEl.height !== ch) secondScreenCanvasEl.height = ch;
-        const ctx = secondScreenCanvasEl.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(secondScreenVideoEl, 0, 0, cw, ch);
+        if (secondScreenCtx) {
+          secondScreenInFlight = true;
+          secondScreenLastSendAt = Date.now();
+          secondScreenCtx.drawImage(secondScreenVideoEl, 0, 0, cw, ch);
           const dataUrl = secondScreenCanvasEl.toDataURL("image/jpeg", 0.72);
-          raydropApi.pushSecondScreenFrame(dataUrl).catch(() => {});
+          raydropApi
+            .pushSecondScreenFrame(dataUrl)
+            .catch(() => {})
+            .finally(() => {
+              secondScreenInFlight = false;
+            });
         }
-      }, 35); // ~28 fps smooth stream
+      }, 42); // ~24 fps smooth stream with backpressure
     } catch (err: any) {
       secondScreenError = err?.message || String(err);
+    } finally {
+      isSecondScreenLoading = false;
     }
   }
 
   async function stopSecondScreenSharing() {
     isSecondScreenActive = false;
+    isSecondScreenLoading = false;
+    secondScreenInFlight = false;
     if (secondScreenTimer) {
       clearInterval(secondScreenTimer);
       secondScreenTimer = null;
@@ -2406,10 +2432,10 @@
               {:else}
                 <div class="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-200 space-y-1.5 leading-relaxed">
                   <p class="font-semibold text-amber-300">
-                    ℹ️ Only 1 physical monitor detected (Mirror / App Window Mode)
+                    ℹ️ Only 1 active display detected (Mirror / App Window Mode)
                   </p>
                   <p>
-                    To make iPad a true independent <b>Extended 2nd Monitor</b> (not mirrored), either pick a specific <b>App Window</b> when sharing, or add a free Windows Virtual Display Driver:
+                    Raydrop's Windows installer includes the Virtual Display Driver automatically. Press <code>Win + P</code> → <b>Extend</b> (or open Display Settings → <b>Extend these displays</b>), then click <b>Refresh</b> above.
                   </p>
                   <div class="flex flex-wrap gap-2 pt-1">
                     <button
@@ -2419,15 +2445,28 @@
                     >
                       Open Display Settings
                     </button>
-                    <a
-                      href="https://github.com/VirtualDrivers/Virtual-Display-Driver/releases"
-                      target="_blank"
-                      rel="noopener"
-                      class="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-[10px] font-semibold"
+                    <button
+                      type="button"
+                      on:click={() => (showVirtualDisplayGuide = !showVirtualDisplayGuide)}
+                      class="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 text-[10px] font-semibold cursor-pointer"
                     >
-                      Get Virtual Display Driver ↗
-                    </a>
+                      {showVirtualDisplayGuide ? "Hide Help" : "Display 2 not showing?"}
+                    </button>
                   </div>
+
+                  {#if showVirtualDisplayGuide}
+                    <div class="mt-2 p-2.5 rounded-lg bg-slate-950/90 border border-slate-800 text-[11px] text-slate-300 space-y-1.5 leading-relaxed">
+                      <p class="font-bold text-cyan-300">Troubleshooting Display 2:</p>
+                      <ul class="list-disc list-inside space-y-1 text-slate-300">
+                        <li>
+                          <b>Enable Extend Mode:</b> Click <b>Open Display Settings</b> (or press <code>Win + P</code> → <b>Extend</b>), select <b>Extend these displays</b>, then click <b>Refresh</b> above.
+                        </li>
+                        <li>
+                          <b>If auto-install was blocked:</b> Run <code>install-vdd.ps1</code> as <b>Administrator</b> inside Raydrop's install folder (<code>_up_\assets\VirtualDisplayDriver</code>), or <a href="https://github.com/VirtualDrivers/Virtual-Display-Driver/releases" target="_blank" rel="noopener" class="text-indigo-300 underline">download the driver manually ↗</a>.
+                        </li>
+                      </ul>
+                    </div>
+                  {/if}
                 </div>
               {/if}
 
@@ -2440,10 +2479,18 @@
               </button>
             </div>
           </div>
-        {:else if !secondScreenError}
+        {:else if isSecondScreenLoading}
           <div class="py-8 flex flex-col items-center justify-center gap-3 text-xs text-slate-400">
             <RefreshCw class="w-6 h-6 animate-spin text-cyan-400" />
             <span>Initializing Second Display stream & QR Code...</span>
+          </div>
+        {:else if !secondScreenError}
+          <div class="py-8 flex flex-col items-center justify-center gap-2 text-xs text-slate-400 text-center">
+            <Monitor class="w-7 h-7 text-slate-500" />
+            <p class="font-semibold text-slate-300">Second Display Streaming Stopped</p>
+            <p class="text-[11px] text-slate-500 max-w-xs">
+              Click <b>Start / Retry</b> below whenever you want to extend or mirror your screen to your iPad/Tablet.
+            </p>
           </div>
         {/if}
 

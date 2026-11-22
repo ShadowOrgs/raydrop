@@ -146,8 +146,8 @@
     </div>
 
     <div class="flex items-center gap-2 shrink-0">
-      <span class="text-[11px] font-mono text-slate-400 px-2">
-        {items.length} saved
+      <span class="text-[11px] font-mono text-slate-400 px-2" title="Keeps up to 30 unpinned items; pinned items are never auto-deleted">
+        {items.length} saved (max 30 unpinned)
       </span>
       <button
         type="button"
