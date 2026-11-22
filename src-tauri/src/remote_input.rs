@@ -377,6 +377,17 @@ pub fn get_extend_platform_info() -> ExtendPlatformInfo {
             virtual_output,
         }
     }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        ExtendPlatformInfo {
+            platform: std::env::consts::OS.to_string(),
+            session_type: "mobile".to_string(),
+            has_xrandr: false,
+            has_nvidia: false,
+            virtual_active: false,
+            virtual_output: None,
+        }
+    }
 }
 
 pub fn enable_linux_virtual_display(width: u32, height: u32) -> Result<MonitorInfo, String> {
