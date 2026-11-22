@@ -724,6 +724,10 @@ export const raydropApi = {
     invoke<{ index: number; name: string; x: number; y: number; width: number; height: number; is_primary: boolean }[]>('get_host_monitors'),
   setHostTargetMonitor: (monitorIndex: number | null) =>
     invoke<void>('set_host_target_monitor', { monitorIndex }),
+  getMonitorResolutions: (monitorIndex: number) =>
+    invoke<[number, number][]>('get_monitor_resolutions', { monitorIndex }),
+  setMonitorResolution: (monitorIndex: number, width: number, height: number) =>
+    invoke<void>('set_monitor_resolution', { monitorIndex, width, height }),
   executeRemotePowerAction: (action: string) =>
     invoke<void>('execute_remote_power_action', { action }),
   sendWakeOnLan: (macAddress: string, targetHost?: string, port?: number) =>

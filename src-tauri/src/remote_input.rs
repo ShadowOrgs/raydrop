@@ -7,6 +7,7 @@ use std::sync::Mutex;
 pub struct MonitorInfo {
     pub index: usize,
     pub name: String,
+    pub device_name: String,
     pub x: i32,
     pub y: i32,
     pub width: i32,
@@ -63,7 +64,53 @@ mod win_user32 {
         ) -> usize;
         pub fn SetSystemCursor(hcur: usize, id: u32) -> i32;
         pub fn SystemParametersInfoA(ui_action: u32, ui_param: u32, pv_param: usize, f_win_ini: u32) -> i32;
+        pub fn EnumDisplaySettingsW(
+            lpsz_device_name: *const u16,
+            i_mode_num: u32,
+            lp_dev_mode: *mut DEVMODEW,
+        ) -> i32;
+        pub fn ChangeDisplaySettingsExW(
+            lpsz_device_name: *const u16,
+            lp_dev_mode: *mut DEVMODEW,
+            hwnd: isize,
+            dwflags: u32,
+            l_param: *const u8,
+        ) -> i32;
     }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct DEVMODEW {
+        pub dm_device_name: [u16; 32],
+        pub dm_spec_version: u16,
+        pub dm_driver_version: u16,
+        pub dm_size: u16,
+        pub dm_driver_extra: u16,
+        pub dm_fields: u32,
+        pub dm_union: [u8; 16],
+        pub dm_color: i16,
+        pub dm_duplex: i16,
+        pub dm_y_resolution: i16,
+        pub dm_tt_option: i16,
+        pub dm_collate: i16,
+        pub dm_form_name: [u16; 32],
+        pub dm_log_pixels: u16,
+        pub dm_bits_per_pel: u32,
+        pub dm_pels_width: u32,
+        pub dm_pels_height: u32,
+        pub dm_display_flags: u32,
+        pub dm_display_frequency: u32,
+        pub dm_icm_method: u32,
+        pub dm_icm_intent: u32,
+        pub dm_media_type: u32,
+        pub dm_dither_type: u32,
+        pub dm_reserved1: u32,
+        pub dm_reserved2: u32,
+        pub dm_panning_width: u32,
+        pub dm_panning_height: u32,
+    }
+
+    const _: () = assert!(std::mem::size_of::<DEVMODEW>() == 220);
 }
 
 #[cfg(target_os = "windows")]
@@ -95,6 +142,7 @@ unsafe extern "system" fn monitor_enum_callback(
         list.push(MonitorInfo {
             index: idx,
             name: if clean_dev.is_empty() { label } else { format!("{label} ({clean_dev})") },
+            device_name: raw_name,
             x: info.rc_monitor.left,
             y: info.rc_monitor.top,
             width: info.rc_monitor.right - info.rc_monitor.left,
@@ -123,6 +171,7 @@ pub fn list_monitors() -> Vec<MonitorInfo> {
             monitors.push(MonitorInfo {
                 index: 0,
                 name: "Display 1 (Primary)".to_string(),
+                device_name: String::new(),
                 x: 0,
                 y: 0,
                 width: w as i32,
@@ -137,12 +186,116 @@ pub fn list_monitors() -> Vec<MonitorInfo> {
         vec![MonitorInfo {
             index: 0,
             name: "Display 1 (Primary)".to_string(),
+            device_name: String::new(),
             x: 0,
             y: 0,
             width: 1920,
             height: 1080,
             is_primary: true,
         }]
+    }
+}
+
+/// Lists supported resolutions `(width, height)` for a given monitor index
+pub fn list_monitor_resolutions(monitor_index: i32) -> Vec<(u32, u32)> {
+    #[cfg(target_os = "windows")]
+    {
+        let monitors = list_monitors();
+        let Some(mon) = monitors.get(monitor_index.max(0) as usize) else {
+            return Vec::new();
+        };
+        if mon.device_name.is_empty() {
+            return Vec::new();
+        }
+
+        let dev_w: Vec<u16> = mon.device_name.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut modes: Vec<(u32, u32)> = Vec::new();
+        let mut mode_num: u32 = 0;
+
+        loop {
+            let mut dm: win_user32::DEVMODEW = unsafe { std::mem::zeroed() };
+            dm.dm_size = std::mem::size_of::<win_user32::DEVMODEW>() as u16;
+            let ok = unsafe { win_user32::EnumDisplaySettingsW(dev_w.as_ptr(), mode_num, &mut dm) };
+            if ok == 0 {
+                break;
+            }
+            if dm.dm_pels_width >= 800 && dm.dm_pels_height >= 600 {
+                let res = (dm.dm_pels_width, dm.dm_pels_height);
+                if !modes.contains(&res) {
+                    modes.push(res);
+                }
+            }
+            mode_num += 1;
+            if mode_num > 512 {
+                break;
+            }
+        }
+
+        modes.sort_by_key(|&(w, h)| (w as u64) * (h as u64));
+        modes
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = monitor_index;
+        Vec::new()
+    }
+}
+
+/// Changes resolution `(width, height)` for a given monitor index
+pub fn set_monitor_resolution(monitor_index: i32, width: u32, height: u32) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        const ENUM_CURRENT_SETTINGS: u32 = u32::MAX;
+        const DM_PELSWIDTH: u32 = 0x0008_0000;
+        const DM_PELSHEIGHT: u32 = 0x0010_0000;
+        const CDS_UPDATEREGISTRY: u32 = 0x0000_0001;
+        const CDS_GLOBAL: u32 = 0x0000_0008;
+        const DISP_CHANGE_SUCCESSFUL: i32 = 0;
+        const DISP_CHANGE_RESTART: i32 = 1;
+
+        let monitors = list_monitors();
+        let mon = monitors
+            .get(monitor_index.max(0) as usize)
+            .ok_or_else(|| "Monitor not found".to_string())?;
+        if mon.device_name.is_empty() {
+            return Err("Monitor device name unavailable".to_string());
+        }
+
+        let dev_w: Vec<u16> = mon.device_name.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut dm: win_user32::DEVMODEW = unsafe { std::mem::zeroed() };
+        dm.dm_size = std::mem::size_of::<win_user32::DEVMODEW>() as u16;
+
+        let ok = unsafe {
+            win_user32::EnumDisplaySettingsW(dev_w.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dm)
+        };
+        if ok == 0 {
+            return Err("Failed to read current display settings".to_string());
+        }
+
+        dm.dm_pels_width = width;
+        dm.dm_pels_height = height;
+        dm.dm_fields = DM_PELSWIDTH | DM_PELSHEIGHT;
+
+        let res = unsafe {
+            win_user32::ChangeDisplaySettingsExW(
+                dev_w.as_ptr(),
+                &mut dm,
+                0,
+                CDS_UPDATEREGISTRY | CDS_GLOBAL,
+                std::ptr::null(),
+            )
+        };
+        if res == DISP_CHANGE_SUCCESSFUL || res == DISP_CHANGE_RESTART {
+            let _ = set_target_monitor(Some(monitor_index));
+            Ok(())
+        } else {
+            Err(format!("Windows rejected resolution {width}x{height} (code {res})"))
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (monitor_index, width, height);
+        Err("Resolution switching is only supported on Windows hosts".to_string())
     }
 }
 

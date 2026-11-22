@@ -268,9 +268,9 @@ fn build_viewer_html(token: &str) -> String {
   #screen.fill {{ width: 100%; height: 100%; object-fit: fill; }}
   #bar {{ position: fixed; top: 10px; right: 12px; z-index: 20; display: flex; gap: 8px; opacity: 0.85; transition: opacity 0.22s ease, transform 0.22s ease; }}
   #bar:hover {{ opacity: 1; }}
-  #bar.fs-mode {{ top: 24px; right: auto; left: 50%; transform: translateX(-50%) translateY(0); }}
-  #bar.hidden {{ opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(-14px); }}
-  #arrowBtn {{ position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 30; width: 48px; height: 18px; padding: 0; display: none; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.88); color: #94a3b8; border: 1px solid rgba(51, 65, 85, 0.85); border-top: none; border-radius: 0 0 8px 8px; backdrop-filter: blur(8px); cursor: pointer; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45); transition: background 0.15s, color 0.15s; }}
+  #bar.fs-mode {{ top: 50%; right: 24px; left: auto; flex-direction: column; align-items: flex-end; transform: translateY(-50%) translateX(0); }}
+  #bar.hidden {{ opacity: 0; pointer-events: none; transform: translateY(-50%) translateX(14px); }}
+  #arrowBtn {{ position: fixed; top: 50%; right: 0; left: auto; transform: translateY(-50%); z-index: 30; width: 18px; height: 48px; padding: 0; display: none; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.88); color: #94a3b8; border: 1px solid rgba(51, 65, 85, 0.85); border-right: none; border-radius: 8px 0 0 8px; backdrop-filter: blur(8px); cursor: pointer; box-shadow: -4px 0 12px rgba(0, 0, 0, 0.45); transition: background 0.15s, color 0.15s; }}
   #arrowBtn.visible {{ display: flex; }}
   #arrowBtn.open {{ color: #38bdf8; }}
   #arrowBtn svg {{ width: 13px; height: 13px; transition: transform 0.2s ease; }}
@@ -281,7 +281,7 @@ fn build_viewer_html(token: &str) -> String {
 <body>
   <button id="arrowBtn" title="Toggle display controls" aria-label="Toggle display controls">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="6 9 12 15 18 9"></polyline>
+      <polyline points="15 18 9 12 15 6"></polyline>
     </svg>
   </button>
   <div id="bar">
@@ -336,6 +336,12 @@ fn build_viewer_html(token: &str) -> String {
 
   document.addEventListener("fullscreenchange", handleFullscreenChange);
   document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+
+  [arrowBtn, bar].forEach((el) => {{
+    el.addEventListener("touchstart", (e) => e.stopPropagation(), {{ passive: true }});
+    el.addEventListener("touchmove", (e) => e.stopPropagation(), {{ passive: true }});
+    el.addEventListener("touchend", (e) => e.stopPropagation(), {{ passive: true }});
+  }});
 
   arrowBtn.addEventListener("click", (e) => {{
     e.stopPropagation();
@@ -408,8 +414,17 @@ fn build_viewer_html(token: &str) -> String {
 
   let lastMove = 0;
   let lastTouchY = 0;
+  let lastTouchTime = 0;
+  let isMouseDown = false;
+
+  function mouseBtnName(b) {{
+    if (b === 2) return "right";
+    if (b === 1) return "middle";
+    return "left";
+  }}
 
   wrap.addEventListener("touchstart", (e) => {{
+    lastTouchTime = Date.now();
     if (e.touches.length === 2) {{
       lastTouchY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       return;
@@ -421,6 +436,7 @@ fn build_viewer_html(token: &str) -> String {
   }}, {{ passive: false }});
 
   wrap.addEventListener("touchmove", (e) => {{
+    lastTouchTime = Date.now();
     e.preventDefault();
     if (e.touches.length === 2) {{
       const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
@@ -439,9 +455,57 @@ fn build_viewer_html(token: &str) -> String {
   }}, {{ passive: false }});
 
   wrap.addEventListener("touchend", (e) => {{
+    lastTouchTime = Date.now();
     if (e.touches.length === 0) {{
       sendInput({{ t: "mc", b: "left", a: "up" }});
     }}
+  }});
+
+  // Desktop / Laptop / MacBook mouse & trackpad support
+  wrap.addEventListener("mousedown", (e) => {{
+    if (Date.now() - lastTouchTime < 500) return;
+    isMouseDown = true;
+    const c = normCoords(e.clientX, e.clientY);
+    if (!c) return;
+    sendInput({{ t: "mm", x: c.x, y: c.y }});
+    sendInput({{ t: "mc", b: mouseBtnName(e.button), a: "down" }});
+  }});
+
+  wrap.addEventListener("mousemove", (e) => {{
+    if (Date.now() - lastTouchTime < 500) return;
+    const now = performance.now();
+    if (now - lastMove < 16) return;
+    lastMove = now;
+    const c = normCoords(e.clientX, e.clientY);
+    if (c) sendInput({{ t: "mm", x: c.x, y: c.y }});
+  }});
+
+  window.addEventListener("mouseup", (e) => {{
+    if (!isMouseDown || Date.now() - lastTouchTime < 500) return;
+    isMouseDown = false;
+    sendInput({{ t: "mc", b: mouseBtnName(e.button), a: "up" }});
+  }});
+
+  wrap.addEventListener("contextmenu", (e) => {{
+    e.preventDefault();
+  }});
+
+  let lastWheel = 0;
+  wrap.addEventListener("wheel", (e) => {{
+    e.preventDefault();
+    const now = performance.now();
+    if (now - lastWheel < 25) return;
+    lastWheel = now;
+    if (Math.abs(e.deltaY) > 0) {{
+      sendInput({{ t: "mw", dy: e.deltaY > 0 ? -120 : 120 }});
+    }}
+  }}, {{ passive: false }});
+
+  [arrowBtn, bar].forEach((el) => {{
+    el.addEventListener("mousedown", (e) => e.stopPropagation());
+    el.addEventListener("mouseup", (e) => e.stopPropagation());
+    el.addEventListener("mousemove", (e) => e.stopPropagation());
+    el.addEventListener("wheel", (e) => e.stopPropagation(), {{ passive: true }});
   }});
 
   wrap.addEventListener("mousedown", (e) => {{

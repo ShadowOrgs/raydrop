@@ -3669,6 +3669,20 @@ pub async fn set_host_target_monitor(monitor_index: Option<i32>) -> Result<(), S
 }
 
 #[tauri::command]
+pub async fn get_monitor_resolutions(monitor_index: i32) -> Result<Vec<(u32, u32)>, String> {
+    Ok(crate::remote_input::list_monitor_resolutions(monitor_index))
+}
+
+#[tauri::command]
+pub async fn set_monitor_resolution(
+    monitor_index: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    crate::remote_input::set_monitor_resolution(monitor_index, width, height)
+}
+
+#[tauri::command]
 pub async fn execute_remote_power_action(action: String) -> Result<(), String> {
     crate::remote_input::execute_power_action(&action)
 }

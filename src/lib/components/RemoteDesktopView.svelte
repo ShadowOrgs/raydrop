@@ -132,6 +132,9 @@
   let secondScreenStream: MediaStream | null = null;
   let secondScreenMonitors: { index: number; name: string; width: number; height: number; is_primary: boolean }[] = [];
   let selectedSecondScreenMonitorIdx = 0;
+  let secondScreenResolutions: [number, number][] = [];
+  let selectedResolutionKey = "";
+  let isChangingResolution = false;
   let isBootServiceInstalled = false;
   let isInstallingBootService = false;
   let windowsServiceStatus = "not_installed";
@@ -519,12 +522,48 @@
           await raydropApi.setHostTargetMonitor(secondary.index).catch(() => {});
         }
       }
+      await loadResolutionsForMonitor(selectedSecondScreenMonitorIdx);
     } catch (_) {}
+  }
+
+  async function loadResolutionsForMonitor(idx: number) {
+    try {
+      const list = await raydropApi.getMonitorResolutions(idx).catch(() => []);
+      secondScreenResolutions = list || [];
+      const cur = secondScreenMonitors.find((m) => m.index === idx);
+      if (cur) {
+        selectedResolutionKey = `${cur.width}x${cur.height}`;
+      }
+    } catch (_) {
+      secondScreenResolutions = [];
+    }
+  }
+
+  async function handleResolutionChange(e: Event) {
+    const val = (e.target as HTMLSelectElement).value;
+    if (!val) return;
+    const [wStr, hStr] = val.split("x");
+    const w = parseInt(wStr, 10);
+    const h = parseInt(hStr, 10);
+    if (!w || !h) return;
+    isChangingResolution = true;
+    secondScreenError = "";
+    try {
+      await raydropApi.setMonitorResolution(selectedSecondScreenMonitorIdx, w, h);
+      selectedResolutionKey = val;
+      await refreshSecondScreenMonitors();
+      await raydropApi.setHostTargetMonitor(selectedSecondScreenMonitorIdx).catch(() => {});
+    } catch (err: any) {
+      secondScreenError = err?.message || String(err);
+    } finally {
+      isChangingResolution = false;
+    }
   }
 
   async function selectSecondScreenTouchMonitor(idx: number) {
     selectedSecondScreenMonitorIdx = idx;
     await raydropApi.setHostTargetMonitor(idx).catch(() => {});
+    await loadResolutionsForMonitor(idx);
     if (isSecondScreenActive) {
       if (secondScreenTimer) {
         clearInterval(secondScreenTimer);
@@ -2470,6 +2509,24 @@
                     </button>
                   {/each}
                 </div>
+                {#if secondScreenResolutions.length > 0}
+                  <div class="flex items-center justify-between gap-2 pt-1">
+                    <label for="second-screen-res" class="text-[11px] text-slate-400 shrink-0">
+                      Resolution:
+                    </label>
+                    <select
+                      id="second-screen-res"
+                      value={selectedResolutionKey}
+                      on:change={handleResolutionChange}
+                      disabled={isChangingResolution}
+                      class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-cyan-500 disabled:opacity-50"
+                    >
+                      {#each secondScreenResolutions as [rw, rh]}
+                        <option value={`${rw}x${rh}`}>{rw} × {rh}</option>
+                      {/each}
+                    </select>
+                  </div>
+                {/if}
               {:else}
                 <div class="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-200 space-y-1.5 leading-relaxed">
                   <p class="font-semibold text-amber-300">

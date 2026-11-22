@@ -650,6 +650,8 @@ pub fn run() {
             commands::set_host_cursor_hidden,
             commands::get_host_monitors,
             commands::set_host_target_monitor,
+            commands::get_monitor_resolutions,
+            commands::set_monitor_resolution,
             commands::execute_remote_power_action,
             commands::send_wake_on_lan,
             commands::start_host_audio_loopback,
