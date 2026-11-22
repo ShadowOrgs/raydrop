@@ -58,6 +58,23 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 
 ---
 
+## 📸 Screenshots
+
+| P2P File Transfer & Accelerator | P2P Remote Desktop |
+| :---: | :---: |
+| <img src="assets/raydrop-transfer-file.png" alt="Raydrop File Transfer" width="440" /> | <img src="assets/raydrop-remote-desktop.png" alt="Raydrop Remote Desktop" width="440" /> |
+
+| Online Meeting & Voice Rooms | Encrypted P2P Chat |
+| :---: | :---: |
+| <img src="assets/raydrop-online-meeting.png" alt="Raydrop Online Meeting" width="440" /> | <img src="assets/raydrop-chat.png" alt="Raydrop Encrypted Chat" width="440" /> |
+
+<p align="center">
+  <strong>System Monitor &amp; Transfer Analytics Dashboard</strong><br/>
+  <img src="assets/raydrop-system-monitoring.png" alt="Raydrop System Monitor & Analytics" width="720" />
+</p>
+
+---
+
 ## ✨ Key Features
 
 ### 🆕 Productivity, Analytics & Privacy Suite (Updated in v1.2.50)
