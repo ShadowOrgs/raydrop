@@ -84,9 +84,19 @@ fn run_loopback_thread(app: AppHandle) -> Result<(), String> {
         }
         *ph = idx - mono_samples.len() as f64;
 
-        // Send ~40ms chunks (960 samples @ 24kHz)
-        if buf.len() >= 960 {
+        // Prevent unbounded backlog if callback bursts
+        if buf.len() > 9600 {
+            let excess = buf.len() - 1920;
+            buf.drain(..excess);
+        }
+
+        // Send ~40ms chunks (960 samples @ 24kHz), skipping pure silence/noise-floor
+        while buf.len() >= 960 {
             let chunk: Vec<i16> = buf.drain(..960).collect();
+            let peak = chunk.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
+            if peak < 24 {
+                continue;
+            }
             let mut bytes = Vec::with_capacity(chunk.len() * 2);
             for s in chunk {
                 bytes.extend_from_slice(&s.to_le_bytes());

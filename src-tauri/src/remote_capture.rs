@@ -85,11 +85,47 @@ mod win_gdi {
         pub bmi_colors: [u32; 1],
     }
 
+    #[repr(C)]
+    pub struct POINT {
+        pub x: i32,
+        pub y: i32,
+    }
+
+    #[repr(C)]
+    pub struct CURSORINFO {
+        pub cb_size: u32,
+        pub flags: u32,
+        pub h_cursor: isize,
+        pub pt_screen_pos: POINT,
+    }
+
+    #[repr(C)]
+    pub struct ICONINFO {
+        pub f_icon: i32,
+        pub x_hotspot: u32,
+        pub y_hotspot: u32,
+        pub hbm_mask: isize,
+        pub hbm_color: isize,
+    }
+
     #[link(name = "user32")]
     extern "system" {
         pub fn GetDC(hwnd: isize) -> isize;
         pub fn ReleaseDC(hwnd: isize, hdc: isize) -> i32;
         pub fn GetSystemMetrics(n_index: i32) -> i32;
+        pub fn GetCursorInfo(pci: *mut CURSORINFO) -> i32;
+        pub fn GetIconInfo(h_icon: isize, piconinfo: *mut ICONINFO) -> i32;
+        pub fn DrawIconEx(
+            hdc: isize,
+            x_left: i32,
+            y_top: i32,
+            h_icon: isize,
+            cx_width: i32,
+            cy_width: i32,
+            istep_if_ani_cur: u32,
+            hbr_flicker_free_draw: isize,
+            di_flags: u32,
+        ) -> i32;
     }
 
     #[link(name = "gdi32")]
@@ -387,6 +423,58 @@ pub fn spawn_second_screen_gdi_capture(
                             );
 
                             if ok != 0 {
+                                // Overlay the real Windows cursor onto Display 2 capture so it behaves like a normal 2nd monitor
+                                let mut ci = win_gdi::CURSORINFO {
+                                    cb_size: std::mem::size_of::<win_gdi::CURSORINFO>() as u32,
+                                    flags: 0,
+                                    h_cursor: 0,
+                                    pt_screen_pos: win_gdi::POINT { x: 0, y: 0 },
+                                };
+                                if win_gdi::GetCursorInfo(&mut ci) != 0
+                                    && (ci.flags & 1) != 0
+                                    && ci.h_cursor != 0
+                                {
+                                    let cx = ci.pt_screen_pos.x;
+                                    let cy = ci.pt_screen_pos.y;
+                                    if cx >= src_x - 32
+                                        && cx < src_x + src_w + 32
+                                        && cy >= src_y - 32
+                                        && cy < src_y + src_h + 32
+                                    {
+                                        let mut ii = win_gdi::ICONINFO {
+                                            f_icon: 0,
+                                            x_hotspot: 0,
+                                            y_hotspot: 0,
+                                            hbm_mask: 0,
+                                            hbm_color: 0,
+                                        };
+                                        let (hx, hy) = if win_gdi::GetIconInfo(ci.h_cursor, &mut ii) != 0 {
+                                            if ii.hbm_mask != 0 {
+                                                win_gdi::DeleteObject(ii.hbm_mask);
+                                            }
+                                            if ii.hbm_color != 0 {
+                                                win_gdi::DeleteObject(ii.hbm_color);
+                                            }
+                                            (ii.x_hotspot as i32, ii.y_hotspot as i32)
+                                        } else {
+                                            (0, 0)
+                                        };
+                                        let draw_x = ((cx - src_x - hx) as f32 * scale).round() as i32;
+                                        let draw_y = ((cy - src_y - hy) as f32 * scale).round() as i32;
+                                        win_gdi::DrawIconEx(
+                                            hdc_mem,
+                                            draw_x,
+                                            draw_y,
+                                            ci.h_cursor,
+                                            0,
+                                            0,
+                                            0,
+                                            0,
+                                            0x0003, // DI_NORMAL
+                                        );
+                                    }
+                                }
+
                                 let mut bmi = win_gdi::BITMAPINFO {
                                     bmi_header: win_gdi::BITMAPINFOHEADER {
                                         bi_size: std::mem::size_of::<win_gdi::BITMAPINFOHEADER>()

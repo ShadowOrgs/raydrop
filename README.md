@@ -76,7 +76,8 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 
 ## ✨ Key Features
 
-### 🆕 Productivity, Analytics & Privacy Suite (Updated in v1.2.54)
+### 🆕 Productivity, Analytics & Privacy Suite (Updated in v1.2.55)
+- **Live Cursor on Extended Display, Clean Remote Audio & Sleek Icon Controls:** Draws the live Windows cursor directly onto Display 2 (`MttVDD`) for iPad/Laptop Extend, eliminates idle "bip-bip" audio artifacts via WASAPI silence gating & single-stream playback, and upgrades Extend viewer `Fill Screen / Fit Aspect` & `Fullscreen` buttons with SVG icons.
 - **Extend Display Resolution Switcher, Right-Side iPad Controls & Laptop/MacBook Mouse Support:** Switch Display 2 resolution (`800×600` to `3840×2160`) directly inside Raydrop's Extend modal, use the right-edge drawer handle (`Fit Aspect` / `Exit Fullscreen`) on iPad Safari without top-bar conflicts, and control the extended screen with mouse & trackpad from any Laptop or MacBook browser.
 - **Native GDI Extended Display Capture (`MttVDD` Black-Screen Fix):** Extended 2nd Monitor streaming to iPad/Tablet now uses native Windows GDI region capture directly from Rust, eliminating Chromium `getDisplayMedia()` black-screen issues on virtual displays (`MttVDD`), with instant Display 1 ↔ Display 2 switching and zero browser picker popups.
 - **Auto-Installed Virtual Display Driver & Lag-Free Long Sessions:** Windows `.msi` installer automatically bundles and installs `MttVDD` (skipping if already installed) for instant **Extend to iPad / Tablet**, paired with instant Stop Streaming, DataChannel backpressure, Extend Display frame-skipping, and 1080p@30fps WebRTC tuning to keep long sessions smooth.
@@ -259,10 +260,10 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.54/Raydrop_1.2.54_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.54/Raydrop_1.2.54_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.54/Raydrop_1.2.54_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.54/Raydrop_1.2.54_amd64.AppImage) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.55/Raydrop_1.2.55_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.55/Raydrop_1.2.55_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.55/Raydrop_1.2.55_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.55/Raydrop_1.2.55_amd64.AppImage) |
 | **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.23/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**

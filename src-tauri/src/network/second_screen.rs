@@ -266,16 +266,19 @@ fn build_viewer_html(token: &str) -> String {
   #wrap {{ width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; position: relative; }}
   #screen {{ max-width: 100%; max-height: 100%; object-fit: contain; pointer-events: none; }}
   #screen.fill {{ width: 100%; height: 100%; object-fit: fill; }}
-  #bar {{ position: fixed; top: 10px; right: 12px; z-index: 20; display: flex; gap: 8px; opacity: 0.85; transition: opacity 0.22s ease, transform 0.22s ease; }}
+  #bar {{ position: fixed; top: 12px; right: 12px; z-index: 20; display: flex; gap: 6px; padding: 6px; border-radius: 14px; background: rgba(15, 23, 42, 0.86); border: 1px solid rgba(56, 189, 248, 0.25); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55); backdrop-filter: blur(12px); opacity: 0.92; transition: opacity 0.22s ease, transform 0.22s ease; }}
   #bar:hover {{ opacity: 1; }}
-  #bar.fs-mode {{ top: 50%; right: 24px; left: auto; flex-direction: column; align-items: flex-end; transform: translateY(-50%) translateX(0); }}
+  #bar.fs-mode {{ top: 50%; right: 26px; left: auto; flex-direction: column; align-items: stretch; transform: translateY(-50%) translateX(0); }}
   #bar.hidden {{ opacity: 0; pointer-events: none; transform: translateY(-50%) translateX(14px); }}
-  #arrowBtn {{ position: fixed; top: 50%; right: 0; left: auto; transform: translateY(-50%); z-index: 30; width: 18px; height: 48px; padding: 0; display: none; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.88); color: #94a3b8; border: 1px solid rgba(51, 65, 85, 0.85); border-right: none; border-radius: 8px 0 0 8px; backdrop-filter: blur(8px); cursor: pointer; box-shadow: -4px 0 12px rgba(0, 0, 0, 0.45); transition: background 0.15s, color 0.15s; }}
+  #arrowBtn {{ position: fixed; top: 50%; right: 0; left: auto; transform: translateY(-50%); z-index: 30; width: 20px; height: 52px; padding: 0; display: none; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.9); color: #94a3b8; border: 1px solid rgba(56, 189, 248, 0.3); border-right: none; border-radius: 10px 0 0 10px; backdrop-filter: blur(10px); cursor: pointer; box-shadow: -4px 0 14px rgba(0, 0, 0, 0.5); transition: background 0.15s, color 0.15s; }}
   #arrowBtn.visible {{ display: flex; }}
-  #arrowBtn.open {{ color: #38bdf8; }}
-  #arrowBtn svg {{ width: 13px; height: 13px; transition: transform 0.2s ease; }}
+  #arrowBtn.open {{ color: #38bdf8; border-color: rgba(56, 189, 248, 0.55); }}
+  #arrowBtn svg {{ width: 14px; height: 14px; transition: transform 0.2s ease; }}
   #arrowBtn.open svg {{ transform: rotate(180deg); }}
-  button {{ background: rgba(15, 23, 42, 0.85); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 10px; padding: 6px 12px; font-size: 12px; font-weight: 600; backdrop-filter: blur(8px); cursor: pointer; }}
+  .ctrl-btn {{ display: inline-flex; align-items: center; justify-content: center; gap: 7px; background: rgba(30, 41, 59, 0.78); color: #e2e8f0; border: 1px solid rgba(148, 163, 184, 0.22); border-radius: 10px; padding: 8px 13px; font-size: 12px; font-weight: 600; letter-spacing: 0.01em; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s; white-space: nowrap; }}
+  .ctrl-btn:hover, .ctrl-btn:active {{ background: rgba(56, 189, 248, 0.18); color: #38bdf8; border-color: rgba(56, 189, 248, 0.45); }}
+  .ctrl-btn.active {{ background: rgba(6, 182, 212, 0.22); color: #67e8f9; border-color: rgba(34, 211, 238, 0.55); }}
+  .ctrl-btn svg {{ width: 15px; height: 15px; flex-shrink: 0; }}
 </style>
 </head>
 <body>
@@ -285,8 +288,22 @@ fn build_viewer_html(token: &str) -> String {
     </svg>
   </button>
   <div id="bar">
-    <button id="fitBtn">Fill Screen</button>
-    <button id="fsBtn">Fullscreen</button>
+    <button id="fitBtn" class="ctrl-btn">
+      <svg id="fitIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+        <path d="M7 15h10M7 9h4"></path>
+      </svg>
+      <span id="fitLabel">Fill Screen</span>
+    </button>
+    <button id="fsBtn" class="ctrl-btn">
+      <svg id="fsIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 3 21 3 21 9"></polyline>
+        <polyline points="9 21 3 21 3 15"></polyline>
+        <line x1="21" y1="3" x2="14" y2="10"></line>
+        <line x1="3" y1="21" x2="10" y2="14"></line>
+      </svg>
+      <span id="fsLabel">Fullscreen</span>
+    </button>
   </div>
   <div id="wrap">
     <img id="screen" src="/stream?token={token}" alt="Raydrop Second Display" />
@@ -298,7 +315,11 @@ fn build_viewer_html(token: &str) -> String {
   const bar = document.getElementById("bar");
   const arrowBtn = document.getElementById("arrowBtn");
   const fitBtn = document.getElementById("fitBtn");
+  const fitLabel = document.getElementById("fitLabel");
+  const fitIcon = document.getElementById("fitIcon");
   const fsBtn = document.getElementById("fsBtn");
+  const fsLabel = document.getElementById("fsLabel");
+  const fsIcon = document.getElementById("fsIcon");
 
   let isFs = false;
   let showBarInFs = false;
@@ -308,7 +329,11 @@ fn build_viewer_html(token: &str) -> String {
   }}
 
   function syncControlsUi() {{
-    fsBtn.textContent = isFs ? "Exit Fullscreen" : "Fullscreen";
+    fsLabel.textContent = isFs ? "Exit Fullscreen" : "Fullscreen";
+    fsBtn.classList.toggle("active", isFs);
+    fsIcon.innerHTML = isFs
+      ? '<polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line>'
+      : '<polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line>';
     if (isFs) {{
       bar.classList.add("fs-mode");
       arrowBtn.classList.add("visible");
@@ -352,7 +377,12 @@ fn build_viewer_html(token: &str) -> String {
   fitBtn.addEventListener("click", (e) => {{
     e.stopPropagation();
     img.classList.toggle("fill");
-    fitBtn.textContent = img.classList.contains("fill") ? "Fit Aspect" : "Fill Screen";
+    const isFill = img.classList.contains("fill");
+    fitLabel.textContent = isFill ? "Fit Aspect" : "Fill Screen";
+    fitBtn.classList.toggle("active", isFill);
+    fitIcon.innerHTML = isFill
+      ? '<rect x="5" y="4" width="14" height="16" rx="2"></rect><path d="M9 12h6"></path>'
+      : '<rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M7 15h10M7 9h4"></path>';
   }});
 
   fsBtn.addEventListener("click", (e) => {{

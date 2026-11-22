@@ -337,10 +337,9 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
         width: { ideal: 1920, max: 1920 },
         height: { ideal: 1080, max: 1080 },
       },
-      audio: true,
+      audio: false, // Audio is streamed cleanly via native WASAPI loopback (prevents duplicate/clicking WebRTC audio)
       selfBrowserSurface: 'exclude',
       surfaceSwitching: 'include',
-      systemAudio: 'include',
       monitorTypeSurfaces: 'include',
     });
   } catch (err) {
@@ -1145,6 +1144,17 @@ function playIncomingPcmChunk(b64: string) {
       channelData[i] = int16[i] / 32768.0;
     }
 
+    const now = clientAudioCtx.currentTime;
+    const isResync = nextAudioPlayTime < now || nextAudioPlayTime - now > 0.30;
+    if (isResync) {
+      // Tiny 2ms fade-in on resync so chunk boundaries never produce an audible "bip/click"
+      const fadeLen = Math.min(48, channelData.length);
+      for (let i = 0; i < fadeLen; i++) {
+        channelData[i] *= i / fadeLen;
+      }
+      nextAudioPlayTime = now + 0.08;
+    }
+
     const src = clientAudioCtx.createBufferSource();
     src.buffer = audioBuf;
     src.connect(clientAudioCtx.destination);
@@ -1154,10 +1164,6 @@ function playIncomingPcmChunk(b64: string) {
       } catch (_) { }
     };
 
-    const now = clientAudioCtx.currentTime;
-    if (nextAudioPlayTime < now || nextAudioPlayTime - now > 0.25) {
-      nextAudioPlayTime = now + 0.04;
-    }
     src.start(nextAudioPlayTime);
     nextAudioPlayTime += audioBuf.duration;
   } catch (_) { }
