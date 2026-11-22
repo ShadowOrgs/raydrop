@@ -68,10 +68,9 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 | :---: | :---: |
 | <img src="assets/raydrop-online-meeting.png" alt="Raydrop Online Meeting" width="440" /> | <img src="assets/raydrop-chat.png" alt="Raydrop Encrypted Chat" width="440" /> |
 
-<p align="center">
-  <strong>System Monitor &amp; Transfer Analytics Dashboard</strong><br/>
-  <img src="assets/raydrop-system-monitoring.png" alt="Raydrop System Monitor & Analytics" width="720" />
-</p>
+| System Monitor &amp; Transfer Analytics | Copy History (Win+V) |
+| :---: | :---: |
+| <img src="assets/raydrop-system-monitoring.png" alt="Raydrop System Monitor & Analytics" width="440" /> | <img src="assets/raydrop-copy-history.png" alt="Raydrop Copy History (Win+V)" width="440" /> |
 
 ---
 
