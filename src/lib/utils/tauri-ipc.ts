@@ -728,6 +728,28 @@ export const raydropApi = {
     invoke<[number, number][]>('get_monitor_resolutions', { monitorIndex }),
   setMonitorResolution: (monitorIndex: number, width: number, height: number) =>
     invoke<void>('set_monitor_resolution', { monitorIndex, width, height }),
+  getExtendPlatformInfo: () =>
+    invoke<{
+      platform: string;
+      session_type: string;
+      has_xrandr: boolean;
+      has_nvidia: boolean;
+      virtual_active: boolean;
+      virtual_output: string | null;
+    }>('get_extend_platform_info'),
+  enableLinuxVirtualDisplay: (width = 1280, height = 720) =>
+    invoke<{
+      index: number;
+      name: string;
+      device_name: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      is_primary: boolean;
+    }>('enable_linux_virtual_display', { width, height }),
+  disableLinuxVirtualDisplay: () =>
+    invoke<void>('disable_linux_virtual_display'),
   executeRemotePowerAction: (action: string) =>
     invoke<void>('execute_remote_power_action', { action }),
   sendWakeOnLan: (macAddress: string, targetHost?: string, port?: number) =>

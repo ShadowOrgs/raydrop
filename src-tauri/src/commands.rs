@@ -3683,6 +3683,24 @@ pub async fn set_monitor_resolution(
 }
 
 #[tauri::command]
+pub async fn get_extend_platform_info() -> Result<crate::remote_input::ExtendPlatformInfo, String> {
+    Ok(crate::remote_input::get_extend_platform_info())
+}
+
+#[tauri::command]
+pub async fn enable_linux_virtual_display(
+    width: Option<u32>,
+    height: Option<u32>,
+) -> Result<crate::remote_input::MonitorInfo, String> {
+    crate::remote_input::enable_linux_virtual_display(width.unwrap_or(1280), height.unwrap_or(720))
+}
+
+#[tauri::command]
+pub async fn disable_linux_virtual_display() -> Result<(), String> {
+    crate::remote_input::disable_linux_virtual_display()
+}
+
+#[tauri::command]
 pub async fn execute_remote_power_action(action: String) -> Result<(), String> {
     crate::remote_input::execute_power_action(&action)
 }

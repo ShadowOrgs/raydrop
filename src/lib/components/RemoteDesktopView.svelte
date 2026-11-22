@@ -135,6 +135,16 @@
   let secondScreenResolutions: [number, number][] = [];
   let selectedResolutionKey = "";
   let isChangingResolution = false;
+  let extendPlatformInfo: {
+    platform: string;
+    session_type: string;
+    has_xrandr: boolean;
+    has_nvidia: boolean;
+    virtual_active: boolean;
+    virtual_output: string | null;
+  } | null = null;
+  let isEnablingLinuxVdd = false;
+  let linuxVddNote = "";
   let isBootServiceInstalled = false;
   let isInstallingBootService = false;
   let windowsServiceStatus = "not_installed";
@@ -514,6 +524,7 @@
 
   async function refreshSecondScreenMonitors() {
     try {
+      extendPlatformInfo = await raydropApi.getExtendPlatformInfo().catch(() => null);
       secondScreenMonitors = await raydropApi.getHostMonitors();
       if (secondScreenMonitors.length > 1) {
         const secondary = secondScreenMonitors.find((m) => !m.is_primary);
@@ -560,6 +571,19 @@
     }
   }
 
+  async function handleEnableLinuxVirtualDisplay() {
+    isEnablingLinuxVdd = true;
+    linuxVddNote = "";
+    try {
+      await raydropApi.enableLinuxVirtualDisplay(1280, 720);
+      await refreshSecondScreenMonitors();
+    } catch (err: any) {
+      linuxVddNote = err?.message || String(err);
+    } finally {
+      isEnablingLinuxVdd = false;
+    }
+  }
+
   async function selectSecondScreenTouchMonitor(idx: number) {
     selectedSecondScreenMonitorIdx = idx;
     await raydropApi.setHostTargetMonitor(idx).catch(() => {});
@@ -582,9 +606,24 @@
 
   async function startSecondScreenSharing(forcePicker = false) {
     secondScreenError = "";
+    linuxVddNote = "";
     isSecondScreenLoading = true;
     try {
       await refreshSecondScreenMonitors();
+      if (
+        !forcePicker &&
+        extendPlatformInfo?.platform === "linux" &&
+        extendPlatformInfo.session_type === "x11" &&
+        extendPlatformInfo.has_xrandr &&
+        secondScreenMonitors.length <= 1
+      ) {
+        try {
+          await raydropApi.enableLinuxVirtualDisplay(1280, 720);
+          await refreshSecondScreenMonitors();
+        } catch (err: any) {
+          linuxVddNote = err?.message || String(err);
+        }
+      }
       if (secondScreenTimer) {
         clearInterval(secondScreenTimer);
         secondScreenTimer = null;
@@ -594,9 +633,9 @@
         secondScreenStream = null;
       }
 
-      // When multiple monitors exist (Extended Display, e.g. MttVDD Display 2), use native Windows GDI capture directly.
+      // When multiple monitors exist on Windows (Extended Display, e.g. MttVDD Display 2), use native Windows GDI capture directly.
       // Chromium getDisplayMedia() WGC frequently outputs solid black frames on virtual indirect displays (IddCx).
-      if (!forcePicker && secondScreenMonitors.length > 1) {
+      if (!forcePicker && secondScreenMonitors.length > 1 && extendPlatformInfo?.platform === "windows") {
         const targetIdx = selectedSecondScreenMonitorIdx;
         if (isSecondScreenActive && secondScreenUrl) {
           await raydropApi.setSecondScreenSource(true, targetIdx).catch(() => {});
@@ -710,6 +749,10 @@
     secondScreenUrl = "";
     secondScreenQrDataUrl = "";
     await raydropApi.stopSecondScreenServer().catch(() => {});
+    if (extendPlatformInfo?.platform === "linux" && extendPlatformInfo?.virtual_active) {
+      await raydropApi.disableLinuxVirtualDisplay().catch(() => {});
+      await refreshSecondScreenMonitors();
+    }
   }
 
   function openSecondScreenModal() {
@@ -2532,38 +2575,77 @@
                   <p class="font-semibold text-amber-300">
                     ℹ️ Only 1 active display detected (Mirror / App Window Mode)
                   </p>
-                  <p>
-                    Raydrop's Windows installer includes the Virtual Display Driver automatically. Press <code>Win + P</code> → <b>Extend</b> (or open Display Settings → <b>Extend these displays</b>), then click <b>Refresh</b> above.
-                  </p>
-                  <div class="flex flex-wrap gap-2 pt-1">
-                    <button
-                      type="button"
-                      on:click={() => raydropApi.openSystemDisplaySettings()}
-                      class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[10px] font-semibold cursor-pointer"
-                    >
-                      Open Display Settings
-                    </button>
-                    <button
-                      type="button"
-                      on:click={() => (showVirtualDisplayGuide = !showVirtualDisplayGuide)}
-                      class="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 text-[10px] font-semibold cursor-pointer"
-                    >
-                      {showVirtualDisplayGuide ? "Hide Help" : "Display 2 not showing?"}
-                    </button>
-                  </div>
-
-                  {#if showVirtualDisplayGuide}
-                    <div class="mt-2 p-2.5 rounded-lg bg-slate-950/90 border border-slate-800 text-[11px] text-slate-300 space-y-1.5 leading-relaxed">
-                      <p class="font-bold text-cyan-300">Troubleshooting Display 2:</p>
-                      <ul class="list-disc list-inside space-y-1 text-slate-300">
-                        <li>
-                          <b>Enable Extend Mode:</b> Click <b>Open Display Settings</b> (or press <code>Win + P</code> → <b>Extend</b>), select <b>Extend these displays</b>, then click <b>Refresh</b> above.
-                        </li>
-                        <li>
-                          <b>If auto-install was blocked:</b> Run <code>install-vdd.ps1</code> as <b>Administrator</b> inside Raydrop's install folder (<code>_up_\assets\VirtualDisplayDriver</code>), or <a href="https://github.com/VirtualDrivers/Virtual-Display-Driver/releases" target="_blank" rel="noopener" class="text-indigo-300 underline">download the driver manually ↗</a>.
-                        </li>
-                      </ul>
+                  {#if extendPlatformInfo?.platform === "linux"}
+                    <p>
+                      {#if extendPlatformInfo.session_type === "wayland"}
+                        Wayland session detected. Automatic virtual displays via <code>xrandr</code> require an <b>X11 (Xorg)</b> session; you can still mirror your screen or share a specific <b>App Window</b>.
+                      {:else if extendPlatformInfo.has_xrandr}
+                        On Linux X11 (Intel/AMD), Raydrop can create a virtual 2nd display automatically via <code>xrandr</code>. Click <b>Add Virtual Display</b> below, then pick the new display in the share dialog.
+                      {:else}
+                        Install <code>xrandr</code> on X11 to enable automatic virtual displays, or share a specific <b>App Window</b>.
+                      {/if}
+                    </p>
+                    {#if linuxVddNote}
+                      <p class="text-rose-300 text-[10px]">{linuxVddNote}</p>
+                    {/if}
+                    <div class="flex flex-wrap gap-2 pt-1">
+                      {#if extendPlatformInfo.session_type === "x11" && extendPlatformInfo.has_xrandr}
+                        <button
+                          type="button"
+                          on:click={handleEnableLinuxVirtualDisplay}
+                          disabled={isEnablingLinuxVdd}
+                          class="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[10px] font-semibold cursor-pointer disabled:opacity-50"
+                        >
+                          {isEnablingLinuxVdd ? "Creating Virtual Display..." : "Add Virtual Display (X11)"}
+                        </button>
+                      {/if}
+                      <a
+                        href="https://github.com/VirtualDrivers/Linux-Virtual-Display-Driver"
+                        target="_blank"
+                        rel="noopener"
+                        class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[10px] font-semibold"
+                      >
+                        Linux VDD Guide (NVIDIA/Xorg) ↗
+                      </a>
                     </div>
+                  {:else if extendPlatformInfo?.platform === "macos"}
+                    <p>
+                      macOS does not bundle a virtual display driver. Share a specific <b>App Window</b>, or connect a 2nd monitor / virtual display app (e.g. BetterDisplay) and click <b>Refresh</b>.
+                    </p>
+                  {:else}
+                    <p>
+                      Raydrop's Windows installer includes the Virtual Display Driver automatically. Press <code>Win + P</code> → <b>Extend</b> (or open Display Settings → <b>Extend these displays</b>), then click <b>Refresh</b> above.
+                    </p>
+                    <div class="flex flex-wrap gap-2 pt-1">
+                      <button
+                        type="button"
+                        on:click={() => raydropApi.openSystemDisplaySettings()}
+                        class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[10px] font-semibold cursor-pointer"
+                      >
+                        Open Display Settings
+                      </button>
+                      <button
+                        type="button"
+                        on:click={() => (showVirtualDisplayGuide = !showVirtualDisplayGuide)}
+                        class="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 text-[10px] font-semibold cursor-pointer"
+                      >
+                        {showVirtualDisplayGuide ? "Hide Help" : "Display 2 not showing?"}
+                      </button>
+                    </div>
+
+                    {#if showVirtualDisplayGuide}
+                      <div class="mt-2 p-2.5 rounded-lg bg-slate-950/90 border border-slate-800 text-[11px] text-slate-300 space-y-1.5 leading-relaxed">
+                        <p class="font-bold text-cyan-300">Troubleshooting Display 2:</p>
+                        <ul class="list-disc list-inside space-y-1 text-slate-300">
+                          <li>
+                            <b>Enable Extend Mode:</b> Click <b>Open Display Settings</b> (or press <code>Win + P</code> → <b>Extend</b>), select <b>Extend these displays</b>, then click <b>Refresh</b> above.
+                          </li>
+                          <li>
+                            <b>If auto-install was blocked:</b> Run <code>install-vdd.ps1</code> as <b>Administrator</b> inside Raydrop's install folder (<code>_up_\assets\VirtualDisplayDriver</code>), or <a href="https://github.com/VirtualDrivers/Virtual-Display-Driver/releases" target="_blank" rel="noopener" class="text-indigo-300 underline">download the driver manually ↗</a>.
+                          </li>
+                        </ul>
+                      </div>
+                    {/if}
                   {/if}
                 </div>
               {/if}
