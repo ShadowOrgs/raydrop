@@ -112,7 +112,45 @@ export interface AppStateSnapshot {
   wan_reflexive_addr: string | null;
   signaling_connected: boolean;
   queued_cli_files: string[];
+  queued_convert_files?: string[];
   my_rank_exp?: number;
+}
+
+export interface ImageMeta {
+  path: string;
+  filename: string;
+  width: number;
+  height: number;
+  size_bytes: number;
+  format: string;
+}
+
+export interface ConvertResult {
+  input_path: string;
+  output_path: string;
+  original_bytes: number;
+  output_bytes: number;
+  width: number;
+  height: number;
+}
+
+export interface MobileIconZipResult {
+  zip_path: string;
+  total_files: number;
+  zip_bytes: number;
+}
+
+export interface DocumentEnginesInfo {
+  has_word: boolean;
+  has_libreoffice: boolean;
+}
+
+export interface DocumentConvertResult {
+  input_path: string;
+  output_path: string;
+  original_bytes: number;
+  output_bytes: number;
+  engine_used: string;
 }
 
 export interface Contact {
@@ -722,6 +760,48 @@ export const raydropApi = {
     invoke<SystemTelemetry>('get_system_telemetry'),
   getTransferAnalytics: () =>
     invoke<TransferAnalytics>('get_transfer_analytics'),
+  getImageMetadata: (path: string) =>
+    invoke<ImageMeta>('get_image_metadata', { path }),
+  convertAndProcessImages: (params: {
+    inputPaths: string[];
+    targetFormat: string;
+    resizeWidth?: number | null;
+    resizeHeight?: number | null;
+    keepAspect: boolean;
+    quality?: number | null;
+    outputDir?: string | null;
+  }) =>
+    invoke<ConvertResult[]>('convert_and_process_images', {
+      inputPaths: params.inputPaths,
+      targetFormat: params.targetFormat,
+      resizeWidth: params.resizeWidth || null,
+      resizeHeight: params.resizeHeight || null,
+      keepAspect: params.keepAspect,
+      quality: params.quality || null,
+      outputDir: params.outputDir || null,
+    }),
+  generateMobileIconsZip: (params: {
+    inputPath: string;
+    platform: 'both' | 'android' | 'ios';
+    outputZipPath?: string | null;
+  }) =>
+    invoke<MobileIconZipResult>('generate_mobile_icons_zip', {
+      inputPath: params.inputPath,
+      platform: params.platform,
+      outputZipPath: params.outputZipPath || null,
+    }),
+  detectDocumentEngines: () =>
+    invoke<DocumentEnginesInfo>('detect_document_engines'),
+  convertDocuments: (params: {
+    inputPaths: string[];
+    targetFormat: 'pdf' | 'docx';
+    outputDir?: string | null;
+  }) =>
+    invoke<DocumentConvertResult[]>('convert_documents', {
+      inputPaths: params.inputPaths,
+      targetFormat: params.targetFormat,
+      outputDir: params.outputDir || null,
+    }),
   checkUnattendedBootService: () =>
     invoke<boolean>('check_unattended_boot_service'),
   installUnattendedBootService: () =>

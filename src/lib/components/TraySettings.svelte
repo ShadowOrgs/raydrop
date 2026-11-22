@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { getVersion } from "@tauri-apps/api/app";
   import { open } from "@tauri-apps/plugin-dialog";
   import { appSettings, settingsModalOpen } from "../stores/state";
   import {
@@ -46,6 +48,13 @@
   let saveError = "";
   let isSaving = false;
   let justSaved = false;
+  let appVersion = "1.2.51";
+
+  onMount(async () => {
+    try {
+      appVersion = await getVersion();
+    } catch (_) {}
+  });
   let sharedFolders: Array<{
     id: string;
     name: string;
@@ -714,7 +723,7 @@
               <span
                 class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700"
               >
-                Current: v1.2.48
+                Current: v{appVersion}
               </span>
             </div>
             <p class="text-[11px] text-slate-400 mt-0.5">

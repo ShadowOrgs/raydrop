@@ -38,6 +38,7 @@
     Activity,
     ClipboardList,
     StickyNote,
+    Wand2,
     Laptop,
     Users,
     Zap,
@@ -48,10 +49,19 @@
     Monitor,
     Palette,
   } from "lucide-svelte";
+  import { onMount } from "svelte";
+  import { getVersion } from "@tauri-apps/api/app";
 
+  let appVersion = "1.2.51";
   let copied = false;
   let themeMenuOpen = false;
   let profileMenuOpen = false;
+
+  onMount(async () => {
+    try {
+      appVersion = await getVersion();
+    } catch (_) {}
+  });
 
   async function toggleDiscoverable() {
     const next = !$appSettings.discoverable;
@@ -145,7 +155,7 @@
           {#if $updateChecking}
             <RefreshCw class="w-2.5 h-2.5 animate-spin text-cyan-400" />
           {/if}
-          <span>v1.2.48</span>
+          <span>v{appVersion}</span>
         </button>
 
         {#if $updateInfo?.has_update}
@@ -401,6 +411,23 @@
     >
       <StickyNote
         class="w-4 h-4 {$activeMainTab === 'notes'
+          ? 'text-cyan-400'
+          : 'text-slate-400'}"
+      />
+    </button>
+
+    <!-- 11. File Converter, Image Resizer & Mobile Icon Pack -->
+    <button
+      type="button"
+      on:click={() => activeMainTab.set("converter")}
+      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
+      'converter'
+        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
+        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
+      title="File Converter, Image Resizer & App Icons"
+    >
+      <Wand2
+        class="w-4 h-4 {$activeMainTab === 'converter'
           ? 'text-cyan-400'
           : 'text-slate-400'}"
       />

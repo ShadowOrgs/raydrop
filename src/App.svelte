@@ -19,6 +19,7 @@
   import DashboardView from "./lib/components/DashboardView.svelte";
   import ClipboardHistoryView from "./lib/components/ClipboardHistoryView.svelte";
   import NotesView from "./lib/components/NotesView.svelte";
+  import ConverterView from "./lib/components/ConverterView.svelte";
   import WolModal from "./lib/components/WolModal.svelte";
   import { setupMeetingSignalListener, isInMeeting } from "./lib/stores/meeting";
   import {
@@ -48,6 +49,7 @@
     cloudContacts,
     incomingRequestQueue,
     cliQueuedFiles,
+    cliConvertFiles,
     authModalOpen,
     activeMainTab,
     activeChatPeerId,
@@ -210,6 +212,17 @@
       }
     }
 
+    if (snap.queued_convert_files && snap.queued_convert_files.length > 0) {
+      cliConvertFiles.set(snap.queued_convert_files);
+      activeMainTab.set("converter");
+      try {
+        const win = getCurrentWindow();
+        await win.show();
+        await win.unminimize();
+        await win.setFocus();
+      } catch (_) {}
+    }
+
     initStatusText = "Memuat kontak & riwayat transfer...";
     contacts.set(await raydropApi.getContacts());
     transfers.set(await raydropApi.getTransferHistory());
@@ -301,6 +314,17 @@
       } catch (err) {
         console.warn("Window focus error on cli send:", err);
       }
+    });
+
+    await raydropApi.listenEvent<string[]>("cli_convert_files", async (paths) => {
+      cliConvertFiles.update((prev) => [...prev, ...paths]);
+      activeMainTab.set("converter");
+      try {
+        const win = getCurrentWindow();
+        await win.show();
+        await win.unminimize();
+        await win.setFocus();
+      } catch (_) {}
     });
 
     await raydropApi.listenEvent<UpdateProgressPayload>(
@@ -600,13 +624,21 @@
       <NotesView active={$activeMainTab === 'notes'} />
     </div>
     <div
+      class="h-full w-full {$activeMainTab === 'converter'
+        ? 'flex flex-col'
+        : 'hidden'}"
+    >
+      <ConverterView />
+    </div>
+    <div
       class="h-full w-full {$activeMainTab !== 'transfers' &&
       $activeMainTab !== 'chat' &&
       $activeMainTab !== 'meeting' &&
       $activeMainTab !== 'remote' &&
       $activeMainTab !== 'dashboard' &&
       $activeMainTab !== 'clipboard' &&
-      $activeMainTab !== 'notes'
+      $activeMainTab !== 'notes' &&
+      $activeMainTab !== 'converter'
         ? 'flex flex-col'
         : 'hidden'}"
     >

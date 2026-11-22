@@ -60,6 +60,16 @@ pub fn register_windows_context_menu() -> Result<String, String> {
         .set_value("", &command_str)
         .map_err(|e| e.to_string())?;
 
+    // 3. Register "Convert / Optimize with Raydrop" for files: HKCU\Software\Classes\*\shell\RaydropConvert
+    let convert_cmd_str = format!("\"{}\" --convert \"%1\"", exe_str);
+    if let Ok((conv_key, _)) = hkcu.create_subkey(r"Software\Classes\*\shell\RaydropConvert") {
+        let _ = conv_key.set_value("", &"Convert / Optimize with Raydrop");
+        let _ = conv_key.set_value("Icon", &icon_str);
+        if let Ok((conv_cmd_key, _)) = conv_key.create_subkey("command") {
+            let _ = conv_cmd_key.set_value("", &convert_cmd_str);
+        }
+    }
+
     // 3. Register multi-file batch selection helper in %APPDATA%\Microsoft\Windows\SendTo
     if let Ok(appdata) = env::var("APPDATA") {
         let sendto_dir = std::path::PathBuf::from(appdata)

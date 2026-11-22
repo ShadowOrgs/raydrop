@@ -17,6 +17,7 @@ pub struct AppStateSnapshot {
     pub wan_reflexive_addr: Option<String>,
     pub signaling_connected: bool,
     pub queued_cli_files: Vec<String>,
+    pub queued_convert_files: Vec<String>,
     pub my_rank_exp: u64,
 }
 
@@ -58,6 +59,12 @@ pub fn get_app_state(state: State<'_, Arc<AppState>>) -> Result<AppStateSnapshot
         .map_err(|e| e.to_string())?;
     let queued_cli_files = std::mem::take(&mut *queued);
 
+    let mut queued_conv = state
+        .queued_convert_files
+        .lock()
+        .map_err(|e| e.to_string())?;
+    let queued_convert_files = std::mem::take(&mut *queued_conv);
+
     Ok(AppStateSnapshot {
         settings,
         ed25519_pubkey: state.identity.public_hex(),
@@ -67,6 +74,7 @@ pub fn get_app_state(state: State<'_, Arc<AppState>>) -> Result<AppStateSnapshot
         wan_reflexive_addr,
         signaling_connected: state.is_signaling_connected(),
         queued_cli_files,
+        queued_convert_files,
         my_rank_exp: state.db.compute_my_rank_exp().unwrap_or(0),
     })
 }
@@ -2460,6 +2468,88 @@ pub fn stop_web_share(state: State<'_, Arc<AppState>>) -> Result<(), String> {
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn encode_dynamic_image_to_data_url(dyn_img: image::DynamicImage) -> Option<String> {
+    use base64::Engine;
+    let mut png_bytes = Vec::new();
+    let mut cursor = std::io::Cursor::new(&mut png_bytes);
+    if dyn_img.write_to(&mut cursor, image::ImageFormat::Png).is_ok() && png_bytes.len() <= 3_500_000 {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
+        return Some(format!("data:image/png;base64,{b64}"));
+    }
+    let resized = if dyn_img.width() > 1920 || dyn_img.height() > 1080 {
+        dyn_img.resize(1920, 1080, image::imageops::FilterType::Triangle)
+    } else {
+        dyn_img
+    };
+    let mut jpg_bytes = Vec::new();
+    let mut jpg_cursor = std::io::Cursor::new(&mut jpg_bytes);
+    if resized.to_rgb8().write_to(&mut jpg_cursor, image::ImageFormat::Jpeg).is_ok() {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&jpg_bytes);
+        return Some(format!("data:image/jpeg;base64,{b64}"));
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn read_windows_clipboard_image_file() -> Option<String> {
+    use std::os::windows::ffi::OsStringExt;
+    #[link(name = "user32")]
+    extern "system" {
+        fn IsClipboardFormatAvailable(format: u32) -> i32;
+        fn OpenClipboard(hwnd: isize) -> i32;
+        fn GetClipboardData(format: u32) -> isize;
+        fn CloseClipboard() -> i32;
+    }
+    #[link(name = "shell32")]
+    extern "system" {
+        fn DragQueryFileW(hdrop: isize, i_file: u32, lpsz_file: *mut u16, cch: u32) -> u32;
+    }
+    const CF_HDROP: u32 = 15;
+    unsafe {
+        if IsClipboardFormatAvailable(CF_HDROP) == 0 {
+            return None;
+        }
+        if OpenClipboard(0) == 0 {
+            return None;
+        }
+        let mut found_path: Option<std::path::PathBuf> = None;
+        let hdrop = GetClipboardData(CF_HDROP);
+        if hdrop != 0 {
+            let count = DragQueryFileW(hdrop, 0xFFFFFFFF, std::ptr::null_mut(), 0);
+            for idx in 0..count.min(8) {
+                let len = DragQueryFileW(hdrop, idx, std::ptr::null_mut(), 0);
+                if len == 0 || len > 4096 {
+                    continue;
+                }
+                let mut buf = vec![0u16; (len + 1) as usize];
+                let copied = DragQueryFileW(hdrop, idx, buf.as_mut_ptr(), len + 1);
+                if copied > 0 {
+                    let os_str = std::ffi::OsString::from_wide(&buf[..copied as usize]);
+                    let p = std::path::PathBuf::from(os_str);
+                    if let Some(ext) = p.extension().and_then(|e| e.to_str()).map(|s| s.to_ascii_lowercase()) {
+                        if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif") {
+                            found_path = Some(p);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        CloseClipboard();
+        if let Some(path) = found_path {
+            if let Ok(meta) = std::fs::metadata(&path) {
+                if meta.len() <= 20_000_000 {
+                    if let Ok(dyn_img) = image::open(&path) {
+                        return encode_dynamic_image_to_data_url(dyn_img);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn read_clipboard_content() -> Result<String, String> {
     let mut cb = arboard::Clipboard::new().map_err(|e| format!("Clipboard error: {e}"))?;
     if let Ok(text) = cb.get_text() {
@@ -2472,16 +2562,18 @@ pub fn read_clipboard_content() -> Result<String, String> {
         let width = img.width as u32;
         let height = img.height as u32;
         if let Some(buf) = ImageBuffer::<image::Rgba<u8>, _>::from_raw(width, height, img.bytes.into_owned()) {
-            let mut png_bytes = Vec::new();
-            let mut cursor = std::io::Cursor::new(&mut png_bytes);
-            if buf.write_to(&mut cursor, image::ImageFormat::Png).is_ok() {
-                use base64::Engine;
-                let b64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
-                return Ok(format!("data:image/png;base64,{b64}"));
+            if let Some(data_url) = encode_dynamic_image_to_data_url(image::DynamicImage::ImageRgba8(buf)) {
+                return Ok(data_url);
             }
         }
     }
-    cb.get_text().map_err(|e| format!("Clipboard read error: {e}"))
+    drop(cb);
+    #[cfg(target_os = "windows")]
+    if let Some(data_url) = read_windows_clipboard_image_file() {
+        return Ok(data_url);
+    }
+    let mut cb2 = arboard::Clipboard::new().map_err(|e| format!("Clipboard error: {e}"))?;
+    cb2.get_text().map_err(|e| format!("Clipboard read error: {e}"))
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -3889,5 +3981,68 @@ pub async fn get_transfer_analytics(
     tokio::task::spawn_blocking(move || db.get_transfer_analytics())
         .await
         .map_err(|e| format!("Transfer analytics task error: {e}"))?
+}
+
+#[tauri::command]
+pub fn get_image_metadata(path: String) -> Result<crate::image_tools::ImageMeta, String> {
+    crate::image_tools::get_image_metadata(&path)
+}
+
+#[tauri::command]
+pub async fn convert_and_process_images(
+    input_paths: Vec<String>,
+    target_format: String,
+    resize_width: Option<u32>,
+    resize_height: Option<u32>,
+    keep_aspect: bool,
+    quality: Option<u8>,
+    output_dir: Option<String>,
+) -> Result<Vec<crate::image_tools::ConvertResult>, String> {
+    tokio::task::spawn_blocking(move || {
+        crate::image_tools::convert_and_process_images(
+            input_paths,
+            target_format,
+            resize_width,
+            resize_height,
+            keep_aspect,
+            quality,
+            output_dir,
+        )
+    })
+    .await
+    .map_err(|e| format!("Image task error: {e}"))?
+}
+
+#[tauri::command]
+pub async fn generate_mobile_icons_zip(
+    input_path: String,
+    platform: String,
+    output_zip_path: Option<String>,
+) -> Result<crate::image_tools::MobileIconZipResult, String> {
+    tokio::task::spawn_blocking(move || {
+        crate::image_tools::generate_mobile_icons_zip(input_path, platform, output_zip_path)
+    })
+    .await
+    .map_err(|e| format!("Icon zip task error: {e}"))?
+}
+
+#[tauri::command]
+pub async fn detect_document_engines() -> Result<crate::image_tools::DocumentEnginesInfo, String> {
+    tokio::task::spawn_blocking(crate::image_tools::detect_document_engines)
+        .await
+        .map_err(|e| format!("Engine detection error: {e}"))
+}
+
+#[tauri::command]
+pub async fn convert_documents(
+    input_paths: Vec<String>,
+    target_format: String,
+    output_dir: Option<String>,
+) -> Result<Vec<crate::image_tools::DocumentConvertResult>, String> {
+    tokio::task::spawn_blocking(move || {
+        crate::image_tools::convert_documents(input_paths, target_format, output_dir)
+    })
+    .await
+    .map_err(|e| format!("Document convert task error: {e}"))?
 }
 

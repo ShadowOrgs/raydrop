@@ -4,6 +4,7 @@ pub mod crypto;
 pub mod db;
 pub mod folder_sync;
 pub mod http_downloader;
+pub mod image_tools;
 pub mod network;
 pub mod os;
 pub mod remote_audio;
@@ -44,6 +45,21 @@ fn extract_send_paths(args: &[String]) -> Vec<String> {
             }
         } else if arg == "--send" {
             after_send = true;
+        }
+    }
+    paths
+}
+
+fn extract_convert_paths(args: &[String]) -> Vec<String> {
+    let mut paths = Vec::new();
+    let mut after_convert = false;
+    for arg in args {
+        if after_convert {
+            if !arg.starts_with("--") {
+                paths.push(arg.clone());
+            }
+        } else if arg == "--convert" {
+            after_convert = true;
         }
     }
     paths
@@ -106,10 +122,13 @@ pub fn run() {
 
     let initial_args: Vec<String> = std::env::args().collect();
     let initial_send_paths = extract_send_paths(&initial_args);
+    let initial_convert_paths = extract_convert_paths(&initial_args);
     let initial_magnet = extract_magnet_url(&initial_args);
     let is_system_agent = initial_args.iter().any(|a| a == "--system-agent");
     let start_minimized = is_system_agent
-        || (initial_args.iter().any(|a| a == "--minimized") && initial_send_paths.is_empty());
+        || (initial_args.iter().any(|a| a == "--minimized")
+            && initial_send_paths.is_empty()
+            && initial_convert_paths.is_empty());
 
     let torrent_mgr = Arc::new(crate::torrent::TorrentManager::new(
         std::path::PathBuf::from(&settings.download_dir),
@@ -138,6 +157,7 @@ pub fn run() {
         active_cancellations: Mutex::new(HashMap::new()),
         pending_wan_candidates: Mutex::new(HashMap::new()),
         queued_cli_files: Mutex::new(initial_send_paths.clone()),
+        queued_convert_files: Mutex::new(initial_convert_paths.clone()),
         active_web_share: Mutex::new(None),
         torrent_manager: torrent_mgr,
         pending_magnet_link: Mutex::new(initial_magnet.clone()),
@@ -157,6 +177,7 @@ pub fn run() {
     let builder = if !is_system_agent {
         builder.plugin(tauri_plugin_single_instance::init(move |app, argv, _cwd| {
         let paths = extract_send_paths(&argv);
+        let convert_paths = extract_convert_paths(&argv);
         let magnet = extract_magnet_url(&argv);
 
         crate::network::transport::popup_and_focus_main_window(app);
@@ -175,6 +196,14 @@ pub fn run() {
                 q.extend(paths.clone());
             }
             let _ = app.emit("cli_send_files", paths);
+        }
+
+        if !convert_paths.is_empty() {
+            info!("Received CLI --convert paths from secondary instance: {:?}", convert_paths);
+            if let Ok(mut q) = state_for_single_instance.queued_convert_files.lock() {
+                q.extend(convert_paths.clone());
+            }
+            let _ = app.emit("cli_convert_files", convert_paths);
         }
     }))
     } else {
@@ -641,6 +670,11 @@ pub fn run() {
             commands::uninstall_windows_service,
             commands::get_system_telemetry,
             commands::get_transfer_analytics,
+            commands::get_image_metadata,
+            commands::convert_and_process_images,
+            commands::generate_mobile_icons_zip,
+            commands::detect_document_engines,
+            commands::convert_documents,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Raydrop Tauri application")

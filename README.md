@@ -76,8 +76,10 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 
 ## ✨ Key Features
 
-### 🆕 Productivity, Analytics & Privacy Suite (Updated in v1.2.50)
-- **Smooth Startup Initialization Overlay:** Displays a clean fullscreen loading overlay until all P2P modules, contacts, and transfer history are ready, eliminating startup UI freezes and avoiding unwanted startup screen-share prompts.
+### 🆕 Productivity, Analytics & Privacy Suite (Updated in v1.2.51)
+- **File Converter, Image Resizer/Compressor & Mobile Icon Pack (ZIP):** Convert images batch-wise (`PNG ↔ ICO / JPG / WEBP / BMP / GIF`), resize & compress with quality controls, generate complete Android (`mipmap-*` + Play Store 512px) & iOS (`AppIcon.appiconset` + `Contents.json`) icon packs in one `.zip`, convert `DOC/DOCX ↔ PDF` (via Microsoft Word / LibreOffice), and launch directly from the OS Explorer right-click menu (**Convert / Optimize with Raydrop**).
+- **Explorer Image File Clipboard Sync (`CF_HDROP`):** Copy an image file directly in Windows Explorer (`Ctrl+C`) and paste it into the Remote Desktop Host seamlessly.
+- **Smooth Startup Initialization Overlay & Dynamic Versioning:** Displays a clean fullscreen loading overlay until all P2P modules, contacts, and transfer history are ready, with live Tauri app version detection.
 - **Transfer History Delete & Clear History:** Delete individual entries or clear completed records from Transfer History while preserving persistent lifetime analytics.
 - **System Monitor & Persistent Transfer Analytics Dashboard:** Monitor live CPU, RAM, GPU, Disk, and Network throughput charts (loaded lazily when opened) alongside persistent local analytics for total gigabytes sent and received.
 - **Raydrop Rank & EXP Badges:** Earn EXP across File Transfers (`+2 EXP/MB`), Chat (`+5 EXP/msg`), Remote Desktop, Meetings, Tablet Extend (`+10 EXP/min`), and Sync/Share (`+25 EXP`). Rank badges (`Bronze` → `Mythic`) appear in your Profile Menu, Contacts, Chat, and Meeting tiles.
