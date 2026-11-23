@@ -7,7 +7,13 @@
     authModalOpen,
   } from "../stores/state";
   import { contacts } from "../stores/contacts";
+  import { transfers } from "../stores/transfers";
+  import { fetchUnreadCounts, fetchChatGroups, chatStore } from "../stores/chat";
   import { raydropApi, cloudApi, getApiBaseUrl } from "../utils/tauri-ipc";
+  import {
+    getAccountDeviceName,
+    saveAccountDeviceName,
+  } from "../utils/accountDeviceNames";
   import {
     Mail,
     Lock,
@@ -43,10 +49,16 @@
 
     loading = true;
     try {
+      // Preserve current signed-in account's device name before switching accounts
+      if ($appSettings.user_email && $appSettings.alias_name) {
+        saveAccountDeviceName($appSettings.user_email, $appSettings.alias_name);
+      }
+
       const baseUrl = getApiBaseUrl($appSettings.signaling_url);
+      const rememberedName = getAccountDeviceName(email);
       const lockedDeviceName =
         mode === "login"
-          ? $appSettings.alias_name
+          ? (rememberedName || $appSettings.alias_name)
           : (deviceName || $appSettings.alias_name).trim();
 
       const payload = {
@@ -64,14 +76,16 @@
           ? await cloudApi.register(baseUrl, payload)
           : await cloudApi.login(baseUrl, payload);
 
-      // Lock device name to existing server record for this device_id when re-logging in
+      // Lock device name to remembered per-account name or existing server record when re-logging in
       const existingServerDev = (res.my_devices || []).find(
         (d: any) => d.device_id === $appSettings.device_id,
       );
       const finalDeviceName =
-        mode === "login" && existingServerDev?.device_name
-          ? existingServerDev.device_name
+        mode === "login"
+          ? (rememberedName || existingServerDev?.device_name || payload.device_name)
           : payload.device_name;
+
+      saveAccountDeviceName(res.user.email, finalDeviceName);
 
       const updatedSettings = await raydropApi.saveCloudSession({
         userId: res.user.id,
@@ -90,6 +104,10 @@
         res.contacts,
       );
       contacts.set(syncedLocal);
+      chatStore.set({});
+      transfers.set(await raydropApi.getTransferHistory().catch(() => []));
+      await fetchUnreadCounts().catch(() => {});
+      await fetchChatGroups().catch(() => {});
       authModalOpen.set(false);
       password = "";
     } catch (e: any) {

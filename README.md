@@ -76,7 +76,8 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 
 ## ✨ Key Features
 
-### 🆕 Productivity, Analytics & Privacy Suite (Updated in v1.2.59)
+### 🆕 Productivity, Analytics & Privacy Suite (Updated in v1.2.60)
+- **Per-Account Isolated Local Databases & Device Name Persistence:** Switching accounts on the same PC now isolates Transfer History, Chats, Groups, Contacts, Clipboard History, Notes, and Device Names (`storage_user_<id>.db`), and prevents permanent transfer errors (e.g. `> 100 MB` WAN relay guard) from looping at checkpoint.
 - **Non-Contact Incoming Chat Visibility & Daily Update Snooze:** Displays incoming chats from users not yet in your Contacts list (auto-adding them when you reply) and limits automatic update popups to once every 24 hours unless manually checked.
 - **Zero-Prompt Windows Remote Capture & Mobile UI Polish:** Prioritizes native Windows GDI capture so Remote Desktop connects automatically with zero screen-share picker popups even with multiple monitors (`MttVDD`), wraps the mobile Remote Desktop & Meeting toolbars cleanly without overflow, and opens Mobile Chat on the Contacts list first.
 - **Mobile Metro Tile Hub, Pre-Login Zero-Prompt Remote Fix & Transfer Status Badges:** Replaces mobile bottom nav with a responsive Windows-Phone-style Metro Tile home hub giving 1-tap access to all 11 features, fixes post-reboot Winlogon/multi-monitor share-screen popups on Remote Desktop, and displays clear `Rejected`/`Paused` badges in Transfer History.
@@ -264,10 +265,10 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.59/Raydrop_1.2.59_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.59/Raydrop_1.2.59_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.59/Raydrop_1.2.59_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.59/Raydrop_1.2.59_amd64.AppImage) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.60/Raydrop_1.2.60_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.60/Raydrop_1.2.60_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.60/Raydrop_1.2.60_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.60/Raydrop_1.2.60_amd64.AppImage) |
 | **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.23/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**

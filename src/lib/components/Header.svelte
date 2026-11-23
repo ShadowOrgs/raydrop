@@ -13,9 +13,10 @@
   } from "../stores/state";
   import { getRankInfo } from "../utils/rank";
   import { contacts, lanContacts } from "../stores/contacts";
-  import { activeTransfers } from "../stores/transfers";
-  import { totalUnreadCount } from "../stores/chat";
+  import { activeTransfers, transfers } from "../stores/transfers";
+  import { totalUnreadCount, chatStore } from "../stores/chat";
   import { raydropApi } from "../utils/tauri-ipc";
+  import { saveAccountDeviceName } from "../utils/accountDeviceNames";
   import {
     updateInfo,
     updateModalOpen,
@@ -88,10 +89,13 @@
   }
 
   async function handleLogout() {
+    saveAccountDeviceName($appSettings.user_email, $appSettings.alias_name);
     const updated = await raydropApi.logoutCloudSession();
     appSettings.set(updated);
     cloudMyDevices.set([]);
     cloudContacts.set([]);
+    transfers.set([]);
+    chatStore.set({});
     authModalOpen.set(true);
   }
 

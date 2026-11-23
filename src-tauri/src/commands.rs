@@ -88,6 +88,9 @@ pub fn save_cloud_session(
     auth_token: String,
     device_name: Option<String>,
 ) -> Result<AppSettings, String> {
+    // Switch active SQLite DB to this user's isolated database (`storage_user_<uid>.db`)
+    state.db.switch_user_db(Some(&user_id))?;
+
     state.db.set_setting("user_id", &user_id)?;
     state.db.set_setting("user_email", &user_email)?;
     state.db.set_setting("user_name", &user_name)?;
@@ -104,6 +107,10 @@ pub fn save_cloud_session(
         if !trimmed.is_empty() {
             state.db.set_setting("alias_name", trimmed)?;
             s.alias_name = trimmed.to_string();
+        }
+    } else if let Ok(Some(saved_alias)) = state.db.get_setting("alias_name") {
+        if !saved_alias.trim().is_empty() {
+            s.alias_name = saved_alias;
         }
     }
 
@@ -130,6 +137,7 @@ pub fn save_cloud_session(
 
 #[tauri::command]
 pub fn logout_cloud_session(state: State<'_, Arc<AppState>>) -> Result<AppSettings, String> {
+    state.db.switch_user_db(None)?;
     state.db.set_setting("user_id", "")?;
     state.db.set_setting("user_email", "")?;
     state.db.set_setting("user_name", "")?;

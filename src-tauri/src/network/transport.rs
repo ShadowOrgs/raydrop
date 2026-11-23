@@ -1972,24 +1972,38 @@ async fn start_or_resume_transfer(
                         return;
                     }
 
+                    let is_permanent_error = e.contains("100 MB relay guard")
+                        || e.contains("Insufficient Disk Space")
+                        || e.contains("DISK_FULL")
+                        || e.contains("Signaling Server is not connected")
+                        || e.contains("Unsafe relative path");
+
                     warn!(
                         "Outgoing transfer {sid_c} interrupted (attempt {attempt}/{max_attempts}): {e}"
                     );
+
+                    if is_permanent_error || attempt >= max_attempts {
+                        if let Ok(Some(mut rec)) = state_c.db.get_transfer(&sid_c) {
+                            rec.status = "failed".to_string();
+                            let _ = state_c.db.upsert_transfer(&rec);
+                            let _ = app_c.emit("transfer_state_changed", &rec);
+                        }
+                        break;
+                    }
+
                     if let Ok(Some(mut rec)) = state_c.db.get_transfer(&sid_c) {
                         rec.status = "paused".to_string();
                         let _ = state_c.db.upsert_transfer(&rec);
                         let _ = app_c.emit("transfer_state_changed", &rec);
                     }
 
-                    if attempt < max_attempts {
-                        // Wait for Wi-Fi / network to stabilize, then automatically resume from `.raypart` offset
-                        tokio::time::sleep(Duration::from_secs(4)).await;
-                        if !cancel_flag.load(Ordering::Relaxed) {
-                            if let Ok(Some(mut rec)) = state_c.db.get_transfer(&sid_c) {
-                                rec.status = "in_progress".to_string();
-                                let _ = state_c.db.upsert_transfer(&rec);
-                                let _ = app_c.emit("transfer_state_changed", &rec);
-                            }
+                    // Wait for Wi-Fi / network to stabilize, then automatically resume from `.raypart` offset
+                    tokio::time::sleep(Duration::from_secs(4)).await;
+                    if !cancel_flag.load(Ordering::Relaxed) {
+                        if let Ok(Some(mut rec)) = state_c.db.get_transfer(&sid_c) {
+                            rec.status = "in_progress".to_string();
+                            let _ = state_c.db.upsert_transfer(&rec);
+                            let _ = app_c.emit("transfer_state_changed", &rec);
                         }
                     }
                 }

@@ -125,6 +125,172 @@ pub struct AppSettings {
 
 pub struct Database {
     conn: Mutex<Connection>,
+    data_dir: PathBuf,
+}
+
+fn safe_user_db_filename(user_id: &str) -> String {
+    let clean: String = user_id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    format!("storage_user_{}.db", clean)
+}
+
+fn read_setting_from_conn(conn: &Connection, key: &str) -> Result<Option<String>, String> {
+    conn.query_row(
+        "SELECT value FROM local_settings WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+fn write_setting_to_conn(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO local_settings (key, value) VALUES (?1, ?2)",
+        params![key, value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn open_and_migrate_db(db_path: &std::path::Path) -> Result<Connection, String> {
+    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    let _ = conn.execute_batch(
+        "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;",
+    );
+
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS local_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS contacts (
+            device_id TEXT PRIMARY KEY,
+            alias_name TEXT NOT NULL,
+            user_email TEXT,
+            user_name TEXT,
+            os_type TEXT,
+            is_own_device INTEGER DEFAULT 0,
+            ed25519_pubkey TEXT,
+            network_type TEXT NOT NULL,
+            last_known_ip TEXT,
+            last_known_port INTEGER,
+            trust_level TEXT DEFAULT 'ask',
+            is_online INTEGER DEFAULT 0,
+            last_seen_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS transfer_history (
+            id TEXT PRIMARY KEY,
+            peer_device_id TEXT NOT NULL,
+            peer_alias TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            network_route TEXT NOT NULL,
+            total_files INTEGER NOT NULL,
+            total_bytes INTEGER NOT NULL,
+            transferred_bytes INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL,
+            target_path TEXT,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id TEXT PRIMARY KEY,
+            peer_device_id TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            content TEXT NOT NULL,
+            msg_type TEXT NOT NULL DEFAULT 'text',
+            transfer_session_id TEXT,
+            files_json TEXT,
+            is_read INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_chat_peer_time ON chat_messages(peer_device_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS folder_sync_tasks (
+            id TEXT PRIMARY KEY,
+            local_path TEXT NOT NULL,
+            target_device_id TEXT NOT NULL,
+            target_alias TEXT NOT NULL,
+            is_auto_sync INTEGER DEFAULT 0,
+            last_sync_at INTEGER,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS shared_folders (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            local_path TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS chat_groups (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            avatar TEXT,
+            owner_id TEXT NOT NULL,
+            send_permission TEXT NOT NULL DEFAULT 'all',
+            allowed_senders_json TEXT,
+            members_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS clipboard_history (
+            id TEXT PRIMARY KEY,
+            content_type TEXT NOT NULL,
+            content TEXT NOT NULL,
+            preview TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            pinned INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS notes (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL DEFAULT '',
+            content TEXT NOT NULL DEFAULT '',
+            note_type TEXT NOT NULL DEFAULT 'note',
+            checklist_json TEXT NOT NULL DEFAULT '[]',
+            images_json TEXT NOT NULL DEFAULT '[]',
+            color TEXT NOT NULL DEFAULT 'default',
+            labels_json TEXT NOT NULL DEFAULT '[]',
+            pinned INTEGER DEFAULT 0,
+            archived INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        ",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let _ = conn.execute("ALTER TABLE contacts ADD COLUMN user_email TEXT", []);
+    let _ = conn.execute("ALTER TABLE contacts ADD COLUMN user_name TEXT", []);
+    let _ = conn.execute("ALTER TABLE contacts ADD COLUMN os_type TEXT", []);
+    let _ = conn.execute(
+        "ALTER TABLE contacts ADD COLUMN is_own_device INTEGER DEFAULT 0",
+        [],
+    );
+    let _ = conn.execute("ALTER TABLE contacts ADD COLUMN custom_name TEXT", []);
+    let _ = conn.execute("ALTER TABLE contacts ADD COLUMN avatar_hash TEXT", []);
+    let _ = conn.execute("ALTER TABLE contacts ADD COLUMN rank_exp INTEGER DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE contacts ADD COLUMN mac_address TEXT", []);
+    let _ = conn.execute("ALTER TABLE transfer_history ADD COLUMN source_paths TEXT", []);
+    let _ = conn.execute("ALTER TABLE chat_messages ADD COLUMN sender_device_id TEXT", []);
+    let _ = conn.execute("ALTER TABLE chat_messages ADD COLUMN sender_alias TEXT", []);
+    let _ = conn.execute(
+        "UPDATE transfer_history SET status = 'paused' WHERE status = 'in_progress'",
+        [],
+    );
+    Ok(conn)
 }
 
 pub fn now_unix_secs() -> u64 {
@@ -203,157 +369,39 @@ fn resolve_default_download_dir() -> String {
 impl Database {
     pub fn init() -> Result<(Self, DeviceIdentity, AppSettings), String> {
         let data_dir = resolve_app_data_dir()?;
-        let db_path = data_dir.join("storage.db");
-        let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
-        let _ = conn.execute_batch(
-            "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;",
-        );
+        let shared_path = data_dir.join("storage.db");
+        let shared_conn = open_and_migrate_db(&shared_path)?;
 
-        conn.execute_batch(
-            "
-            CREATE TABLE IF NOT EXISTS local_settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS contacts (
-                device_id TEXT PRIMARY KEY,
-                alias_name TEXT NOT NULL,
-                user_email TEXT,
-                user_name TEXT,
-                os_type TEXT,
-                is_own_device INTEGER DEFAULT 0,
-                ed25519_pubkey TEXT,
-                network_type TEXT NOT NULL,
-                last_known_ip TEXT,
-                last_known_port INTEGER,
-                trust_level TEXT DEFAULT 'ask',
-                is_online INTEGER DEFAULT 0,
-                last_seen_at INTEGER NOT NULL,
-                created_at INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS transfer_history (
-                id TEXT PRIMARY KEY,
-                peer_device_id TEXT NOT NULL,
-                peer_alias TEXT NOT NULL,
-                direction TEXT NOT NULL,
-                network_route TEXT NOT NULL,
-                total_files INTEGER NOT NULL,
-                total_bytes INTEGER NOT NULL,
-                transferred_bytes INTEGER NOT NULL DEFAULT 0,
-                status TEXT NOT NULL,
-                target_path TEXT,
-                created_at INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id TEXT PRIMARY KEY,
-                peer_device_id TEXT NOT NULL,
-                direction TEXT NOT NULL,
-                content TEXT NOT NULL,
-                msg_type TEXT NOT NULL DEFAULT 'text',
-                transfer_session_id TEXT,
-                files_json TEXT,
-                is_read INTEGER DEFAULT 0,
-                created_at INTEGER NOT NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_chat_peer_time ON chat_messages(peer_device_id, created_at);
-
-            CREATE TABLE IF NOT EXISTS folder_sync_tasks (
-                id TEXT PRIMARY KEY,
-                local_path TEXT NOT NULL,
-                target_device_id TEXT NOT NULL,
-                target_alias TEXT NOT NULL,
-                is_auto_sync INTEGER DEFAULT 0,
-                last_sync_at INTEGER,
-                created_at INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS shared_folders (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                local_path TEXT NOT NULL,
-                is_active INTEGER DEFAULT 1,
-                created_at INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS chat_groups (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                description TEXT,
-                avatar TEXT,
-                owner_id TEXT NOT NULL,
-                send_permission TEXT NOT NULL DEFAULT 'all',
-                allowed_senders_json TEXT,
-                members_json TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS clipboard_history (
-                id TEXT PRIMARY KEY,
-                content_type TEXT NOT NULL,
-                content TEXT NOT NULL,
-                preview TEXT NOT NULL,
-                content_hash TEXT NOT NULL,
-                pinned INTEGER DEFAULT 0,
-                created_at INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS notes (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL DEFAULT '',
-                content TEXT NOT NULL DEFAULT '',
-                note_type TEXT NOT NULL DEFAULT 'note',
-                checklist_json TEXT NOT NULL DEFAULT '[]',
-                images_json TEXT NOT NULL DEFAULT '[]',
-                color TEXT NOT NULL DEFAULT 'default',
-                labels_json TEXT NOT NULL DEFAULT '[]',
-                pinned INTEGER DEFAULT 0,
-                archived INTEGER DEFAULT 0,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            );
-            ",
-        )
-        .map_err(|e| e.to_string())?;
-
-        // Migrate existing contacts & transfer_history tables if needed
-        let _ = conn.execute("ALTER TABLE contacts ADD COLUMN user_email TEXT", []);
-        let _ = conn.execute("ALTER TABLE contacts ADD COLUMN user_name TEXT", []);
-        let _ = conn.execute("ALTER TABLE contacts ADD COLUMN os_type TEXT", []);
-        let _ = conn.execute(
-            "ALTER TABLE contacts ADD COLUMN is_own_device INTEGER DEFAULT 0",
-            [],
-        );
-        let _ = conn.execute("ALTER TABLE contacts ADD COLUMN custom_name TEXT", []);
-        let _ = conn.execute("ALTER TABLE contacts ADD COLUMN avatar_hash TEXT", []);
-        let _ = conn.execute("ALTER TABLE contacts ADD COLUMN rank_exp INTEGER DEFAULT 0", []);
-        let _ = conn.execute("ALTER TABLE contacts ADD COLUMN mac_address TEXT", []);
-        let _ = conn.execute("ALTER TABLE transfer_history ADD COLUMN source_paths TEXT", []);
-        let _ = conn.execute("ALTER TABLE chat_messages ADD COLUMN sender_device_id TEXT", []);
-        let _ = conn.execute("ALTER TABLE chat_messages ADD COLUMN sender_alias TEXT", []);
-        // Any transfer left in 'in_progress' from a previous PC shutdown/crash becomes 'paused' (resumable)
-        let _ = conn.execute(
-            "UPDATE transfer_history SET status = 'paused' WHERE status = 'in_progress'",
-            [],
-        );
-
-        let db = Self {
-            conn: Mutex::new(conn),
-        };
-
-        let identity = match db.get_setting("ed25519_secret_hex")? {
+        let identity = match read_setting_from_conn(&shared_conn, "ed25519_secret_hex")? {
             Some(sec) => DeviceIdentity::from_secret_hex(&sec)?,
             None => {
                 let id = DeviceIdentity::generate();
-                db.set_setting("ed25519_secret_hex", &id.secret_hex())?;
-                db.set_setting("ed25519_public_hex", &id.public_hex())?;
-                db.set_setting("device_id", &id.device_id)?;
+                write_setting_to_conn(&shared_conn, "ed25519_secret_hex", &id.secret_hex())?;
+                write_setting_to_conn(&shared_conn, "ed25519_public_hex", &id.public_hex())?;
+                write_setting_to_conn(&shared_conn, "device_id", &id.device_id)?;
                 id
             }
+        };
+
+        let active_user_id = read_setting_from_conn(&shared_conn, "user_id")?.filter(|s| !s.is_empty());
+        let active_conn = if let Some(ref uid) = active_user_id {
+            let user_db_path = data_dir.join(safe_user_db_filename(uid));
+            if !user_db_path.exists()
+                && read_setting_from_conn(&shared_conn, "legacy_migrated_user")?.is_none()
+            {
+                let _ = shared_conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+                let _ = std::fs::copy(&shared_path, &user_db_path);
+                let _ = write_setting_to_conn(&shared_conn, "legacy_migrated_user", uid);
+            }
+            drop(shared_conn);
+            open_and_migrate_db(&user_db_path)?
+        } else {
+            shared_conn
+        };
+
+        let db = Self {
+            conn: Mutex::new(active_conn),
+            data_dir,
         };
 
         let short_id: String = identity
@@ -490,6 +538,35 @@ impl Database {
         };
 
         Ok((db, identity, settings))
+    }
+
+    pub fn switch_user_db(&self, user_id: Option<&str>) -> Result<(), String> {
+        let shared_path = self.data_dir.join("storage.db");
+        {
+            let shared_conn = open_and_migrate_db(&shared_path)?;
+            match user_id {
+                Some(uid) if !uid.trim().is_empty() => {
+                    let _ = write_setting_to_conn(&shared_conn, "user_id", uid.trim());
+                }
+                _ => {
+                    let _ = write_setting_to_conn(&shared_conn, "user_id", "");
+                    let _ = write_setting_to_conn(&shared_conn, "user_email", "");
+                    let _ = write_setting_to_conn(&shared_conn, "user_name", "");
+                    let _ = write_setting_to_conn(&shared_conn, "auth_token", "");
+                }
+            }
+        }
+
+        let target_path = match user_id {
+            Some(uid) if !uid.trim().is_empty() => {
+                self.data_dir.join(safe_user_db_filename(uid.trim()))
+            }
+            _ => shared_path,
+        };
+        let new_conn = open_and_migrate_db(&target_path)?;
+        let mut guard = self.conn.lock().map_err(|e| e.to_string())?;
+        *guard = new_conn;
+        Ok(())
     }
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>, String> {
