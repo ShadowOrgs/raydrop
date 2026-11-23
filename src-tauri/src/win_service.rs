@@ -166,6 +166,9 @@ pub fn is_winlogon_or_system_agent() -> bool {
                 let name = String::from_utf16_lossy(&buf[..len]);
                 return name.eq_ignore_ascii_case("Winlogon");
             }
+        } else {
+            // OpenInputDesktop fails with ACCESS_DENIED when Windows is on the secure Winlogon / UAC desktop
+            return true;
         }
     }
     false

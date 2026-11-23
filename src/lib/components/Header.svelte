@@ -43,6 +43,8 @@
     Users,
     Zap,
     Plus,
+    LayoutGrid,
+    ArrowLeft,
     MessageSquare,
     Camera,
     Video,
@@ -122,7 +124,18 @@
   class="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-xl px-3 sm:px-5 pt-8 pb-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 z-20 shrink-0"
 >
   <!-- Brand & Identity (Left) -->
-  <div class="flex items-center gap-2 sm:gap-3 shrink-0">
+  <div class="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0">
+    {#if $activeMainTab !== "home"}
+      <button
+        type="button"
+        on:click={() => activeMainTab.set("home")}
+        class="md:hidden inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-cyan-300 border border-slate-700/80 text-xs font-semibold shrink-0 cursor-pointer"
+        title="Back to All Menus"
+      >
+        <ArrowLeft class="w-3.5 h-3.5" />
+        <LayoutGrid class="w-3.5 h-3.5" />
+      </button>
+    {/if}
     <img
       src="/icon.png"
       alt="Raydrop Icon"

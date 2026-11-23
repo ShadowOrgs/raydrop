@@ -40,6 +40,12 @@
     Users,
     Video,
     Monitor,
+    Laptop,
+    Activity,
+    ClipboardList,
+    StickyNote,
+    Wand2,
+    LayoutGrid,
   } from "lucide-svelte";
   import {
     appSettings,
@@ -116,6 +122,9 @@
   });
 
   onMount(async () => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      activeMainTab.set("home");
+    }
     const readyFailSafe = setTimeout(() => {
       isAppReady = true;
     }, 8000);
@@ -572,8 +581,209 @@
 
   <!-- Main View: FULL width & height for Transfers & Streams, or active tab -->
   <main
-    class="flex-1 w-full p-2 sm:p-4 pb-16 md:pb-4 overflow-hidden relative flex flex-col min-h-0"
+    class="flex-1 w-full max-w-full p-2 sm:p-4 overflow-x-hidden overflow-y-hidden relative flex flex-col min-h-0"
   >
+    <!-- Mobile Windows-Phone / Metro Tile Home Menu (md:hidden) -->
+    {#if $activeMainTab === "home"}
+      <div class="md:hidden h-full w-full overflow-y-auto overflow-x-hidden pb-6 space-y-3">
+        <div class="flex items-center justify-between px-1 pt-1">
+          <div class="flex items-center gap-2">
+            <LayoutGrid class="w-4 h-4 text-cyan-400" />
+            <h2 class="text-sm font-extrabold tracking-tight text-white">Raydrop Hub</h2>
+          </div>
+          <span class="text-[10px] font-mono text-slate-400">Tap a tile to open</span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2.5">
+          <!-- Wide Featured Tile: Transfers -->
+          <button
+            type="button"
+            on:click={() => activeMainTab.set("transfers")}
+            class="col-span-2 relative p-4 rounded-2xl bg-gradient-to-br from-cyan-600/30 via-sky-600/20 to-slate-900 border border-cyan-500/40 text-left flex items-center justify-between shadow-lg active:scale-[0.98] transition cursor-pointer"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-11 h-11 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shrink-0">
+                <Zap class="w-6 h-6" />
+              </div>
+              <div class="min-w-0">
+                <div class="text-sm font-bold text-white">File Transfers</div>
+                <div class="text-[11px] text-cyan-200/80 truncate">Send, receive, HTTP &amp; Torrent</div>
+              </div>
+            </div>
+            {#if $activeTransfers.length > 0}
+              <span class="px-2 py-0.5 rounded-full bg-cyan-400 text-slate-950 text-xs font-extrabold shrink-0">
+                {$activeTransfers.length}
+              </span>
+            {/if}
+          </button>
+
+          <!-- Encrypted Chat -->
+          <button
+            type="button"
+            on:click={() => activeMainTab.set("chat")}
+            class="relative p-3.5 rounded-2xl bg-gradient-to-br from-indigo-600/30 to-slate-900 border border-indigo-500/40 text-left flex flex-col justify-between min-h-[100px] shadow-md active:scale-[0.98] transition cursor-pointer"
+          >
+            <div class="flex items-start justify-between">
+              <div class="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-indigo-300">
+                <MessageSquare class="w-5 h-5" />
+              </div>
+              {#if $totalUnreadCount > 0}
+                <span class="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold">
+                  {$totalUnreadCount}
+                </span>
+              {/if}
+            </div>
+            <div class="mt-2">
+              <div class="text-xs font-bold text-white">Encrypted Chat</div>
+              <div class="text-[10px] text-indigo-200/75 truncate">P2P &amp; Group chat</div>
+            </div>
+          </button>
+
+          <!-- Remote Desktop -->
+          <button
+            type="button"
+            on:click={() => activeMainTab.set("remote")}
+            class="relative p-3.5 rounded-2xl bg-gradient-to-br from-emerald-600/30 to-slate-900 border border-emerald-500/40 text-left flex flex-col justify-between min-h-[100px] shadow-md active:scale-[0.98] transition cursor-pointer"
+          >
+            <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300">
+              <Monitor class="w-5 h-5" />
+            </div>
+            <div class="mt-2">
+              <div class="text-xs font-bold text-white">Remote Desktop</div>
+              <div class="text-[10px] text-emerald-200/75 truncate">Control PC &amp; Extend</div>
+            </div>
+          </button>
+
+          <!-- Online Meeting -->
+          <button
+            type="button"
+            on:click={() => activeMainTab.set("meeting")}
+            class="relative p-3.5 rounded-2xl bg-gradient-to-br from-violet-600/30 to-slate-900 border border-violet-500/40 text-left flex flex-col justify-between min-h-[100px] shadow-md active:scale-[0.98] transition cursor-pointer"
+          >
+            <div class="w-9 h-9 rounded-xl bg-violet-500/20 border border-violet-400/40 flex items-center justify-center text-violet-300">
+              <Video class="w-5 h-5" />
+            </div>
+            <div class="mt-2">
+              <div class="text-xs font-bold text-white">Online Meeting</div>
+              <div class="text-[10px] text-violet-200/75 truncate">Voice &amp; video rooms</div>
+            </div>
+          </button>
+
+          <!-- LAN Radar -->
+          <button
+            type="button"
+            on:click={() => activeMainTab.set("lan")}
+            class="relative p-3.5 rounded-2xl bg-gradient-to-br from-sky-600/30 to-slate-900 border border-sky-500/40 text-left flex flex-col justify-between min-h-[100px] shadow-md active:scale-[0.98] transition cursor-pointer"
+          >
+            <div class="flex items-start justify-between">
+              <div class="w-9 h-9 rounded-xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-300">
+                <Wifi class="w-5 h-5" />
+              </div>
+              {#if $lanContacts.length > 0}
+                <span class="px-1.5 py-0.5 rounded-full bg-emerald-400 text-slate-950 text-[10px] font-bold">
+                  {$lanContacts.length}
+                </span>
+              {/if}
+            </div>
+            <div class="mt-2">
+              <div class="text-xs font-bold text-white">LAN Radar</div>
+              <div class="text-[10px] text-sky-200/75 truncate">Nearby Wi-Fi peers</div>
+            </div>
+          </button>
+
+          <!-- My Devices -->
+          <button
+            type="button"
+            on:click={() => activeMainTab.set("devices")}
+            class="relative p-3.5 rounded-2xl bg-gradient-to-br from-blue-600/30 to-slate-900 border border-blue-500/40 text-left flex flex-col justify-between min-h-[100px] shadow-md active:scale-[0.98] transition cursor-pointer"
+          >
+            <div class="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-blue-300">
+              <Laptop class="w-5 h-5" />
+            </div>
+            <div class="mt-2">
+              <div class="text-xs font-bold text-white">My Devices</div>
+              <div class="text-[10px] text-blue-200/75 truncate">Linked &amp; Wake-on-LAN</div>
+            </div>
+          </button>
+
+          <!-- Contacts / Peers -->
+          <button
+            type="button"
+            on:click={() => activeMainTab.set("contacts")}
+            class="relative p-3.5 rounded-2xl bg-gradient-to-br from-teal-600/30 to-slate-900 border border-teal-500/40 text-left flex flex-col justify-between min-h-[100px] shadow-md active:scale-[0.98] transition cursor-pointer"
+          >
+            <div class="w-9 h-9 rounded-xl bg-teal-500/20 border border-teal-400/40 flex items-center justify-center text-teal-300">
+              <Users class="w-5 h-5" />
+            </div>
+            <div class="mt-2">
+              <div class="text-xs font-bold text-white">Contacts</div>
+              <div class="text-[10px] text-teal-200/75 truncate">Trusted peers list</div>
+            </div>
+          </button>
+
+          <!-- File Converter -->
+          <button
+            type="button"
+            on:click={() => activeMainTab.set("converter")}
+            class="relative p-3.5 rounded-2xl bg-gradient-to-br from-amber-600/30 to-slate-900 border border-amber-500/40 text-left flex flex-col justify-between min-h-[100px] shadow-md active:scale-[0.98] transition cursor-pointer"
+          >
+            <div class="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
+              <Wand2 class="w-5 h-5" />
+            </div>
+            <div class="mt-2">
+              <div class="text-xs font-bold text-white">File Converter</div>
+              <div class="text-[10px] text-amber-200/75 truncate">Image, Icon ZIP &amp; PDF</div>
+            </div>
+          </button>
+
+          <!-- Copy History -->
+          <button
+            type="button"
+            on:click={() => activeMainTab.set("clipboard")}
+            class="relative p-3.5 rounded-2xl bg-gradient-to-br from-slate-700/50 to-slate-900 border border-slate-600/50 text-left flex flex-col justify-between min-h-[100px] shadow-md active:scale-[0.98] transition cursor-pointer"
+          >
+            <div class="w-9 h-9 rounded-xl bg-slate-700/60 border border-slate-500/40 flex items-center justify-center text-cyan-300">
+              <ClipboardList class="w-5 h-5" />
+            </div>
+            <div class="mt-2">
+              <div class="text-xs font-bold text-white">Copy History</div>
+              <div class="text-[10px] text-slate-300/75 truncate">Clipboard snippets</div>
+            </div>
+          </button>
+
+          <!-- Notes & Checklists -->
+          <button
+            type="button"
+            on:click={() => activeMainTab.set("notes")}
+            class="relative p-3.5 rounded-2xl bg-gradient-to-br from-yellow-600/25 to-slate-900 border border-yellow-500/40 text-left flex flex-col justify-between min-h-[100px] shadow-md active:scale-[0.98] transition cursor-pointer"
+          >
+            <div class="w-9 h-9 rounded-xl bg-yellow-500/20 border border-yellow-400/40 flex items-center justify-center text-yellow-300">
+              <StickyNote class="w-5 h-5" />
+            </div>
+            <div class="mt-2">
+              <div class="text-xs font-bold text-white">Notes &amp; Lists</div>
+              <div class="text-[10px] text-yellow-200/75 truncate">Quick notes &amp; tasks</div>
+            </div>
+          </button>
+
+          <!-- System Analytics -->
+          <button
+            type="button"
+            on:click={() => activeMainTab.set("dashboard")}
+            class="relative p-3.5 rounded-2xl bg-gradient-to-br from-rose-600/25 to-slate-900 border border-rose-500/40 text-left flex flex-col justify-between min-h-[100px] shadow-md active:scale-[0.98] transition cursor-pointer"
+          >
+            <div class="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-400/40 flex items-center justify-center text-rose-300">
+              <Activity class="w-5 h-5" />
+            </div>
+            <div class="mt-2">
+              <div class="text-xs font-bold text-white">Analytics</div>
+              <div class="text-[10px] text-rose-200/75 truncate">Stats &amp; system monitor</div>
+            </div>
+          </button>
+        </div>
+      </div>
+    {/if}
+
     <div
       class="h-full w-full {$activeMainTab === 'transfers'
         ? 'flex flex-col'
@@ -631,14 +841,9 @@
       <ConverterView />
     </div>
     <div
-      class="h-full w-full {$activeMainTab !== 'transfers' &&
-      $activeMainTab !== 'chat' &&
-      $activeMainTab !== 'meeting' &&
-      $activeMainTab !== 'remote' &&
-      $activeMainTab !== 'dashboard' &&
-      $activeMainTab !== 'clipboard' &&
-      $activeMainTab !== 'notes' &&
-      $activeMainTab !== 'converter'
+      class="h-full w-full {$activeMainTab === 'lan' ||
+      $activeMainTab === 'devices' ||
+      $activeMainTab === 'contacts'
         ? 'flex flex-col'
         : 'hidden'}"
     >
@@ -783,115 +988,4 @@
     </div>
   {/if}
 
-  <!-- Mobile Bottom Navigation Bar (md:hidden) -->
-  <nav
-    class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 border-t border-slate-800/90 backdrop-blur-xl px-2 py-1.5 flex items-center justify-around shadow-2xl"
-  >
-    <!-- 1. Transfers -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("transfers")}
-      class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all {$activeMainTab ===
-      'transfers'
-        ? 'text-cyan-400 font-bold'
-        : 'text-slate-400 hover:text-slate-200'}"
-    >
-      <div class="relative">
-        <Zap class="w-5 h-5" />
-        {#if $activeTransfers.length > 0}
-          <span
-            class="absolute -top-1 -right-2 w-3.5 h-3.5 rounded-full bg-cyan-400 text-slate-950 text-[9px] font-bold flex items-center justify-center animate-pulse"
-          >
-            {$activeTransfers.length}
-          </span>
-        {/if}
-      </div>
-      <span class="text-[10px]">Transfers</span>
-    </button>
-
-    <!-- 2. Chat -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("chat")}
-      class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all {$activeMainTab ===
-      'chat'
-        ? 'text-cyan-400 font-bold'
-        : 'text-slate-400 hover:text-slate-200'}"
-    >
-      <div class="relative">
-        <MessageSquare class="w-5 h-5" />
-        {#if $totalUnreadCount > 0}
-          <span
-            class="absolute -top-1 -right-2 w-3.5 h-3.5 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center animate-pulse"
-          >
-            {$totalUnreadCount}
-          </span>
-        {/if}
-      </div>
-      <span class="text-[10px]">Chat</span>
-    </button>
-
-    <!-- 3. Online Meeting -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("meeting")}
-      class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all {$activeMainTab ===
-      'meeting'
-        ? 'text-indigo-400 font-bold'
-        : 'text-slate-400 hover:text-slate-200'}"
-    >
-      <div class="relative">
-        <Video class="w-5 h-5" />
-      </div>
-      <span class="text-[10px]">Meeting</span>
-    </button>
-
-    <!-- 4. Remote Desktop -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("remote")}
-      class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all {$activeMainTab ===
-      'remote'
-        ? 'text-cyan-400 font-bold'
-        : 'text-slate-400 hover:text-slate-200'}"
-    >
-      <div class="relative">
-        <Monitor class="w-5 h-5" />
-      </div>
-      <span class="text-[10px]">Remote</span>
-    </button>
-
-    <!-- 5. LAN Radar -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("lan")}
-      class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all {$activeMainTab ===
-      'lan'
-        ? 'text-cyan-400 font-bold'
-        : 'text-slate-400 hover:text-slate-200'}"
-    >
-      <div class="relative">
-        <Wifi class="w-5 h-5" />
-        {#if $lanContacts.length > 0}
-          <span
-            class="absolute -top-1 -right-2 w-2 h-2 rounded-full bg-emerald-400 animate-pulse"
-          ></span>
-        {/if}
-      </div>
-      <span class="text-[10px]">Radar</span>
-    </button>
-
-    <!-- 4. Contacts -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("contacts")}
-      class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all {$activeMainTab ===
-      'contacts'
-        ? 'text-cyan-400 font-bold'
-        : 'text-slate-400 hover:text-slate-200'}"
-    >
-      <Users class="w-5 h-5" />
-      <span class="text-[10px]">Peers</span>
-    </button>
-  </nav>
 </div>

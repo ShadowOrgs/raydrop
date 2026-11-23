@@ -1608,6 +1608,14 @@
                     <span class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
                       Cancelled
                     </span>
+                  {:else if h.status === 'rejected'}
+                    <span class="flex items-center gap-1 text-[11px] text-amber-300 font-semibold bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
+                      Rejected
+                    </span>
+                  {:else if h.status === 'paused'}
+                    <span class="flex items-center gap-1 text-[11px] text-sky-300 font-semibold bg-sky-500/10 px-2 py-0.5 rounded-full border border-sky-500/30">
+                      Paused
+                    </span>
                   {/if}
                   <button
                     type="button"
