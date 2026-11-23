@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount, tick, onDestroy } from 'svelte';
-  import { openWithLastDir } from '../utils/filePicker';
-  import { convertFileSrc } from '@tauri-apps/api/core';
+  import { onMount, tick, onDestroy } from "svelte";
+  import { openWithLastDir } from "../utils/filePicker";
+  import { convertFileSrc } from "@tauri-apps/api/core";
   import {
     Send,
     Paperclip,
@@ -56,13 +56,25 @@
     Square,
     ChevronUp,
     ChevronDown,
-  } from 'lucide-svelte';
-  import VoiceNotePlayer from './VoiceNotePlayer.svelte';
-  import RemoteExplorerModal from './RemoteExplorerModal.svelte';
-  import { createMeetingRoom, inviteContactToMeeting } from '../stores/meeting';
-  import { peerAvatars, peerAvatarHashes, myAvatar, loadPeerAvatar } from '../stores/avatars';
-  import { contacts, lanContacts } from '../stores/contacts';
-  import { cloudContacts, cloudMyDevices, activeChatPeerId, appSettings, incomingRequestQueue, activeMainTab } from '../stores/state';
+  } from "lucide-svelte";
+  import VoiceNotePlayer from "./VoiceNotePlayer.svelte";
+  import RemoteExplorerModal from "./RemoteExplorerModal.svelte";
+  import { createMeetingRoom, inviteContactToMeeting } from "../stores/meeting";
+  import {
+    peerAvatars,
+    peerAvatarHashes,
+    myAvatar,
+    loadPeerAvatar,
+  } from "../stores/avatars";
+  import { contacts, lanContacts } from "../stores/contacts";
+  import {
+    cloudContacts,
+    cloudMyDevices,
+    activeChatPeerId,
+    appSettings,
+    incomingRequestQueue,
+    activeMainTab,
+  } from "../stores/state";
   import {
     chatStore,
     chatGroups,
@@ -75,9 +87,9 @@
     markChatRead,
     clearChatHistory,
     handleOutgoingChatMessage,
-    formatRelativeTime
-  } from '../stores/chat';
-  import { transfers } from '../stores/transfers';
+    formatRelativeTime,
+  } from "../stores/chat";
+  import { transfers } from "../stores/transfers";
   import {
     raydropApi,
     formatBytes,
@@ -85,20 +97,20 @@
     type ChatFileItem,
     type TransferRecord,
     type ChatGroup,
-    type GroupMember
-  } from '../utils/tauri-ipc';
-  import { renderMarkdown } from '../utils/markdown';
-  import { formatLastOnline } from '../utils/time';
-  import { getRankInfo } from '../utils/rank';
+    type GroupMember,
+  } from "../utils/tauri-ipc";
+  import { renderMarkdown } from "../utils/markdown";
+  import { formatLastOnline } from "../utils/time";
+  import { getRankInfo } from "../utils/rank";
 
-  let messageInput = '';
-  let searchQuery = '';
+  let messageInput = "";
+  let searchQuery = "";
   let chatScrollContainer: HTMLDivElement;
   let textareaEl: HTMLTextAreaElement;
   let isSending = false;
-  let copiedMessageId = '';
-  let downloadingMessageId = '';
-  let downloadSuccessId = '';
+  let copiedMessageId = "";
+  let downloadingMessageId = "";
+  let downloadSuccessId = "";
   let attachingFiles: string[] = [];
   let showEmojiPicker = false;
   let showRemoteExplorer = false;
@@ -106,15 +118,15 @@
   let localThumbnails: Record<string, string> = {};
   let previewModalImage: string | null = null;
   let isEditingPeerNickname = false;
-  let editingPeerNicknameValue = '';
+  let editingPeerNicknameValue = "";
 
   let showChatSearch = false;
-  let chatSearchText = '';
+  let chatSearchText = "";
   let showMediaDrawer = false;
-  let mediaDrawerFilter: 'all' | 'media' | 'files' = 'all';
+  let mediaDrawerFilter: "all" | "media" | "files" = "all";
 
   function isImageFile(fileName: string): boolean {
-    return /\.(jpe?g|png|webp|gif|bmp|svg|ico|avif)$/i.test(fileName || '');
+    return /\.(jpe?g|png|webp|gif|bmp|svg|ico|avif)$/i.test(fileName || "");
   }
 
   // Clipboard Image Paste
@@ -126,7 +138,7 @@
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      if (item.type.startsWith('image/')) {
+      if (item.type.startsWith("image/")) {
         const file = item.getAsFile();
         if (file) {
           e.preventDefault();
@@ -144,23 +156,24 @@
   function handleGlobalPaste(e: ClipboardEvent) {
     if (!$activeChatPeerId) return;
     const target = e.target as HTMLElement;
-    if (target && (target.tagName === 'INPUT' || target.isContentEditable)) return;
+    if (target && (target.tagName === "INPUT" || target.isContentEditable))
+      return;
     handlePaste(e);
   }
 
   // Group Chat States & Filtering
-  let chatFilterTab: 'all' | 'direct' | 'groups' = 'all';
+  let chatFilterTab: "all" | "direct" | "groups" = "all";
   let showCreateGroupModal = false;
-  let newGroupName = '';
-  let newGroupDesc = '';
-  let newGroupSendPermission: 'all' | 'admins_only' | 'custom' = 'all';
+  let newGroupName = "";
+  let newGroupDesc = "";
+  let newGroupSendPermission: "all" | "admins_only" | "custom" = "all";
   let selectedGroupMemberIds: Set<string> = new Set();
-  let groupMemberSearchQuery = '';
+  let groupMemberSearchQuery = "";
 
   let showGroupInfoModal = false;
   let showInviteMemberDropdown = false;
   let selectedNewMemberIds: Set<string> = new Set();
-  let editingSendPermission: 'all' | 'admins_only' | 'custom' = 'all';
+  let editingSendPermission: "all" | "admins_only" | "custom" = "all";
   let editingAllowedSenders: Set<string> = new Set();
   let isSavingGroupSettings = false;
 
@@ -174,7 +187,7 @@
   function formatVoiceDuration(sec: number): string {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
+    return `${m}:${s < 10 ? "0" : ""}${s}`;
   }
 
   async function startVoiceRecording() {
@@ -192,14 +205,14 @@
         recordingDuration += 1;
       }, 1000);
     } catch (err: any) {
-      console.error('Microphone error:', err);
-      alert('Could not access microphone: ' + (err?.message || String(err)));
+      console.error("Microphone error:", err);
+      alert("Could not access microphone: " + (err?.message || String(err)));
     }
   }
 
   function cancelVoiceRecording() {
     if (recordingTimer) clearInterval(recordingTimer);
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
       mediaRecorder.stop();
     }
     if (audioStream) {
@@ -217,7 +230,7 @@
     if (recordingTimer) clearInterval(recordingTimer);
 
     mediaRecorder.onstop = async () => {
-      const blob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+      const blob = new Blob(audioChunks, { type: "audio/webm;codecs=opus" });
       if (blob.size > 0) {
         const reader = new FileReader();
         reader.onloadend = async () => {
@@ -244,7 +257,7 @@
   async function handleSendVoiceNote(audioDataUrl: string) {
     if (!$activeChatPeerId) return;
     if (isGroupChat && !canSendInGroup) {
-      alert('Anda tidak memiliki izin mengirim pesan di grup ini.');
+      alert("Anda tidak memiliki izin mengirim pesan di grup ini.");
       return;
     }
     try {
@@ -252,34 +265,37 @@
         const sent = await raydropApi.sendGroupChatMessage(
           $activeChatPeerId,
           audioDataUrl,
-          'audio'
+          "audio",
         );
         handleOutgoingChatMessage(sent);
       } else {
         await raydropApi.sendChatMessage(
           $activeChatPeerId,
           audioDataUrl,
-          'audio',
+          "audio",
           null,
-          null
+          null,
         );
       }
       await loadChatHistory($activeChatPeerId);
       await tick();
       scrollToBottom();
     } catch (err) {
-      console.error('Failed to send voice note:', err);
+      console.error("Failed to send voice note:", err);
     }
   }
 
   async function handleSaveCustomName() {
     if (!$activeChatPeerId) return;
     try {
-      await raydropApi.setContactCustomName($activeChatPeerId, editingPeerNicknameValue.trim());
+      await raydropApi.setContactCustomName(
+        $activeChatPeerId,
+        editingPeerNicknameValue.trim(),
+      );
       const updated = await raydropApi.getContacts();
       contacts.set(updated);
     } catch (err) {
-      console.warn('Failed to update contact custom name:', err);
+      console.warn("Failed to update contact custom name:", err);
     } finally {
       isEditingPeerNickname = false;
     }
@@ -305,27 +321,70 @@
   onDestroy(() => {
     clearInterval(tickerInterval);
     cancelVoiceRecording();
-    window.removeEventListener('paste', handleGlobalPaste);
+    window.removeEventListener("paste", handleGlobalPaste);
   });
 
   // Emojis for picker
   const emojiCategories = [
     {
-      name: 'Smileys',
-      emojis: ['😀', '😂', '🤣', '😊', '😍', '😎', '🤔', '🤫', '🥳', '🥺', '😭', '😇', '😴'],
+      name: "Smileys",
+      emojis: [
+        "😀",
+        "😂",
+        "🤣",
+        "😊",
+        "😍",
+        "😎",
+        "🤔",
+        "🤫",
+        "🥳",
+        "🥺",
+        "😭",
+        "😇",
+        "😴",
+      ],
     },
     {
-      name: 'Gestures',
-      emojis: ['👍', '👎', '👏', '🙌', '🤝', '🙏', '✌️', '🚀', '🔥', '💯', '⚡', '❤️', '💡'],
+      name: "Gestures",
+      emojis: [
+        "👍",
+        "👎",
+        "👏",
+        "🙌",
+        "🤝",
+        "🙏",
+        "✌️",
+        "🚀",
+        "🔥",
+        "💯",
+        "⚡",
+        "❤️",
+        "💡",
+      ],
     },
     {
-      name: 'Tech & Work',
-      emojis: ['💻', '📱', '🖥️', '📂', '📁', '📄', '🔒', '🛡️', '🌐', '📶', '⚙️', '☕', '✅', '❌'],
+      name: "Tech & Work",
+      emojis: [
+        "💻",
+        "📱",
+        "🖥️",
+        "📂",
+        "📁",
+        "📄",
+        "🔒",
+        "🛡️",
+        "🌐",
+        "📶",
+        "⚙️",
+        "☕",
+        "✅",
+        "❌",
+      ],
     },
   ];
 
   onMount(async () => {
-    window.addEventListener('paste', handleGlobalPaste);
+    window.addEventListener("paste", handleGlobalPaste);
     await fetchChatGroups();
     try {
       const loaded = await raydropApi.getContacts();
@@ -346,21 +405,25 @@
     const peerMap = new Map<string, any>();
 
     for (const c of $contacts) {
-      if (c.avatar_hash && (!$peerAvatars[c.device_id] || $peerAvatarHashes[c.device_id] !== c.avatar_hash)) {
+      if (
+        c.avatar_hash &&
+        (!$peerAvatars[c.device_id] ||
+          $peerAvatarHashes[c.device_id] !== c.avatar_hash)
+      ) {
         loadPeerAvatar(c.device_id, c.avatar_hash);
       }
       peerMap.set(c.device_id, {
         id: c.device_id,
-        name: c.alias_name || c.user_name || 'Raydrop Peer',
-        customName: c.custom_name || '',
-        avatarHash: c.avatar_hash || '',
-        email: c.user_email || '',
-        osType: c.os_type || 'windows',
+        name: c.alias_name || c.user_name || "Raydrop Peer",
+        customName: c.custom_name || "",
+        avatarHash: c.avatar_hash || "",
+        email: c.user_email || "",
+        osType: c.os_type || "windows",
         isOnline: c.is_online,
         lastSeenAt: c.last_seen_at || 0,
-        networkType: c.network_type || 'wan',
+        networkType: c.network_type || "wan",
         isOwnDevice: c.is_own_device,
-        trustLevel: c.trust_level || 'ask',
+        trustLevel: c.trust_level || "ask",
         rankExp: c.rank_exp || 0,
       });
     }
@@ -370,21 +433,24 @@
       if (!peerMap.has(dev.device_id)) {
         peerMap.set(dev.device_id, {
           id: dev.device_id,
-          name: dev.device_name || 'My Device',
-          customName: '',
-          avatarHash: '',
-          email: dev.user_email || '',
-          osType: dev.os_type || 'windows',
+          name: dev.device_name || "My Device",
+          customName: "",
+          avatarHash: "",
+          email: dev.user_email || "",
+          osType: dev.os_type || "windows",
           isOnline: dev.is_online,
           lastSeenAt: dev.last_seen_at || 0,
-          networkType: 'wan',
+          networkType: "wan",
           isOwnDevice: true,
-          trustLevel: 'trusted_auto_accept',
+          trustLevel: "trusted_auto_accept",
         });
       } else {
         const existing = peerMap.get(dev.device_id);
         existing.isOnline = existing.isOnline || dev.is_online;
-        existing.lastSeenAt = Math.max(existing.lastSeenAt || 0, dev.last_seen_at || 0);
+        existing.lastSeenAt = Math.max(
+          existing.lastSeenAt || 0,
+          dev.last_seen_at || 0,
+        );
       }
     }
 
@@ -393,21 +459,26 @@
         if (!peerMap.has(dev.device_id)) {
           peerMap.set(dev.device_id, {
             id: dev.device_id,
-            name: group.name ? `${group.name} (${dev.device_name})` : dev.device_name,
-            customName: '',
-            avatarHash: '',
-            email: group.email || '',
-            osType: dev.os_type || 'windows',
+            name: group.name
+              ? `${group.name} (${dev.device_name})`
+              : dev.device_name,
+            customName: "",
+            avatarHash: "",
+            email: group.email || "",
+            osType: dev.os_type || "windows",
             isOnline: dev.is_online,
             lastSeenAt: dev.last_seen_at || 0,
-            networkType: 'wan',
+            networkType: "wan",
             isOwnDevice: false,
-            trustLevel: group.trust_level || 'ask',
+            trustLevel: group.trust_level || "ask",
           });
         } else {
           const existing = peerMap.get(dev.device_id);
           existing.isOnline = existing.isOnline || dev.is_online;
-          existing.lastSeenAt = Math.max(existing.lastSeenAt || 0, dev.last_seen_at || 0);
+          existing.lastSeenAt = Math.max(
+            existing.lastSeenAt || 0,
+            dev.last_seen_at || 0,
+          );
         }
       }
     }
@@ -418,22 +489,28 @@
   $: filteredPeers = allPeers.filter((p) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
-    return p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q);
+    return (
+      p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q)
+    );
   });
 
-  $: isGroupChat = !!$activeChatPeerId?.startsWith('group_');
-  $: activeGroup = isGroupChat ? $chatGroups.find((g) => g.id === $activeChatPeerId) || null : null;
+  $: isGroupChat = !!$activeChatPeerId?.startsWith("group_");
+  $: activeGroup = isGroupChat
+    ? $chatGroups.find((g) => g.id === $activeChatPeerId) || null
+    : null;
   $: myDeviceId = $appSettings.device_id;
-  $: myGroupMember = activeGroup?.members.find((m) => m.device_id === myDeviceId);
+  $: myGroupMember = activeGroup?.members.find(
+    (m) => m.device_id === myDeviceId,
+  );
   $: isGroupOwner = activeGroup?.owner_id === myDeviceId;
-  $: isGroupAdmin = isGroupOwner || myGroupMember?.role === 'admin';
+  $: isGroupAdmin = isGroupOwner || myGroupMember?.role === "admin";
   $: canSendInGroup = (() => {
     if (!isGroupChat) return true;
     if (!activeGroup) return false;
     if (isGroupAdmin) return true;
-    if (activeGroup.send_permission === 'all') return true;
-    if (activeGroup.send_permission === 'admins_only') return false;
-    if (activeGroup.send_permission === 'custom') {
+    if (activeGroup.send_permission === "all") return true;
+    if (activeGroup.send_permission === "admins_only") return false;
+    if (activeGroup.send_permission === "custom") {
       return activeGroup.allowed_senders.includes(myDeviceId);
     }
     return true;
@@ -442,12 +519,15 @@
   $: filteredGroups = $chatGroups.filter((g) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
-    return g.name.toLowerCase().includes(q) || (g.description || '').toLowerCase().includes(q);
+    return (
+      g.name.toLowerCase().includes(q) ||
+      (g.description || "").toLowerCase().includes(q)
+    );
   });
 
   async function handleCreateGroup() {
     if (!newGroupName.trim()) {
-      alert('Nama grup tidak boleh kosong');
+      alert("Nama grup tidak boleh kosong");
       return;
     }
     try {
@@ -456,16 +536,20 @@
         newGroupName.trim(),
         newGroupDesc.trim() || null,
         null,
-        memberIds
+        memberIds,
       );
-      if (newGroupSendPermission !== 'all') {
-        await raydropApi.setGroupSendPermission(group.id, newGroupSendPermission, []);
+      if (newGroupSendPermission !== "all") {
+        await raydropApi.setGroupSendPermission(
+          group.id,
+          newGroupSendPermission,
+          [],
+        );
       }
       await fetchChatGroups();
       activeChatPeerId.set(group.id);
       showCreateGroupModal = false;
-      newGroupName = '';
-      newGroupDesc = '';
+      newGroupName = "";
+      newGroupDesc = "";
       selectedGroupMemberIds = new Set();
     } catch (err: any) {
       alert(`Gagal membuat grup: ${err?.message || err}`);
@@ -480,10 +564,10 @@
       await raydropApi.setGroupSendPermission(
         activeGroup.id,
         editingSendPermission,
-        allowed
+        allowed,
       );
       await fetchChatGroups();
-      alert('Pengaturan izin kirim berhasil disimpan!');
+      alert("Pengaturan izin kirim berhasil disimpan!");
     } catch (err: any) {
       alert(`Gagal menyimpan izin: ${err?.message || err}`);
     } finally {
@@ -493,8 +577,11 @@
 
   async function handleToggleAdminRole(member: GroupMember) {
     if (!activeGroup || !isGroupOwner) return;
-    const newRole = member.role === 'admin' ? 'member' : 'admin';
-    const actionText = newRole === 'admin' ? `menjadikan ${member.alias} sebagai Admin` : `menurunkan ${member.alias} dari Admin`;
+    const newRole = member.role === "admin" ? "member" : "admin";
+    const actionText =
+      newRole === "admin"
+        ? `menjadikan ${member.alias} sebagai Admin`
+        : `menurunkan ${member.alias} dari Admin`;
     if (!confirm(`Apakah Anda yakin ingin ${actionText}?`)) return;
     try {
       await raydropApi.setMemberRole(activeGroup.id, member.device_id, newRole);
@@ -516,7 +603,8 @@
   }
 
   async function handleInviteMembersToGroup() {
-    if (!activeGroup || !isGroupAdmin || selectedNewMemberIds.size === 0) return;
+    if (!activeGroup || !isGroupAdmin || selectedNewMemberIds.size === 0)
+      return;
     try {
       const ids = Array.from(selectedNewMemberIds);
       await raydropApi.inviteGroupMembers(activeGroup.id, ids);
@@ -530,7 +618,12 @@
 
   async function handleLeaveGroup() {
     if (!activeGroup) return;
-    if (!confirm(`Apakah Anda yakin ingin keluar dari grup "${activeGroup.name}"?`)) return;
+    if (
+      !confirm(
+        `Apakah Anda yakin ingin keluar dari grup "${activeGroup.name}"?`,
+      )
+    )
+      return;
     try {
       await raydropApi.leaveChatGroup(activeGroup.id);
       await fetchChatGroups();
@@ -551,52 +644,56 @@
   }
 
   // Always resolve a valid activePeer if activeChatPeerId is selected to prevent blank screens
-  $: activePeer = isGroupChat && activeGroup
-    ? {
-        id: activeGroup.id,
-        name: activeGroup.name,
-        customName: '',
-        avatarHash: '',
-        email: `${activeGroup.members.length} members`,
-        osType: 'windows',
-        isOnline: true,
-        lastSeenAt: 0,
-        networkType: 'group',
-        isOwnDevice: false,
-        trustLevel: 'trusted',
-      }
-    : (allPeers.find((p) => p.id === $activeChatPeerId) ||
-      ($activeChatPeerId
-        ? {
-            id: $activeChatPeerId,
-            name: `Peer (${$activeChatPeerId.slice(0, 10)}...)`,
-            email: '',
-            osType: 'windows',
-            isOnline: false,
-            lastSeenAt: 0,
-            networkType: 'wan',
-            isOwnDevice: false,
-            trustLevel: 'ask',
-          }
-        : filteredPeers[0] || null));
+  $: activePeer =
+    isGroupChat && activeGroup
+      ? {
+          id: activeGroup.id,
+          name: activeGroup.name,
+          customName: "",
+          avatarHash: "",
+          email: `${activeGroup.members.length} members`,
+          osType: "windows",
+          isOnline: true,
+          lastSeenAt: 0,
+          networkType: "group",
+          isOwnDevice: false,
+          trustLevel: "trusted",
+        }
+      : allPeers.find((p) => p.id === $activeChatPeerId) ||
+        ($activeChatPeerId
+          ? {
+              id: $activeChatPeerId,
+              name: `Peer (${$activeChatPeerId.slice(0, 10)}...)`,
+              email: "",
+              osType: "windows",
+              isOnline: false,
+              lastSeenAt: 0,
+              networkType: "wan",
+              isOwnDevice: false,
+              trustLevel: "ask",
+            }
+          : filteredPeers[0] || null);
 
-  $: activeMessages = ($activeChatPeerId ? $chatStore[$activeChatPeerId] : []) || [];
+  $: activeMessages =
+    ($activeChatPeerId ? $chatStore[$activeChatPeerId] : []) || [];
   $: hasMore = $activeChatPeerId ? !!$hasMoreMap[$activeChatPeerId] : false;
-  $: isPeerBlocked = activePeer?.trustLevel === 'blocked';
+  $: isPeerBlocked = activePeer?.trustLevel === "blocked";
 
   let activeMatchIndex = 0;
-  let lastSearchQueryKey = '';
+  let lastSearchQueryKey = "";
 
   $: displayMessages = activeMessages;
   $: searchQueryTrimmed = chatSearchText.trim().toLowerCase();
   $: searchMatchIds = searchQueryTrimmed
     ? activeMessages
-        .filter((m) => (m.content || '').toLowerCase().includes(searchQueryTrimmed))
+        .filter((m) =>
+          (m.content || "").toLowerCase().includes(searchQueryTrimmed),
+        )
         .map((m) => m.id)
     : [];
 
   $: {
-    const key = `${$activeChatPeerId || ''}::${searchQueryTrimmed}`;
+    const key = `${$activeChatPeerId || ""}::${searchQueryTrimmed}`;
     if (key !== lastSearchQueryKey) {
       lastSearchQueryKey = key;
       if (searchMatchIds.length > 0) {
@@ -611,7 +708,9 @@
   }
 
   $: activeMatchId =
-    searchMatchIds.length > 0 && activeMatchIndex >= 0 && activeMatchIndex < searchMatchIds.length
+    searchMatchIds.length > 0 &&
+    activeMatchIndex >= 0 &&
+    activeMatchIndex < searchMatchIds.length
       ? searchMatchIds[activeMatchIndex]
       : null;
 
@@ -620,19 +719,21 @@
     await tick();
     const el = document.getElementById(`chat-msg-${msgId}`);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }
 
   function jumpToPrevMatch() {
     if (searchMatchIds.length === 0) return;
-    activeMatchIndex = activeMatchIndex > 0 ? activeMatchIndex - 1 : searchMatchIds.length - 1;
+    activeMatchIndex =
+      activeMatchIndex > 0 ? activeMatchIndex - 1 : searchMatchIds.length - 1;
     scrollToMatch(searchMatchIds[activeMatchIndex]);
   }
 
   function jumpToNextMatch() {
     if (searchMatchIds.length === 0) return;
-    activeMatchIndex = activeMatchIndex < searchMatchIds.length - 1 ? activeMatchIndex + 1 : 0;
+    activeMatchIndex =
+      activeMatchIndex < searchMatchIds.length - 1 ? activeMatchIndex + 1 : 0;
     scrollToMatch(searchMatchIds[activeMatchIndex]);
   }
 
@@ -641,9 +742,9 @@
       name: string;
       path: string;
       size?: number;
-      type: 'image' | 'video' | 'audio' | 'file';
+      type: "image" | "video" | "audio" | "file";
       date: number;
-      sender: 'me' | 'peer';
+      sender: "me" | "peer";
       dataUrl?: string;
     }[] = [];
 
@@ -651,27 +752,30 @@
       const dataImg = extractDataImage(msg.content);
       if (dataImg) {
         list.push({
-          name: 'Shared Image',
-          path: '',
+          name: "Shared Image",
+          path: "",
           dataUrl: dataImg,
-          type: 'image',
+          type: "image",
           date: msg.created_at * 1000,
-          sender: msg.direction === 'outgoing' ? 'me' : 'peer',
+          sender: msg.direction === "outgoing" ? "me" : "peer",
         });
-      } else if (msg.msg_type === 'audio' || (msg.content && msg.content.startsWith('data:audio/'))) {
+      } else if (
+        msg.msg_type === "audio" ||
+        (msg.content && msg.content.startsWith("data:audio/"))
+      ) {
         list.push({
-          name: 'Voice Note',
-          path: '',
+          name: "Voice Note",
+          path: "",
           dataUrl: msg.content,
-          type: 'audio',
+          type: "audio",
           date: msg.created_at * 1000,
-          sender: msg.direction === 'outgoing' ? 'me' : 'peer',
+          sender: msg.direction === "outgoing" ? "me" : "peer",
         });
       }
 
       const files = parseFilesJson(msg.files_json);
       for (const f of files) {
-        const name = f.relative_path || 'Attachment';
+        const name = f.relative_path || "Attachment";
         const isImg = isImageFile(name);
         const isVid = /\.(mp4|webm|mkv|mov|avi|wmv)$/i.test(name);
         const isAud = /\.(mp3|wav|ogg|flac|aac|m4a)$/i.test(name);
@@ -679,9 +783,9 @@
           name,
           path: f.relative_path,
           size: f.size_bytes,
-          type: isImg ? 'image' : isVid ? 'video' : isAud ? 'audio' : 'file',
+          type: isImg ? "image" : isVid ? "video" : isAud ? "audio" : "file",
           date: msg.created_at * 1000,
-          sender: msg.direction === 'outgoing' ? 'me' : 'peer',
+          sender: msg.direction === "outgoing" ? "me" : "peer",
         });
       }
     }
@@ -689,16 +793,23 @@
   })();
 
   $: filteredConversationFiles = conversationFiles.filter((item) => {
-    if (mediaDrawerFilter === 'media') return item.type === 'image' || item.type === 'video' || item.type === 'audio';
-    if (mediaDrawerFilter === 'files') return item.type === 'file';
+    if (mediaDrawerFilter === "media")
+      return (
+        item.type === "image" || item.type === "video" || item.type === "audio"
+      );
+    if (mediaDrawerFilter === "files") return item.type === "file";
     return true;
   });
 
   // Reactive Map of all transfers for 100% reactive progress updates
   $: transferMap = new Map($transfers.map((t) => [t.id, t]));
 
-  // Auto-select first peer if none selected
-  $: if (!$activeChatPeerId && filteredPeers.length > 0) {
+  // Auto-select first peer on desktop only; on mobile show contacts list first
+  $: if (
+    !$activeChatPeerId &&
+    filteredPeers.length > 0 &&
+    (typeof window === "undefined" || window.innerWidth >= 768)
+  ) {
     activeChatPeerId.set(filteredPeers[0].id);
   }
 
@@ -715,9 +826,9 @@
   }
 
   // Reactive tab focus handler: auto-scroll when user returns to 'chat' tab
-  let prevTab = '';
-  $: if ($activeMainTab === 'chat' && prevTab !== 'chat') {
-    prevTab = 'chat';
+  let prevTab = "";
+  $: if ($activeMainTab === "chat" && prevTab !== "chat") {
+    prevTab = "chat";
     if ($activeChatPeerId) {
       markChatRead($activeChatPeerId);
       tick().then(() => {
@@ -725,7 +836,7 @@
         setTimeout(scrollToBottom, 60);
       });
     }
-  } else if ($activeMainTab !== 'chat') {
+  } else if ($activeMainTab !== "chat") {
     prevTab = $activeMainTab;
   }
 
@@ -750,13 +861,20 @@
 
   // Infinite Scroll Pagination: load older messages when user scrolls near top
   async function handleScroll() {
-    if (!chatScrollContainer || !$activeChatPeerId || $isLoadingOlder || !hasMore) return;
+    if (
+      !chatScrollContainer ||
+      !$activeChatPeerId ||
+      $isLoadingOlder ||
+      !hasMore
+    )
+      return;
     if (chatScrollContainer.scrollTop < 60) {
       const prevScrollHeight = chatScrollContainer.scrollHeight;
       const loadedCount = await loadOlderMessages($activeChatPeerId);
       if (loadedCount > 0) {
         await tick();
-        chatScrollContainer.scrollTop = chatScrollContainer.scrollHeight - prevScrollHeight;
+        chatScrollContainer.scrollTop =
+          chatScrollContainer.scrollHeight - prevScrollHeight;
       }
     }
   }
@@ -771,41 +889,101 @@
     try {
       const parsed = JSON.parse(sourcePathsJson);
       if (Array.isArray(parsed)) {
-        return parsed.filter((x) => typeof x === 'string' && x.trim().length > 0);
+        return parsed.filter(
+          (x) => typeof x === "string" && x.trim().length > 0,
+        );
       }
-      if (typeof parsed === 'string' && parsed.trim().length > 0) {
+      if (typeof parsed === "string" && parsed.trim().length > 0) {
         return [parsed.trim()];
       }
     } catch {
-      if (typeof sourcePathsJson === 'string' && sourcePathsJson.trim().length > 0) {
+      if (
+        typeof sourcePathsJson === "string" &&
+        sourcePathsJson.trim().length > 0
+      ) {
         return [sourcePathsJson.trim()];
       }
     }
     return [];
   }
 
-  function getFileTypeBadge(filename: string): { label: string; color: string; isImage: boolean } {
-    const ext = filename.split('.').pop()?.toUpperCase() || 'FILE';
-    const isImage = ['JPG', 'JPEG', 'PNG', 'WEBP', 'SVG', 'GIF', 'BMP', 'ICO'].includes(ext);
-    if (['SQL', 'DB', 'SQLITE'].includes(ext)) {
-      return { label: ext, color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40', isImage: false };
+  function getFileTypeBadge(filename: string): {
+    label: string;
+    color: string;
+    isImage: boolean;
+  } {
+    const ext = filename.split(".").pop()?.toUpperCase() || "FILE";
+    const isImage = [
+      "JPG",
+      "JPEG",
+      "PNG",
+      "WEBP",
+      "SVG",
+      "GIF",
+      "BMP",
+      "ICO",
+    ].includes(ext);
+    if (["SQL", "DB", "SQLITE"].includes(ext)) {
+      return {
+        label: ext,
+        color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
+        isImage: false,
+      };
     }
-    if (['ZIP', 'RAR', '7Z', 'TAR', 'GZ'].includes(ext)) {
-      return { label: ext, color: 'bg-amber-500/20 text-amber-300 border-amber-500/40', isImage: false };
+    if (["ZIP", "RAR", "7Z", "TAR", "GZ"].includes(ext)) {
+      return {
+        label: ext,
+        color: "bg-amber-500/20 text-amber-300 border-amber-500/40",
+        isImage: false,
+      };
     }
-    if (['MP4', 'MKV', 'MOV', 'AVI', 'WEBM'].includes(ext)) {
-      return { label: ext, color: 'bg-purple-500/20 text-purple-300 border-purple-500/40', isImage: false };
+    if (["MP4", "MKV", "MOV", "AVI", "WEBM"].includes(ext)) {
+      return {
+        label: ext,
+        color: "bg-purple-500/20 text-purple-300 border-purple-500/40",
+        isImage: false,
+      };
     }
     if (isImage) {
-      return { label: ext, color: 'bg-pink-500/20 text-pink-300 border-pink-500/40', isImage: true };
+      return {
+        label: ext,
+        color: "bg-pink-500/20 text-pink-300 border-pink-500/40",
+        isImage: true,
+      };
     }
-    if (['PDF', 'DOC', 'DOCX', 'XLS', 'XLSX', 'PPTX'].includes(ext)) {
-      return { label: ext, color: 'bg-blue-500/20 text-blue-300 border-blue-500/40', isImage: false };
+    if (["PDF", "DOC", "DOCX", "XLS", "XLSX", "PPTX"].includes(ext)) {
+      return {
+        label: ext,
+        color: "bg-blue-500/20 text-blue-300 border-blue-500/40",
+        isImage: false,
+      };
     }
-    if (['RS', 'TS', 'JS', 'PY', 'GO', 'CPP', 'C', 'HTML', 'CSS', 'JSON', 'SH'].includes(ext)) {
-      return { label: ext, color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40', isImage: false };
+    if (
+      [
+        "RS",
+        "TS",
+        "JS",
+        "PY",
+        "GO",
+        "CPP",
+        "C",
+        "HTML",
+        "CSS",
+        "JSON",
+        "SH",
+      ].includes(ext)
+    ) {
+      return {
+        label: ext,
+        color: "bg-cyan-500/20 text-cyan-300 border-cyan-500/40",
+        isImage: false,
+      };
     }
-    return { label: ext.slice(0, 4), color: 'bg-slate-800 text-slate-300 border-slate-700', isImage: false };
+    return {
+      label: ext.slice(0, 4),
+      color: "bg-slate-800 text-slate-300 border-slate-700",
+      isImage: false,
+    };
   }
 
   function parseFilesJson(jsonStr?: string | null): ChatFileItem[] {
@@ -824,7 +1002,7 @@
     f: ChatFileItem,
     isOutgoing: boolean,
     linkedTransfer?: TransferRecord,
-    fileIdx?: number
+    fileIdx?: number,
   ): string | null {
     if (isOutgoing && f.path) {
       return f.path;
@@ -834,7 +1012,7 @@
       if (linkedTransfer.source_paths) {
         const paths = parseFilePaths(linkedTransfer.source_paths);
         const match = paths.find(
-          (p) => getBaseName(p).toLowerCase() === f.name.toLowerCase()
+          (p) => getBaseName(p).toLowerCase() === f.name.toLowerCase(),
         );
         if (match) return match;
         if (fileIdx !== undefined && paths[fileIdx]) {
@@ -847,14 +1025,14 @@
 
       const dir = linkedTransfer.target_path || $appSettings.download_dir;
       if (dir) {
-        const sep = dir.includes('/') ? '/' : '\\';
-        return `${dir.replace(/[/\\]$/, '')}${sep}${f.name}`;
+        const sep = dir.includes("/") ? "/" : "\\";
+        return `${dir.replace(/[/\\]$/, "")}${sep}${f.name}`;
       }
     }
 
     if ($appSettings.download_dir) {
-      const sep = $appSettings.download_dir.includes('/') ? '/' : '\\';
-      return `${$appSettings.download_dir.replace(/[/\\]$/, '')}${sep}${f.name}`;
+      const sep = $appSettings.download_dir.includes("/") ? "/" : "\\";
+      return `${$appSettings.download_dir.replace(/[/\\]$/, "")}${sep}${f.name}`;
     }
 
     return null;
@@ -864,14 +1042,14 @@
     try {
       const picked = await openWithLastDir({
         multiple: true,
-        title: 'Select Files to Send in Chat',
+        title: "Select Files to Send in Chat",
       });
       if (picked) {
         const list = Array.isArray(picked) ? picked : [picked];
         attachingFiles = [...attachingFiles, ...list];
       }
     } catch (err) {
-      console.warn('File selection error:', err);
+      console.warn("File selection error:", err);
     }
   }
 
@@ -885,13 +1063,13 @@
       const picked = await openWithLastDir({
         directory: true,
         multiple: false,
-        title: 'Select Folder to Send in Chat',
+        title: "Select Folder to Send in Chat",
       });
-      if (typeof picked === 'string') {
+      if (typeof picked === "string") {
         attachingFiles = [...attachingFiles, picked];
       }
     } catch (err) {
-      console.warn('Folder selection error:', err);
+      console.warn("Folder selection error:", err);
     }
   }
 
@@ -906,17 +1084,19 @@
     }
     const start = textareaEl.selectionStart || 0;
     const end = textareaEl.selectionEnd || 0;
-    messageInput = messageInput.slice(0, start) + emoji + messageInput.slice(end);
+    messageInput =
+      messageInput.slice(0, start) + emoji + messageInput.slice(end);
     tick().then(() => {
       textareaEl.focus();
-      textareaEl.selectionStart = textareaEl.selectionEnd = start + emoji.length;
+      textareaEl.selectionStart = textareaEl.selectionEnd =
+        start + emoji.length;
       autoResizeTextarea();
     });
   }
 
   function autoResizeTextarea() {
     if (!textareaEl) return;
-    textareaEl.style.height = 'auto';
+    textareaEl.style.height = "auto";
     const newH = Math.min(textareaEl.scrollHeight, 140);
     textareaEl.style.height = `${Math.max(38, newH)}px`;
   }
@@ -924,10 +1104,10 @@
   async function handleSendMessage() {
     if (!$activeChatPeerId || isPeerBlocked || isSending) return;
     if (isGroupChat && !canSendInGroup) {
-      alert('Anda tidak memiliki izin mengirim pesan di grup ini.');
+      alert("Anda tidak memiliki izin mengirim pesan di grup ini.");
       return;
     }
-    const text = (messageInput || '').trim();
+    const text = (messageInput || "").trim();
     const hasImage = !!pastedImagePreview;
     if (!text && attachingFiles.length === 0 && !hasImage) return;
 
@@ -936,20 +1116,20 @@
     try {
       let transferSessionId: string | null = null;
       let filesJson: string | null = null;
-      let msgType = 'text';
+      let msgType = "text";
 
       if (hasImage) {
-        msgType = 'image';
+        msgType = "image";
       }
 
       const filesToAttach = [...attachingFiles];
 
       if (filesToAttach.length > 0) {
-        msgType = 'file_transfer';
+        msgType = "file_transfer";
         // 1. Initiate accelerated P2P transfer session in Raydrop backend
         transferSessionId = await raydropApi.initiateTransfer(
           $activeChatPeerId,
-          filesToAttach
+          filesToAttach,
         );
 
         const filesMeta: ChatFileItem[] = filesToAttach.map((fp) => ({
@@ -962,14 +1142,16 @@
 
       let contentToSend = text;
       if (hasImage && pastedImagePreview) {
-        contentToSend = text ? `${text}\n\n${pastedImagePreview}` : pastedImagePreview;
+        contentToSend = text
+          ? `${text}\n\n${pastedImagePreview}`
+          : pastedImagePreview;
       }
 
       if (isGroupChat) {
         const sentMsg = await raydropApi.sendGroupChatMessage(
           $activeChatPeerId,
           contentToSend,
-          msgType
+          msgType,
         );
         handleOutgoingChatMessage(sentMsg);
       } else {
@@ -978,21 +1160,21 @@
           contentToSend,
           msgType,
           transferSessionId,
-          filesJson
+          filesJson,
         );
         handleOutgoingChatMessage(sentMsg);
       }
 
-      messageInput = '';
+      messageInput = "";
       pastedImagePreview = null;
       attachingFiles = [];
       if (textareaEl) {
-        textareaEl.style.height = 'auto';
+        textareaEl.style.height = "auto";
       }
       await tick();
       scrollToBottom();
     } catch (err: any) {
-      console.error('Failed to send message:', err);
+      console.error("Failed to send message:", err);
       alert(`Gagal mengirim pesan: ${err?.message || err}`);
     } finally {
       isSending = false;
@@ -1004,25 +1186,29 @@
       await raydropApi.respondTransferRequest(
         sessionId,
         true,
-        $appSettings.download_dir
+        $appSettings.download_dir,
       );
-      incomingRequestQueue.update((q) => q.filter((item) => item.session_id !== sessionId));
+      incomingRequestQueue.update((q) =>
+        q.filter((item) => item.session_id !== sessionId),
+      );
     } catch (err) {
-      console.warn('Failed to accept transfer from chat:', err);
+      console.warn("Failed to accept transfer from chat:", err);
     }
   }
 
   async function handleDeclineChatTransfer(sessionId: string) {
     try {
       await raydropApi.respondTransferRequest(sessionId, false, null);
-      incomingRequestQueue.update((q) => q.filter((item) => item.session_id !== sessionId));
+      incomingRequestQueue.update((q) =>
+        q.filter((item) => item.session_id !== sessionId),
+      );
     } catch (err) {
-      console.warn('Failed to decline transfer from chat:', err);
+      console.warn("Failed to decline transfer from chat:", err);
     }
   }
 
   function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
     }
@@ -1033,7 +1219,7 @@
     try {
       await raydropApi.openFilePath(path);
     } catch (err) {
-      console.warn('Failed to open file:', err);
+      console.warn("Failed to open file:", err);
     }
   }
 
@@ -1042,43 +1228,45 @@
     try {
       await raydropApi.openFolderPath(path);
     } catch (err) {
-      console.warn('Failed to open folder:', err);
+      console.warn("Failed to open folder:", err);
     }
   }
 
   async function handleClearHistory() {
     if (!$activeChatPeerId) return;
-    if (confirm('Clear chat history with this peer on your device?')) {
+    if (confirm("Clear chat history with this peer on your device?")) {
       await clearChatHistory($activeChatPeerId);
     }
   }
 
   async function toggleBlockPeer() {
     if (!activePeer) return;
-    const newTrust = isPeerBlocked ? 'ask' : 'blocked';
+    const newTrust = isPeerBlocked ? "ask" : "blocked";
     try {
       await raydropApi.updateContactTrust(
         activePeer.id,
         newTrust,
-        activePeer.email || null
+        activePeer.email || null,
       );
       contacts.set(await raydropApi.getContacts());
     } catch (err) {
-      console.warn('Failed to update peer trust:', err);
+      console.warn("Failed to update peer trust:", err);
     }
   }
 
   function extractDataImage(content: string): string | null {
     if (!content) return null;
-    const trimmed = content.trim().replace(/^["']|["']$/g, '');
-    if (trimmed.startsWith('data:image/')) {
+    const trimmed = content.trim().replace(/^["']|["']$/g, "");
+    if (trimmed.startsWith("data:image/")) {
       return trimmed;
     }
     const mdMatch = trimmed.match(/!\[.*?\]\((data:image\/[^)]+)\)/);
     if (mdMatch) {
       return mdMatch[1];
     }
-    const tokenMatch = trimmed.match(/(data:image\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+)/);
+    const tokenMatch = trimmed.match(
+      /(data:image\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+)/,
+    );
     if (tokenMatch) {
       return tokenMatch[1];
     }
@@ -1091,7 +1279,7 @@
       await handleCopyImage(dataImg, id);
       return;
     }
-    const trimmed = (content || '').trim();
+    const trimmed = (content || "").trim();
     try {
       await raydropApi.writeSystemClipboard(trimmed);
     } catch (_) {
@@ -1100,42 +1288,48 @@
     copiedMessageId = id;
     setTimeout(() => {
       if (copiedMessageId === id) {
-        copiedMessageId = '';
+        copiedMessageId = "";
       }
     }, 2000);
   }
 
   async function handleCopyImage(imgDataUrl: string, id: string) {
-    const trimmed = (imgDataUrl || '').trim();
+    const trimmed = (imgDataUrl || "").trim();
     if (!trimmed) return;
 
     // Trigger visual feedback checkmark immediately
     copiedMessageId = id;
     setTimeout(() => {
       if (copiedMessageId === id) {
-        copiedMessageId = '';
+        copiedMessageId = "";
       }
     }, 2000);
 
     try {
       await raydropApi.writeSystemClipboard(trimmed);
     } catch (e) {
-      console.warn('Native clipboard image write failed, attempting web fallback:', e);
+      console.warn(
+        "Native clipboard image write failed, attempting web fallback:",
+        e,
+      );
       try {
         const res = await fetch(trimmed);
         const blob = await res.blob();
         await navigator.clipboard.write([
-          new ClipboardItem({ [blob.type || 'image/png']: blob }),
+          new ClipboardItem({ [blob.type || "image/png"]: blob }),
         ]);
       } catch (fallbackErr) {
-        console.warn('Web clipboard item write failed, falling back to text:', fallbackErr);
+        console.warn(
+          "Web clipboard item write failed, falling back to text:",
+          fallbackErr,
+        );
         await navigator.clipboard.writeText(trimmed);
       }
     }
   }
 
   async function handleDownloadImage(imgDataUrl: string, id: string) {
-    const trimmed = (imgDataUrl || '').trim();
+    const trimmed = (imgDataUrl || "").trim();
     if (!trimmed || downloadingMessageId) return;
 
     downloadingMessageId = id;
@@ -1144,11 +1338,14 @@
       try {
         await raydropApi.saveBase64Image(trimmed, filename);
       } catch (nativeErr) {
-        console.warn('Native save_base64_image failed, falling back to blob trigger:', nativeErr);
+        console.warn(
+          "Native save_base64_image failed, falling back to blob trigger:",
+          nativeErr,
+        );
         const res = await fetch(trimmed);
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
+        const a = document.createElement("a");
         a.href = url;
         a.download = `${filename}.png`;
         document.body.appendChild(a);
@@ -1161,35 +1358,43 @@
       downloadSuccessId = id;
       setTimeout(() => {
         if (downloadSuccessId === id) {
-          downloadSuccessId = '';
+          downloadSuccessId = "";
         }
       }, 2000);
     } catch (err) {
-      console.error('Failed to download image:', err);
+      console.error("Failed to download image:", err);
     } finally {
-      downloadingMessageId = '';
+      downloadingMessageId = "";
     }
   }
 
   // Intercept links in Markdown to open via system browser instead of webview
   async function handleMarkdownClick(e: MouseEvent) {
-    const target = (e.target as HTMLElement)?.closest('a');
+    const target = (e.target as HTMLElement)?.closest("a");
     if (!target) return;
-    const href = target.getAttribute('href');
-    if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+    const href = target.getAttribute("href");
+    if (href && (href.startsWith("http://") || href.startsWith("https://"))) {
       e.preventDefault();
       await raydropApi.openExternalUrl(href);
     }
   }
 </script>
 
-<div class="flex h-full w-full bg-slate-900/40 border border-slate-800/80 rounded-2xl overflow-hidden backdrop-blur-xl">
+<div
+  class="flex h-full w-full bg-slate-900/40 border border-slate-800/80 rounded-2xl overflow-hidden backdrop-blur-xl"
+>
   <!-- Left Column: Peer / Contacts Sidebar -->
-  <aside class="w-full md:w-80 border-r border-slate-800/80 flex flex-col bg-slate-950/60 shrink-0 {$activeChatPeerId ? 'hidden md:flex' : 'flex'}">
+  <aside
+    class="w-full md:w-80 border-r border-slate-800/80 flex flex-col bg-slate-950/60 shrink-0 {$activeChatPeerId
+      ? 'hidden md:flex'
+      : 'flex'}"
+  >
     <!-- Search Bar -->
     <div class="p-3.5 border-b border-slate-800/80">
       <div class="relative">
-        <Search class="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+        <Search
+          class="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"
+        />
         <input
           type="text"
           bind:value={searchQuery}
@@ -1200,12 +1405,17 @@
     </div>
 
     <!-- Filter Pills + New Group Button -->
-    <div class="px-3 py-2 border-b border-slate-800/60 flex items-center justify-between gap-1.5 bg-slate-950/40">
-      <div class="flex items-center gap-1 bg-slate-900/80 p-0.5 rounded-lg border border-slate-800 text-[11px]">
+    <div
+      class="px-3 py-2 border-b border-slate-800/60 flex items-center justify-between gap-1.5 bg-slate-950/40"
+    >
+      <div
+        class="flex items-center gap-1 bg-slate-900/80 p-0.5 rounded-lg border border-slate-800 text-[11px]"
+      >
         <button
           type="button"
-          on:click={() => (chatFilterTab = 'all')}
-          class="px-2 py-0.5 rounded-md font-medium transition cursor-pointer {chatFilterTab === 'all'
+          on:click={() => (chatFilterTab = "all")}
+          class="px-2 py-0.5 rounded-md font-medium transition cursor-pointer {chatFilterTab ===
+          'all'
             ? 'bg-cyan-500/20 text-cyan-300 font-bold'
             : 'text-slate-400 hover:text-white'}"
         >
@@ -1213,8 +1423,9 @@
         </button>
         <button
           type="button"
-          on:click={() => (chatFilterTab = 'direct')}
-          class="px-2 py-0.5 rounded-md font-medium transition cursor-pointer {chatFilterTab === 'direct'
+          on:click={() => (chatFilterTab = "direct")}
+          class="px-2 py-0.5 rounded-md font-medium transition cursor-pointer {chatFilterTab ===
+          'direct'
             ? 'bg-cyan-500/20 text-cyan-300 font-bold'
             : 'text-slate-400 hover:text-white'}"
         >
@@ -1222,8 +1433,9 @@
         </button>
         <button
           type="button"
-          on:click={() => (chatFilterTab = 'groups')}
-          class="px-2 py-0.5 rounded-md font-medium transition cursor-pointer {chatFilterTab === 'groups'
+          on:click={() => (chatFilterTab = "groups")}
+          class="px-2 py-0.5 rounded-md font-medium transition cursor-pointer {chatFilterTab ===
+          'groups'
             ? 'bg-cyan-500/20 text-cyan-300 font-bold'
             : 'text-slate-400 hover:text-white'}"
         >
@@ -1234,8 +1446,8 @@
       <button
         type="button"
         on:click={() => {
-          newGroupName = '';
-          newGroupDesc = '';
+          newGroupName = "";
+          newGroupDesc = "";
           selectedGroupMemberIds = new Set();
           showCreateGroupModal = true;
         }}
@@ -1250,10 +1462,13 @@
     <!-- Peer & Group List -->
     <div class="flex-1 overflow-y-auto p-2 space-y-1">
       <!-- Groups Section -->
-      {#if chatFilterTab === 'all' || chatFilterTab === 'groups'}
+      {#if chatFilterTab === "all" || chatFilterTab === "groups"}
         {#if filteredGroups.length > 0}
           <div class="px-2 pt-1 pb-1">
-            <span class="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">Grup ({filteredGroups.length})</span>
+            <span
+              class="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold"
+              >Grup ({filteredGroups.length})</span
+            >
           </div>
           {#each filteredGroups as grp (grp.id)}
             {@const isSelected = $activeChatPeerId === grp.id}
@@ -1270,28 +1485,42 @@
                 : 'hover:bg-slate-900/80 border border-transparent'}"
             >
               <div class="flex items-center gap-2.5 min-w-0">
-                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 border border-indigo-400/30 flex items-center justify-center font-bold text-xs text-white shadow-sm shrink-0">
+                <div
+                  class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 border border-indigo-400/30 flex items-center justify-center font-bold text-xs text-white shadow-sm shrink-0"
+                >
                   <Users class="w-4 h-4" />
                 </div>
 
                 <div class="min-w-0">
                   <div class="flex items-center gap-1.5 flex-wrap">
-                    <span class="text-xs font-bold text-white truncate max-w-[130px]" title={grp.name}>
+                    <span
+                      class="text-xs font-bold text-white truncate max-w-[130px]"
+                      title={grp.name}
+                    >
                       {grp.name}
                     </span>
                     {#if isOwner}
-                      <span class="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300 font-mono">Owner</span>
+                      <span
+                        class="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300 font-mono"
+                        >Owner</span
+                      >
                     {/if}
                   </div>
-                  <div class="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5">
+                  <div
+                    class="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5"
+                  >
                     <span>{grp.members.length} anggota</span>
                     <span>•</span>
-                    {#if grp.send_permission === 'admins_only'}
-                      <span class="text-amber-400 flex items-center gap-0.5 text-[10px]">
+                    {#if grp.send_permission === "admins_only"}
+                      <span
+                        class="text-amber-400 flex items-center gap-0.5 text-[10px]"
+                      >
                         <Lock class="w-2.5 h-2.5" /> Admin
                       </span>
-                    {:else if grp.send_permission === 'custom'}
-                      <span class="text-indigo-400 flex items-center gap-0.5 text-[10px]">
+                    {:else if grp.send_permission === "custom"}
+                      <span
+                        class="text-indigo-400 flex items-center gap-0.5 text-[10px]"
+                      >
                         <Shield class="w-2.5 h-2.5" /> Custom
                       </span>
                     {:else}
@@ -1302,7 +1531,9 @@
               </div>
 
               {#if unread > 0}
-                <span class="px-2 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-bold text-[10px] font-mono shadow-md shadow-cyan-400/30 shrink-0 animate-pulse">
+                <span
+                  class="px-2 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-bold text-[10px] font-mono shadow-md shadow-cyan-400/30 shrink-0 animate-pulse"
+                >
                   {unread}
                 </span>
               {/if}
@@ -1312,130 +1543,183 @@
       {/if}
 
       <!-- Direct Contacts Section -->
-      {#if chatFilterTab === 'all' || chatFilterTab === 'direct'}
-        {#if chatFilterTab === 'all' && filteredGroups.length > 0}
+      {#if chatFilterTab === "all" || chatFilterTab === "direct"}
+        {#if chatFilterTab === "all" && filteredGroups.length > 0}
           <div class="px-2 pt-2 pb-1">
-            <span class="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">Kontak ({filteredPeers.length})</span>
+            <span
+              class="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold"
+              >Kontak ({filteredPeers.length})</span
+            >
           </div>
         {/if}
 
-        {#if filteredPeers.length === 0 && (chatFilterTab === 'direct' || filteredGroups.length === 0)}
+        {#if filteredPeers.length === 0 && (chatFilterTab === "direct" || filteredGroups.length === 0)}
           <div class="p-6 text-center text-xs text-slate-500">
             <User class="w-8 h-8 mx-auto mb-2 text-slate-600 stroke-[1.5]" />
             <p>No contacts found.</p>
-            <p class="text-[11px] text-slate-600 mt-1">Connect peers via LAN Radar or add contacts by email.</p>
+            <p class="text-[11px] text-slate-600 mt-1">
+              Connect peers via LAN Radar or add contacts by email.
+            </p>
           </div>
         {:else}
-        {#each filteredPeers as peer (peer.id)}
-          {@const isSelected = $activeChatPeerId === peer.id}
-          {@const unread = $unreadCounts[peer.id] || 0}
-          {@const blocked = peer.trustLevel === 'blocked'}
+          {#each filteredPeers as peer (peer.id)}
+            {@const isSelected = $activeChatPeerId === peer.id}
+            {@const unread = $unreadCounts[peer.id] || 0}
+            {@const blocked = peer.trustLevel === "blocked"}
 
-          <button
-            type="button"
-            on:click={() => {
-              activeChatPeerId.set(peer.id);
-            }}
-            class="w-full text-left p-3 rounded-xl transition-all flex items-center justify-between gap-2.5 {isSelected
-              ? 'bg-gradient-to-r from-cyan-500/20 to-indigo-500/20 border border-cyan-500/40 shadow-sm shadow-cyan-500/10'
-              : 'hover:bg-slate-900/80 border border-transparent'} {blocked ? 'opacity-60' : ''}"
-          >
-            <div class="flex items-center gap-3 min-w-0">
-              <!-- Avatar / Status Ring -->
-              <div class="relative shrink-0">
-                {#if $peerAvatars[peer.id]}
-                  <img
-                    src={$peerAvatars[peer.id]}
-                    alt={peer.customName || peer.name}
-                    class="w-9 h-9 rounded-xl object-cover border border-slate-700 bg-slate-800"
-                  />
-                {:else}
-                  <div class="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-cyan-300">
-                    {(peer.customName || peer.name).slice(0, 2).toUpperCase()}
-                  </div>
-                {/if}
-                {#if blocked}
-                  <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 border-2 border-slate-950 flex items-center justify-center">
-                    <span class="w-1.5 h-0.5 bg-white"></span>
-                  </span>
-                {:else if peer.isOnline}
-                  <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-950 shadow-sm shadow-emerald-500/50"></span>
-                {:else}
-                  <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-slate-600 border-2 border-slate-950"></span>
-                {/if}
-              </div>
-
-              <!-- Name & Subtext -->
-              <div class="min-w-0">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="text-xs font-bold text-white truncate max-w-[120px] sm:max-w-[140px]" title={peer.customName ? `${peer.customName} (${peer.name})` : peer.name}>
-                    {peer.customName || peer.name}
-                  </span>
-                  {#if peer.customName}
-                    <span class="text-[9px] px-1 rounded bg-slate-800/80 text-slate-400 font-mono truncate max-w-[65px]" title={peer.name}>
-                      {peer.name}
-                    </span>
-                  {/if}
-                  {#if peer.isOwnDevice}
-                    <span class="text-[9px] px-1 rounded bg-indigo-500/20 text-indigo-300 font-mono">You</span>
+            <button
+              type="button"
+              on:click={() => {
+                activeChatPeerId.set(peer.id);
+              }}
+              class="w-full text-left p-3 rounded-xl transition-all flex items-center justify-between gap-2.5 {isSelected
+                ? 'bg-gradient-to-r from-cyan-500/20 to-indigo-500/20 border border-cyan-500/40 shadow-sm shadow-cyan-500/10'
+                : 'hover:bg-slate-900/80 border border-transparent'} {blocked
+                ? 'opacity-60'
+                : ''}"
+            >
+              <div class="flex items-center gap-3 min-w-0">
+                <!-- Avatar / Status Ring -->
+                <div class="relative shrink-0">
+                  {#if $peerAvatars[peer.id]}
+                    <img
+                      src={$peerAvatars[peer.id]}
+                      alt={peer.customName || peer.name}
+                      class="w-9 h-9 rounded-xl object-cover border border-slate-700 bg-slate-800"
+                    />
                   {:else}
-                    {@const peerRank = getRankInfo(peer.rankExp || 0)}
-                    <span
-                      class="text-[9px] font-semibold px-1.5 py-0.2 rounded-full"
-                      style={peerRank.badgeStyle}
-                      title="{peerRank.tierName} Level {peerRank.level} ({peerRank.exp.toLocaleString()} EXP)"
+                    <div
+                      class="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-cyan-300"
                     >
-                      {peerRank.icon} {peerRank.tierName} Lv.{peerRank.level}
-                    </span>
+                      {(peer.customName || peer.name).slice(0, 2).toUpperCase()}
+                    </div>
                   {/if}
                   {#if blocked}
-                    <span class="text-[9px] px-1 rounded bg-rose-500/20 text-rose-300 font-mono">Blocked</span>
+                    <span
+                      class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 border-2 border-slate-950 flex items-center justify-center"
+                    >
+                      <span class="w-1.5 h-0.5 bg-white"></span>
+                    </span>
+                  {:else if peer.isOnline}
+                    <span
+                      class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-950 shadow-sm shadow-emerald-500/50"
+                    ></span>
+                  {:else}
+                    <span
+                      class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-slate-600 border-2 border-slate-950"
+                    ></span>
                   {/if}
                 </div>
-                <div class="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5">
-                  {#if peer.networkType === 'lan'}
-                    <Wifi class="w-3 h-3 text-cyan-400 shrink-0" />
-                    <span>LAN</span>
-                  {:else}
-                    <Globe class="w-3 h-3 text-indigo-400 shrink-0" />
-                    <span>WAN</span>
-                  {/if}
-                  <span>•</span>
-                  <span class={peer.isOnline ? 'text-emerald-400 font-medium' : 'text-slate-500'}>
-                    {peer.isOnline ? 'Online' : formatLastOnline(peer.lastSeenAt, false)}
-                  </span>
+
+                <!-- Name & Subtext -->
+                <div class="min-w-0">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      class="text-xs font-bold text-white truncate max-w-[120px] sm:max-w-[140px]"
+                      title={peer.customName
+                        ? `${peer.customName} (${peer.name})`
+                        : peer.name}
+                    >
+                      {peer.customName || peer.name}
+                    </span>
+                    {#if peer.customName}
+                      <span
+                        class="text-[9px] px-1 rounded bg-slate-800/80 text-slate-400 font-mono truncate max-w-[65px]"
+                        title={peer.name}
+                      >
+                        {peer.name}
+                      </span>
+                    {/if}
+                    {#if peer.isOwnDevice}
+                      <span
+                        class="text-[9px] px-1 rounded bg-indigo-500/20 text-indigo-300 font-mono"
+                        >You</span
+                      >
+                    {:else}
+                      {@const peerRank = getRankInfo(peer.rankExp || 0)}
+                      <span
+                        class="text-[9px] font-semibold px-1.5 py-0.2 rounded-full"
+                        style={peerRank.badgeStyle}
+                        title="{peerRank.tierName} Level {peerRank.level} ({peerRank.exp.toLocaleString()} EXP)"
+                      >
+                        {peerRank.icon}
+                        {peerRank.tierName} Lv.{peerRank.level}
+                      </span>
+                    {/if}
+                    {#if blocked}
+                      <span
+                        class="text-[9px] px-1 rounded bg-rose-500/20 text-rose-300 font-mono"
+                        >Blocked</span
+                      >
+                    {/if}
+                  </div>
+                  <div
+                    class="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5"
+                  >
+                    {#if peer.networkType === "lan"}
+                      <Wifi class="w-3 h-3 text-cyan-400 shrink-0" />
+                      <span>LAN</span>
+                    {:else}
+                      <Globe class="w-3 h-3 text-indigo-400 shrink-0" />
+                      <span>WAN</span>
+                    {/if}
+                    <span>•</span>
+                    <span
+                      class={peer.isOnline
+                        ? "text-emerald-400 font-medium"
+                        : "text-slate-500"}
+                    >
+                      {peer.isOnline
+                        ? "Online"
+                        : formatLastOnline(peer.lastSeenAt, false)}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <!-- Unread Badge -->
-            {#if unread > 0}
-              <span class="px-2 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-bold text-[10px] font-mono shadow-md shadow-cyan-400/30 shrink-0 animate-pulse">
-                {unread}
-              </span>
-            {/if}
-          </button>
-        {/each}
+              <!-- Unread Badge -->
+              {#if unread > 0}
+                <span
+                  class="px-2 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-bold text-[10px] font-mono shadow-md shadow-cyan-400/30 shrink-0 animate-pulse"
+                >
+                  {unread}
+                </span>
+              {/if}
+            </button>
+          {/each}
         {/if}
       {/if}
     </div>
   </aside>
 
   <!-- Right Column: Main Chat & Stream -->
-  <section class="flex-1 flex flex-col bg-slate-950/40 relative min-w-0 {!$activeChatPeerId ? 'hidden md:flex' : 'flex'}">
+  <section
+    class="flex-1 flex flex-col bg-slate-950/40 relative min-w-0 {!$activeChatPeerId
+      ? 'hidden md:flex'
+      : 'flex'}"
+  >
     {#if !activePeer}
-      <div class="flex-1 flex flex-col items-center justify-center text-center p-8">
-        <div class="w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mb-4 text-cyan-400 shadow-xl shadow-cyan-500/10">
+      <div
+        class="flex-1 flex flex-col items-center justify-center text-center p-8"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mb-4 text-cyan-400 shadow-xl shadow-cyan-500/10"
+        >
           <MessageSquare class="w-8 h-8 stroke-[1.8]" />
         </div>
-        <h3 class="text-base font-bold text-white font-display">P2P Encrypted Chat</h3>
+        <h3 class="text-base font-bold text-white font-display">
+          P2P Encrypted Chat
+        </h3>
         <p class="text-xs text-slate-400 mt-1.5 max-w-sm">
-          Select a contact or device from the left to start sending messages, plans, code snippets, and direct file packages.
+          Select a contact or device from the left to start sending messages,
+          plans, code snippets, and direct file packages.
         </p>
       </div>
     {:else}
       <!-- Chat Header -->
-      <header class="p-3 sm:p-3.5 px-3.5 sm:px-5 border-b border-slate-800/80 bg-slate-950/70 flex items-center justify-between gap-2 sm:gap-3 shrink-0">
+      <header
+        class="p-3 sm:p-3.5 px-3.5 sm:px-5 border-b border-slate-800/80 bg-slate-950/70 flex items-center justify-between gap-2 sm:gap-3 shrink-0"
+      >
         <div class="flex items-center gap-2 sm:gap-3 min-w-0">
           <!-- Back button on mobile -->
           <button
@@ -1449,38 +1733,54 @@
           </button>
 
           {#if isGroupChat && activeGroup}
-            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 border border-indigo-400/40 flex items-center justify-center font-bold text-xs text-white shadow-md shadow-indigo-900/30 shrink-0">
+            <div
+              class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 border border-indigo-400/40 flex items-center justify-center font-bold text-xs text-white shadow-md shadow-indigo-900/30 shrink-0"
+            >
               <Users class="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
 
             <div class="min-w-0">
               <div class="flex items-center gap-1.5 sm:gap-2">
-                <h2 class="text-xs sm:text-sm font-bold text-white truncate max-w-[140px] sm:max-w-none">
+                <h2
+                  class="text-xs sm:text-sm font-bold text-white truncate max-w-[140px] sm:max-w-none"
+                >
                   {activeGroup.name}
                 </h2>
                 {#if isGroupOwner}
-                  <span class="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono border border-amber-500/30 flex items-center gap-0.5">
+                  <span
+                    class="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono border border-amber-500/30 flex items-center gap-0.5"
+                  >
                     <Crown class="w-2.5 h-2.5" /> Owner
                   </span>
                 {:else if isGroupAdmin}
-                  <span class="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono border border-purple-500/30 flex items-center gap-0.5">
+                  <span
+                    class="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono border border-purple-500/30 flex items-center gap-0.5"
+                  >
                     <Shield class="w-2.5 h-2.5" /> Admin
                   </span>
                 {/if}
               </div>
-              <div class="flex items-center gap-2 text-[10px] sm:text-[11px] text-slate-400 mt-0.5">
+              <div
+                class="flex items-center gap-2 text-[10px] sm:text-[11px] text-slate-400 mt-0.5"
+              >
                 <span>{activeGroup.members.length} anggota</span>
                 <span>•</span>
-                {#if activeGroup.send_permission === 'admins_only'}
-                  <span class="text-amber-400 flex items-center gap-0.5 font-mono">
+                {#if activeGroup.send_permission === "admins_only"}
+                  <span
+                    class="text-amber-400 flex items-center gap-0.5 font-mono"
+                  >
                     <Lock class="w-2.5 h-2.5" /> Hanya Admin
                   </span>
-                {:else if activeGroup.send_permission === 'custom'}
-                  <span class="text-indigo-400 flex items-center gap-0.5 font-mono">
+                {:else if activeGroup.send_permission === "custom"}
+                  <span
+                    class="text-indigo-400 flex items-center gap-0.5 font-mono"
+                  >
                     <Shield class="w-2.5 h-2.5" /> Izin kustom aktif
                   </span>
                 {:else}
-                  <span class="text-emerald-400 font-mono">Semua anggota dapat kirim</span>
+                  <span class="text-emerald-400 font-mono"
+                    >Semua anggota dapat kirim</span
+                  >
                 {/if}
               </div>
             </div>
@@ -1493,21 +1793,32 @@
                   class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover border border-slate-700 shadow-sm"
                 />
               {:else}
-                <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-cyan-300">
-                  {(activePeer.customName || activePeer.name).slice(0, 2).toUpperCase()}
+                <div
+                  class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-cyan-300"
+                >
+                  {(activePeer.customName || activePeer.name)
+                    .slice(0, 2)
+                    .toUpperCase()}
                 </div>
               {/if}
               {#if activePeer.isOnline}
-                <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-emerald-500 border-2 border-slate-950 shadow-sm shadow-emerald-500/50"></span>
+                <span
+                  class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-emerald-500 border-2 border-slate-950 shadow-sm shadow-emerald-500/50"
+                ></span>
               {:else}
-                <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-slate-600 border-2 border-slate-950"></span>
+                <span
+                  class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-slate-600 border-2 border-slate-950"
+                ></span>
               {/if}
             </div>
 
             <div class="min-w-0">
               <div class="flex items-center gap-1.5 sm:gap-2">
                 {#if isEditingPeerNickname}
-                  <form class="flex items-center gap-1" on:submit|preventDefault={handleSaveCustomName}>
+                  <form
+                    class="flex items-center gap-1"
+                    on:submit|preventDefault={handleSaveCustomName}
+                  >
                     <input
                       type="text"
                       bind:value={editingPeerNicknameValue}
@@ -1515,21 +1826,32 @@
                       class="bg-slate-900 border border-cyan-500/50 rounded-lg px-2 py-0.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
                       autofocus
                     />
-                    <button type="submit" class="p-1 text-emerald-400 hover:bg-emerald-500/20 rounded" title="Save nickname">
+                    <button
+                      type="submit"
+                      class="p-1 text-emerald-400 hover:bg-emerald-500/20 rounded"
+                      title="Save nickname"
+                    >
                       <Check class="w-3.5 h-3.5" />
                     </button>
-                    <button type="button" on:click={() => (isEditingPeerNickname = false)} class="p-1 text-slate-400 hover:bg-slate-800 rounded" title="Cancel">
+                    <button
+                      type="button"
+                      on:click={() => (isEditingPeerNickname = false)}
+                      class="p-1 text-slate-400 hover:bg-slate-800 rounded"
+                      title="Cancel"
+                    >
                       <X class="w-3.5 h-3.5" />
                     </button>
                   </form>
                 {:else}
-                  <h2 class="text-xs sm:text-sm font-bold text-white truncate max-w-[120px] sm:max-w-none">
+                  <h2
+                    class="text-xs sm:text-sm font-bold text-white truncate max-w-[120px] sm:max-w-none"
+                  >
                     {activePeer.customName || activePeer.name}
                   </h2>
                   <button
                     type="button"
                     on:click={() => {
-                      editingPeerNicknameValue = activePeer.customName || '';
+                      editingPeerNicknameValue = activePeer.customName || "";
                       isEditingPeerNickname = true;
                     }}
                     class="p-1 text-slate-400 hover:text-cyan-400 hover:bg-slate-800/80 rounded transition"
@@ -1538,7 +1860,9 @@
                     <Pencil class="w-3 h-3" />
                   </button>
                 {/if}
-                <span class="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono">
+                <span
+                  class="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono"
+                >
                   {activePeer.networkType.toUpperCase()}
                 </span>
                 {#if !isGroupChat}
@@ -1548,17 +1872,30 @@
                     style={activeRank.badgeStyle}
                     title="{activeRank.tierName} Level {activeRank.level} ({activeRank.exp.toLocaleString()} EXP)"
                   >
-                    {activeRank.icon} {activeRank.tierName} Lv.{activeRank.level}
+                    {activeRank.icon}
+                    {activeRank.tierName} Lv.{activeRank.level}
                   </span>
                 {/if}
                 {#if isPeerBlocked}
-                  <span class="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 font-mono font-bold">
+                  <span
+                    class="text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 font-mono font-bold"
+                  >
                     BLOCKED
                   </span>
                 {:else}
-                  <span class="text-[10px] sm:text-[11px] {activePeer.isOnline ? 'text-emerald-400 font-medium' : 'text-slate-400'} flex items-center gap-1 font-sans">
-                    <span class="w-1.5 h-1.5 rounded-full {activePeer.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}"></span>
-                    {activePeer.isOnline ? 'Online' : formatLastOnline(activePeer.lastSeenAt, false)}
+                  <span
+                    class="text-[10px] sm:text-[11px] {activePeer.isOnline
+                      ? 'text-emerald-400 font-medium'
+                      : 'text-slate-400'} flex items-center gap-1 font-sans"
+                  >
+                    <span
+                      class="w-1.5 h-1.5 rounded-full {activePeer.isOnline
+                        ? 'bg-emerald-400 animate-pulse'
+                        : 'bg-slate-500'}"
+                    ></span>
+                    {activePeer.isOnline
+                      ? "Online"
+                      : formatLastOnline(activePeer.lastSeenAt, false)}
                   </span>
                 {/if}
               </div>
@@ -1567,7 +1904,9 @@
                   Device: {activePeer.name}
                 </p>
               {/if}
-              <p class="text-[10px] sm:text-[11px] text-slate-400 truncate font-mono">
+              <p
+                class="text-[10px] sm:text-[11px] text-slate-400 truncate font-mono"
+              >
                 {activePeer.email || activePeer.id}
               </p>
             </div>
@@ -1593,7 +1932,7 @@
             type="button"
             on:click={() => {
               showChatSearch = !showChatSearch;
-              if (!showChatSearch) chatSearchText = '';
+              if (!showChatSearch) chatSearchText = "";
             }}
             class="p-1.5 rounded-xl transition cursor-pointer {showChatSearch
               ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
@@ -1614,7 +1953,9 @@
           >
             <Folder class="w-4 h-4" />
             {#if conversationFiles.length > 0}
-              <span class="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-cyan-500 text-slate-950 font-bold font-mono text-[9px] flex items-center justify-center">
+              <span
+                class="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-cyan-500 text-slate-950 font-bold font-mono text-[9px] flex items-center justify-center"
+              >
                 {conversationFiles.length}
               </span>
             {/if}
@@ -1636,7 +1977,7 @@
               type="button"
               on:click={async () => {
                 if (activePeer) {
-                  activeMainTab.set('meeting');
+                  activeMainTab.set("meeting");
                   const title = `Call with ${activePeer.customName || activePeer.name}`;
                   await createMeetingRoom(title);
                   await inviteContactToMeeting(activePeer.id);
@@ -1655,7 +1996,7 @@
               class="px-2 sm:px-2.5 py-1 rounded-xl text-xs font-semibold border transition flex items-center gap-1 {isPeerBlocked
                 ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'
                 : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/20'}"
-              title={isPeerBlocked ? 'Unblock this peer' : 'Block this peer'}
+              title={isPeerBlocked ? "Unblock this peer" : "Block this peer"}
             >
               {#if isPeerBlocked}
                 <ShieldCheck class="w-3.5 h-3.5" />
@@ -1691,25 +2032,27 @@
 
       <!-- In-Chat Search Bar -->
       {#if showChatSearch}
-        <div class="px-4 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center gap-2">
+        <div
+          class="px-4 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center gap-2"
+        >
           <Search class="w-4 h-4 text-cyan-400 shrink-0" />
           <input
             type="text"
             bind:value={chatSearchText}
             on:keydown={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === "Enter") {
                 e.preventDefault();
                 if (e.shiftKey) jumpToNextMatch();
                 else jumpToPrevMatch();
-              } else if (e.key === 'ArrowUp') {
+              } else if (e.key === "ArrowUp") {
                 e.preventDefault();
                 jumpToPrevMatch();
-              } else if (e.key === 'ArrowDown') {
+              } else if (e.key === "ArrowDown") {
                 e.preventDefault();
                 jumpToNextMatch();
-              } else if (e.key === 'Escape') {
+              } else if (e.key === "Escape") {
                 showChatSearch = false;
-                chatSearchText = '';
+                chatSearchText = "";
               }
             }}
             placeholder="Search text in this conversation..."
@@ -1717,8 +2060,15 @@
             autofocus
           />
           {#if chatSearchText.trim()}
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded border {searchMatchIds.length > 0 ? 'text-cyan-400 bg-cyan-950/80 border-cyan-800/40' : 'text-rose-400 bg-rose-950/60 border-rose-800/40'}">
-              {searchMatchIds.length > 0 ? `${activeMatchIndex + 1} / ${searchMatchIds.length}` : '0 / 0'}
+            <span
+              class="text-[10px] font-mono px-2 py-0.5 rounded border {searchMatchIds.length >
+              0
+                ? 'text-cyan-400 bg-cyan-950/80 border-cyan-800/40'
+                : 'text-rose-400 bg-rose-950/60 border-rose-800/40'}"
+            >
+              {searchMatchIds.length > 0
+                ? `${activeMatchIndex + 1} / ${searchMatchIds.length}`
+                : "0 / 0"}
             </span>
             <div class="flex items-center gap-0.5">
               <button
@@ -1742,7 +2092,7 @@
             </div>
             <button
               type="button"
-              on:click={() => (chatSearchText = '')}
+              on:click={() => (chatSearchText = "")}
               class="p-0.5 text-slate-400 hover:text-white"
               title="Clear search"
             >
@@ -1753,7 +2103,7 @@
             type="button"
             on:click={() => {
               showChatSearch = false;
-              chatSearchText = '';
+              chatSearchText = "";
             }}
             class="text-xs text-slate-400 hover:text-slate-200 ml-1 cursor-pointer"
           >
@@ -1773,468 +2123,643 @@
           on:click={handleMarkdownClick}
           class="flex-1 overflow-y-auto p-4 space-y-3.5 scroll-smooth relative"
         >
-        <!-- Pagination Loading Indicator at Top -->
-        {#if $isLoadingOlder}
-          <div class="flex items-center justify-center py-2 text-xs text-slate-400 gap-1.5 font-mono">
-            <RefreshCw class="w-3.5 h-3.5 animate-spin text-cyan-400" />
-            <span>Loading older messages...</span>
-          </div>
-        {:else if hasMore}
-          <div class="text-center py-1">
-            <button
-              type="button"
-              on:click={() => loadOlderMessages(activePeer.id)}
-              class="text-[11px] text-cyan-400/80 hover:text-cyan-300 hover:underline font-mono"
+          <!-- Pagination Loading Indicator at Top -->
+          {#if $isLoadingOlder}
+            <div
+              class="flex items-center justify-center py-2 text-xs text-slate-400 gap-1.5 font-mono"
             >
-              Scroll up or click to load older messages &uarr;
-            </button>
-          </div>
-        {/if}
-
-        {#if activeMessages.length === 0}
-          <div class="h-full flex flex-col items-center justify-center text-center p-8">
-            <div class="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-3">
-              <Sparkles class="w-6 h-6 stroke-[1.8]" />
+              <RefreshCw class="w-3.5 h-3.5 animate-spin text-cyan-400" />
+              <span>Loading older messages...</span>
             </div>
-            <h4 class="text-sm font-bold text-white">Start Encrypted Conversation</h4>
-            <p class="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">
-              Messages are sent directly (LAN) or via E2EE relay (WAN). Share markdown plans, code blocks, or attach files.
-            </p>
-          </div>
-        {:else}
-          {#each displayMessages as msg (msg.id)}
-            {@const isOutgoing = msg.direction === 'outgoing'}
-            {@const isActiveMatch = activeMatchId === msg.id}
-            {@const isSearchMatch = searchQueryTrimmed.length > 0 && searchMatchIds.includes(msg.id)}
-            {@const files = parseFilesJson(msg.files_json)}
-            {@const linkedTransfer = msg.transfer_session_id ? $transfers.find((t) => t.id === msg.transfer_session_id) : undefined}
-            {@const pendingRequest = msg.transfer_session_id ? $incomingRequestQueue.find((q) => q.session_id === msg.transfer_session_id) : undefined}
-            {@const hasContent = !!(msg.content && msg.content.trim().length > 0)}
-            {@const dataImageUrl = extractDataImage(msg.content)}
-            {@const isDataImage = !!dataImageUrl}
-
-            <div id="chat-msg-{msg.id}" class="flex flex-col {isOutgoing ? 'items-end' : 'items-start'} group">
-              {#if isGroupChat && !isOutgoing}
-                {@const senderMember = activeGroup?.members.find((m) => m.device_id === msg.sender_device_id)}
-                {@const isSenderOwner = activeGroup?.owner_id === msg.sender_device_id}
-                {@const isSenderAdmin = isSenderOwner || senderMember?.role === 'admin'}
-                <div class="flex items-center gap-1.5 mb-1 px-1 text-[11px] font-semibold text-slate-300">
-                  <span class="text-cyan-400">{msg.sender_alias || senderMember?.alias || 'Anggota'}</span>
-                  {#if isSenderOwner}
-                    <span class="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] border border-amber-500/30 flex items-center gap-0.5">
-                      <Crown class="w-2.5 h-2.5" /> Owner
-                    </span>
-                  {:else if isSenderAdmin}
-                    <span class="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono text-[9px] border border-purple-500/30 flex items-center gap-0.5">
-                      <Shield class="w-2.5 h-2.5" /> Admin
-                    </span>
-                  {/if}
-                </div>
-              {/if}
-              <div
-                class="max-w-[85%] sm:max-w-[75%] rounded-2xl p-3.5 text-xs shadow-lg transition-all relative {isOutgoing
-                  ? 'bg-gradient-to-tr from-cyan-950/60 to-indigo-950/60 border border-cyan-500/40 text-slate-100 rounded-br-sm shadow-cyan-500/5'
-                  : 'bg-slate-900/90 border border-slate-800 text-slate-200 rounded-bl-sm'} {isActiveMatch
-                  ? 'ring-2 ring-amber-400 border-amber-400 shadow-amber-500/20'
-                  : isSearchMatch
-                  ? 'ring-1 ring-cyan-400/60'
-                  : ''}"
+          {:else if hasMore}
+            <div class="text-center py-1">
+              <button
+                type="button"
+                on:click={() => loadOlderMessages(activePeer.id)}
+                class="text-[11px] text-cyan-400/80 hover:text-cyan-300 hover:underline font-mono"
               >
-                <!-- Quick Copy Button on Bubble Hover -->
-                <button
-                  type="button"
-                  on:click={() => copyMessageText(msg.content, msg.id)}
-                  class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 rounded-md bg-slate-950/80 hover:bg-slate-800 text-slate-400 hover:text-cyan-300 border border-slate-800 transition-all cursor-pointer z-10"
-                  title={isDataImage ? 'Copy image to clipboard' : 'Copy message'}
-                >
-                  {#if copiedMessageId === msg.id}
-                    <Check class="w-3 h-3 text-emerald-400" />
-                  {:else}
-                    <Copy class="w-3 h-3" />
-                  {/if}
-                </button>
+                Scroll up or click to load older messages &uarr;
+              </button>
+            </div>
+          {/if}
 
-                {#if msg.msg_type === 'clipboard'}
-                  <div class="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-mono font-bold text-indigo-400">
-                    <span class="flex items-center gap-1">
-                      <Clipboard class="w-3 h-3" />
-                      <span>Universal Clipboard</span>
-                    </span>
-                    {#if isDataImage}
-                      <span class="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-sans text-[9px]">Image</span>
+          {#if activeMessages.length === 0}
+            <div
+              class="h-full flex flex-col items-center justify-center text-center p-8"
+            >
+              <div
+                class="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-3"
+              >
+                <Sparkles class="w-6 h-6 stroke-[1.8]" />
+              </div>
+              <h4 class="text-sm font-bold text-white">
+                Start Encrypted Conversation
+              </h4>
+              <p class="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">
+                Messages are sent directly (LAN) or via E2EE relay (WAN). Share
+                markdown plans, code blocks, or attach files.
+              </p>
+            </div>
+          {:else}
+            {#each displayMessages as msg (msg.id)}
+              {@const isOutgoing = msg.direction === "outgoing"}
+              {@const isActiveMatch = activeMatchId === msg.id}
+              {@const isSearchMatch =
+                searchQueryTrimmed.length > 0 &&
+                searchMatchIds.includes(msg.id)}
+              {@const files = parseFilesJson(msg.files_json)}
+              {@const linkedTransfer = msg.transfer_session_id
+                ? $transfers.find((t) => t.id === msg.transfer_session_id)
+                : undefined}
+              {@const pendingRequest = msg.transfer_session_id
+                ? $incomingRequestQueue.find(
+                    (q) => q.session_id === msg.transfer_session_id,
+                  )
+                : undefined}
+              {@const hasContent = !!(
+                msg.content && msg.content.trim().length > 0
+              )}
+              {@const dataImageUrl = extractDataImage(msg.content)}
+              {@const isDataImage = !!dataImageUrl}
+
+              <div
+                id="chat-msg-{msg.id}"
+                class="flex flex-col {isOutgoing
+                  ? 'items-end'
+                  : 'items-start'} group"
+              >
+                {#if isGroupChat && !isOutgoing}
+                  {@const senderMember = activeGroup?.members.find(
+                    (m) => m.device_id === msg.sender_device_id,
+                  )}
+                  {@const isSenderOwner =
+                    activeGroup?.owner_id === msg.sender_device_id}
+                  {@const isSenderAdmin =
+                    isSenderOwner || senderMember?.role === "admin"}
+                  <div
+                    class="flex items-center gap-1.5 mb-1 px-1 text-[11px] font-semibold text-slate-300"
+                  >
+                    <span class="text-cyan-400"
+                      >{msg.sender_alias ||
+                        senderMember?.alias ||
+                        "Anggota"}</span
+                    >
+                    {#if isSenderOwner}
+                      <span
+                        class="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] border border-amber-500/30 flex items-center gap-0.5"
+                      >
+                        <Crown class="w-2.5 h-2.5" /> Owner
+                      </span>
+                    {:else if isSenderAdmin}
+                      <span
+                        class="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono text-[9px] border border-purple-500/30 flex items-center gap-0.5"
+                      >
+                        <Shield class="w-2.5 h-2.5" /> Admin
+                      </span>
                     {/if}
                   </div>
                 {/if}
+                <div
+                  class="max-w-[85%] sm:max-w-[75%] rounded-2xl p-3.5 text-xs shadow-lg transition-all relative {isOutgoing
+                    ? 'bg-gradient-to-tr from-cyan-950/60 to-indigo-950/60 border border-cyan-500/40 text-slate-100 rounded-br-sm shadow-cyan-500/5'
+                    : 'bg-slate-900/90 border border-slate-800 text-slate-200 rounded-bl-sm'} {isActiveMatch
+                    ? 'ring-2 ring-amber-400 border-amber-400 shadow-amber-500/20'
+                    : isSearchMatch
+                      ? 'ring-1 ring-cyan-400/60'
+                      : ''}"
+                >
+                  <!-- Quick Copy Button on Bubble Hover -->
+                  <button
+                    type="button"
+                    on:click={() => copyMessageText(msg.content, msg.id)}
+                    class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 rounded-md bg-slate-950/80 hover:bg-slate-800 text-slate-400 hover:text-cyan-300 border border-slate-800 transition-all cursor-pointer z-10"
+                    title={isDataImage
+                      ? "Copy image to clipboard"
+                      : "Copy message"}
+                  >
+                    {#if copiedMessageId === msg.id}
+                      <Check class="w-3 h-3 text-emerald-400" />
+                    {:else}
+                      <Copy class="w-3 h-3" />
+                    {/if}
+                  </button>
 
-                <!-- Direct Image Content (Clipboard Image Screenshot) -->
-                {#if isDataImage && dataImageUrl}
-                  <div class="mt-1 space-y-2">
-                    <div class="relative group/img rounded-xl overflow-hidden border border-slate-700/80 bg-slate-950/80 shadow-md inline-block max-w-full">
-                      <!-- svelte-ignore a11y-click-events-have-key-events -->
-                      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-                      <img
-                        src={dataImageUrl}
-                        alt="Clipboard Screenshot"
-                        class="max-h-64 sm:max-h-80 w-auto rounded-lg object-contain cursor-pointer transition-transform duration-200 group-hover/img:scale-[1.01]"
-                        loading="lazy"
-                        on:click={() => (previewModalImage = dataImageUrl)}
-                      />
-                      <!-- Overlay Hover Action Bar -->
-                      <div class="absolute bottom-2 right-2 flex items-center gap-1.5 opacity-90 group-hover/img:opacity-100 transition-opacity">
-                        <button
-                          type="button"
-                          on:click|stopPropagation={() => handleCopyImage(dataImageUrl, msg.id)}
-                          class="px-2.5 py-1 rounded-lg bg-slate-900/95 hover:bg-slate-800 text-slate-200 hover:text-white text-[11px] font-semibold border border-slate-700/80 flex items-center gap-1.5 shadow-lg backdrop-blur-sm transition-all active:scale-95 cursor-pointer"
-                          title="Copy image directly to system clipboard (ready to Ctrl+V)"
-                        >
-                          {#if copiedMessageId === msg.id}
-                            <Check class="w-3.5 h-3.5 text-emerald-400" />
-                            <span class="text-emerald-400 font-bold">Copied!</span>
-                          {:else}
-                            <Copy class="w-3.5 h-3.5 text-indigo-400" />
-                            <span>Copy Image</span>
-                          {/if}
-                        </button>
-                        <button
-                          type="button"
-                          on:click|stopPropagation={() => handleDownloadImage(dataImageUrl, msg.id)}
-                          class="p-1.5 rounded-lg bg-slate-900/95 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 shadow-lg backdrop-blur-sm transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[30px] min-h-[30px]"
-                          disabled={downloadingMessageId === msg.id}
-                          title="Download image to Downloads folder"
-                        >
-                          {#if downloadingMessageId === msg.id}
-                            <Loader2 class="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-                          {:else if downloadSuccessId === msg.id}
-                            <Check class="w-3.5 h-3.5 text-emerald-400" />
-                          {:else}
-                            <Download class="w-3.5 h-3.5 text-cyan-400" />
-                          {/if}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                {:else if msg.msg_type === 'audio' || (msg.content && msg.content.startsWith('data:audio/'))}
-                  <!-- Voice Note Audio Player -->
-                  <div class="mt-1">
-                    <VoiceNotePlayer src={msg.content} {isOutgoing} />
-                  </div>
-                {:else if hasContent}
-                  <!-- Markdown Content -->
-                  <div class="text-slate-100 text-xs leading-relaxed font-sans break-words markdown-body select-text pr-6">
-                    {@html renderMarkdown(msg.content)}
-                  </div>
-                {/if}
-
-                <!-- Integrated File / Media Transfer Card -->
-                {#if files.length > 0}
-                  <div class="{hasContent ? 'mt-2.5 pt-2 border-t border-slate-800/80' : ''} space-y-2">
-                    <div class="flex items-center justify-between text-[11px] font-mono text-slate-400">
-                      <span class="flex items-center gap-1 text-cyan-300 font-semibold">
-                        <Paperclip class="w-3 h-3 text-cyan-400" />
-                        {files.length} Shared File(s)
+                  {#if msg.msg_type === "clipboard"}
+                    <div
+                      class="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-mono font-bold text-indigo-400"
+                    >
+                      <span class="flex items-center gap-1">
+                        <Clipboard class="w-3 h-3" />
+                        <span>Universal Clipboard</span>
                       </span>
-                      {#if pendingRequest}
-                        <span class="text-[11px] font-semibold text-amber-400 animate-pulse">
-                          WAITING ACCEPT
-                        </span>
-                      {:else if linkedTransfer}
-                        <span class="text-[11px] font-semibold {linkedTransfer.status === 'completed'
-                          ? 'text-emerald-400'
-                          : linkedTransfer.status === 'in_progress'
-                          ? 'text-cyan-400 animate-pulse'
-                          : 'text-amber-400'}">
-                          {linkedTransfer.status === 'completed' ? 'Verified' : `${linkedTransfer.status.toUpperCase()}`}
-                        </span>
+                      {#if isDataImage}
+                        <span
+                          class="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-sans text-[9px]"
+                          >Image</span
+                        >
                       {/if}
                     </div>
+                  {/if}
 
-                    <div class="space-y-2">
-                      {#each files as f, fileIdx}
-                        {@const badge = getFileTypeBadge(f.name)}
-                        {@const localPath = resolveLocalFilePath(f, isOutgoing, linkedTransfer, fileIdx)}
-                        {@const isImageFile = badge.isImage}
-                        {@const thumbSrc = f.thumbnail || (localPath ? localThumbnails[localPath] : null)}
-
-                        <div class="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/90 space-y-2">
-                          <!-- Direct In-Chat Image Thumbnail Preview (Fast & Lightweight) -->
-                          {#if isImageFile}
-                            {#if thumbSrc}
-                              <!-- svelte-ignore a11y-click-events-have-key-events -->
-                              <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-                              <div
-                                on:click={() => localPath && handleOpenFile(localPath)}
-                                class="rounded-lg overflow-hidden border border-slate-800/80 max-h-52 bg-slate-950 flex items-center justify-center {localPath ? 'cursor-pointer hover:border-cyan-500/40 transition group/img relative' : ''}"
-                                title={localPath ? 'Click to open full image' : 'Image preview thumbnail'}
+                  <!-- Direct Image Content (Clipboard Image Screenshot) -->
+                  {#if isDataImage && dataImageUrl}
+                    <div class="mt-1 space-y-2">
+                      <div
+                        class="relative group/img rounded-xl overflow-hidden border border-slate-700/80 bg-slate-950/80 shadow-md inline-block max-w-full"
+                      >
+                        <!-- svelte-ignore a11y-click-events-have-key-events -->
+                        <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+                        <img
+                          src={dataImageUrl}
+                          alt="Clipboard Screenshot"
+                          class="max-h-64 sm:max-h-80 w-auto rounded-lg object-contain cursor-pointer transition-transform duration-200 group-hover/img:scale-[1.01]"
+                          loading="lazy"
+                          on:click={() => (previewModalImage = dataImageUrl)}
+                        />
+                        <!-- Overlay Hover Action Bar -->
+                        <div
+                          class="absolute bottom-2 right-2 flex items-center gap-1.5 opacity-90 group-hover/img:opacity-100 transition-opacity"
+                        >
+                          <button
+                            type="button"
+                            on:click|stopPropagation={() =>
+                              handleCopyImage(dataImageUrl, msg.id)}
+                            class="px-2.5 py-1 rounded-lg bg-slate-900/95 hover:bg-slate-800 text-slate-200 hover:text-white text-[11px] font-semibold border border-slate-700/80 flex items-center gap-1.5 shadow-lg backdrop-blur-sm transition-all active:scale-95 cursor-pointer"
+                            title="Copy image directly to system clipboard (ready to Ctrl+V)"
+                          >
+                            {#if copiedMessageId === msg.id}
+                              <Check class="w-3.5 h-3.5 text-emerald-400" />
+                              <span class="text-emerald-400 font-bold"
+                                >Copied!</span
                               >
-                                <img
-                                  src={thumbSrc}
-                                  alt={f.name}
-                                  class="max-h-52 max-w-full object-contain rounded-lg shadow-sm"
-                                  loading="lazy"
-                                />
-                              </div>
-                            {:else if localPath}
-                              <!-- Trigger background local thumbnail load -->
-                              <span class="hidden">{ensureLocalThumbnail(localPath)}</span>
+                            {:else}
+                              <Copy class="w-3.5 h-3.5 text-indigo-400" />
+                              <span>Copy Image</span>
                             {/if}
-                          {/if}
+                          </button>
+                          <button
+                            type="button"
+                            on:click|stopPropagation={() =>
+                              handleDownloadImage(dataImageUrl, msg.id)}
+                            class="p-1.5 rounded-lg bg-slate-900/95 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 shadow-lg backdrop-blur-sm transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[30px] min-h-[30px]"
+                            disabled={downloadingMessageId === msg.id}
+                            title="Download image to Downloads folder"
+                          >
+                            {#if downloadingMessageId === msg.id}
+                              <Loader2
+                                class="w-3.5 h-3.5 text-cyan-400 animate-spin"
+                              />
+                            {:else if downloadSuccessId === msg.id}
+                              <Check class="w-3.5 h-3.5 text-emerald-400" />
+                            {:else}
+                              <Download class="w-3.5 h-3.5 text-cyan-400" />
+                            {/if}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  {:else if msg.msg_type === "audio" || (msg.content && msg.content.startsWith("data:audio/"))}
+                    <!-- Voice Note Audio Player -->
+                    <div class="mt-1">
+                      <VoiceNotePlayer src={msg.content} {isOutgoing} />
+                    </div>
+                  {:else if hasContent}
+                    <!-- Markdown Content -->
+                    <div
+                      class="text-slate-100 text-xs leading-relaxed font-sans break-words markdown-body select-text pr-6"
+                    >
+                      {@html renderMarkdown(msg.content)}
+                    </div>
+                  {/if}
 
-                          <div class="flex items-center justify-between gap-2">
-                            <div class="flex items-center gap-2.5 min-w-0">
-                              <div class="w-7 h-7 rounded-lg {badge.color} border flex items-center justify-center font-mono font-bold text-[9px] shrink-0">
-                                {badge.label}
+                  <!-- Integrated File / Media Transfer Card -->
+                  {#if files.length > 0}
+                    <div
+                      class="{hasContent
+                        ? 'mt-2.5 pt-2 border-t border-slate-800/80'
+                        : ''} space-y-2"
+                    >
+                      <div
+                        class="flex items-center justify-between text-[11px] font-mono text-slate-400"
+                      >
+                        <span
+                          class="flex items-center gap-1 text-cyan-300 font-semibold"
+                        >
+                          <Paperclip class="w-3 h-3 text-cyan-400" />
+                          {files.length} Shared File(s)
+                        </span>
+                        {#if pendingRequest}
+                          <span
+                            class="text-[11px] font-semibold text-amber-400 animate-pulse"
+                          >
+                            WAITING ACCEPT
+                          </span>
+                        {:else if linkedTransfer}
+                          <span
+                            class="text-[11px] font-semibold {linkedTransfer.status ===
+                            'completed'
+                              ? 'text-emerald-400'
+                              : linkedTransfer.status === 'in_progress'
+                                ? 'text-cyan-400 animate-pulse'
+                                : 'text-amber-400'}"
+                          >
+                            {linkedTransfer.status === "completed"
+                              ? "Verified"
+                              : `${linkedTransfer.status.toUpperCase()}`}
+                          </span>
+                        {/if}
+                      </div>
+
+                      <div class="space-y-2">
+                        {#each files as f, fileIdx}
+                          {@const badge = getFileTypeBadge(f.name)}
+                          {@const localPath = resolveLocalFilePath(
+                            f,
+                            isOutgoing,
+                            linkedTransfer,
+                            fileIdx,
+                          )}
+                          {@const isImageFile = badge.isImage}
+                          {@const thumbSrc =
+                            f.thumbnail ||
+                            (localPath ? localThumbnails[localPath] : null)}
+
+                          <div
+                            class="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/90 space-y-2"
+                          >
+                            <!-- Direct In-Chat Image Thumbnail Preview (Fast & Lightweight) -->
+                            {#if isImageFile}
+                              {#if thumbSrc}
+                                <!-- svelte-ignore a11y-click-events-have-key-events -->
+                                <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+                                <div
+                                  on:click={() =>
+                                    localPath && handleOpenFile(localPath)}
+                                  class="rounded-lg overflow-hidden border border-slate-800/80 max-h-52 bg-slate-950 flex items-center justify-center {localPath
+                                    ? 'cursor-pointer hover:border-cyan-500/40 transition group/img relative'
+                                    : ''}"
+                                  title={localPath
+                                    ? "Click to open full image"
+                                    : "Image preview thumbnail"}
+                                >
+                                  <img
+                                    src={thumbSrc}
+                                    alt={f.name}
+                                    class="max-h-52 max-w-full object-contain rounded-lg shadow-sm"
+                                    loading="lazy"
+                                  />
+                                </div>
+                              {:else if localPath}
+                                <!-- Trigger background local thumbnail load -->
+                                <span class="hidden"
+                                  >{ensureLocalThumbnail(localPath)}</span
+                                >
+                              {/if}
+                            {/if}
+
+                            <div
+                              class="flex items-center justify-between gap-2"
+                            >
+                              <div class="flex items-center gap-2.5 min-w-0">
+                                <div
+                                  class="w-7 h-7 rounded-lg {badge.color} border flex items-center justify-center font-mono font-bold text-[9px] shrink-0"
+                                >
+                                  {badge.label}
+                                </div>
+                                <div class="min-w-0">
+                                  <p
+                                    class="text-xs font-semibold text-white truncate max-w-[170px] sm:max-w-xs"
+                                    title={f.name}
+                                  >
+                                    {f.name}
+                                  </p>
+                                  {#if f.size > 0}
+                                    <p
+                                      class="text-[10px] font-mono text-slate-400"
+                                    >
+                                      {formatBytes(f.size)}
+                                    </p>
+                                  {/if}
+                                </div>
                               </div>
-                              <div class="min-w-0">
-                                <p class="text-xs font-semibold text-white truncate max-w-[170px] sm:max-w-xs" title={f.name}>
-                                  {f.name}
-                                </p>
-                                {#if f.size > 0}
-                                  <p class="text-[10px] font-mono text-slate-400">{formatBytes(f.size)}</p>
+
+                              <!-- Action Buttons on File Card -->
+                              <div class="flex items-center gap-1.5 shrink-0">
+                                {#if pendingRequest}
+                                  <button
+                                    type="button"
+                                    on:click={() =>
+                                      handleAcceptChatTransfer(
+                                        pendingRequest.session_id,
+                                      )}
+                                    class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-[11px] text-emerald-300 border border-emerald-500/40 font-bold transition shadow-sm"
+                                    title="Accept & Download"
+                                  >
+                                    Accept
+                                  </button>
+                                  <button
+                                    type="button"
+                                    on:click={() =>
+                                      handleDeclineChatTransfer(
+                                        pendingRequest.session_id,
+                                      )}
+                                    class="px-2 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-[11px] text-rose-300 border border-rose-500/40 transition"
+                                    title="Decline Transfer"
+                                  >
+                                    Decline
+                                  </button>
+                                {:else if linkedTransfer?.status === "paused" && isOutgoing}
+                                  <button
+                                    type="button"
+                                    on:click={() =>
+                                      raydropApi.resumeTransfer(
+                                        linkedTransfer.id,
+                                      )}
+                                    class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-[11px] text-emerald-300 border border-emerald-500/40 font-bold transition"
+                                    title="Resume transfer"
+                                  >
+                                    Resume
+                                  </button>
+                                {:else if localPath && (linkedTransfer?.status === "completed" || isOutgoing)}
+                                  <button
+                                    type="button"
+                                    on:click={() => handleOpenFile(localPath)}
+                                    class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200 hover:text-white border border-slate-700 transition"
+                                    title="Open File Directly"
+                                  >
+                                    Open
+                                  </button>
+                                  <button
+                                    type="button"
+                                    on:click={() => handleOpenFolder(localPath)}
+                                    class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-amber-300 border border-slate-700 transition"
+                                    title="Locate in Containing Folder"
+                                  >
+                                    <FolderOpen class="w-3.5 h-3.5" />
+                                  </button>
+                                {:else if linkedTransfer?.target_path}
+                                  <button
+                                    type="button"
+                                    on:click={() =>
+                                      handleOpenFolder(
+                                        linkedTransfer?.target_path || "",
+                                      )}
+                                    class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 border border-slate-700 transition"
+                                    title="Open Destination Folder"
+                                  >
+                                    Folder
+                                  </button>
                                 {/if}
                               </div>
                             </div>
+                          </div>
+                        {/each}
+                      </div>
 
-                            <!-- Action Buttons on File Card -->
-                            <div class="flex items-center gap-1.5 shrink-0">
-                              {#if pendingRequest}
-                                <button
-                                  type="button"
-                                  on:click={() => handleAcceptChatTransfer(pendingRequest.session_id)}
-                                  class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-[11px] text-emerald-300 border border-emerald-500/40 font-bold transition shadow-sm"
-                                  title="Accept & Download"
-                                >
-                                  Accept
-                                </button>
-                                <button
-                                  type="button"
-                                  on:click={() => handleDeclineChatTransfer(pendingRequest.session_id)}
-                                  class="px-2 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-[11px] text-rose-300 border border-rose-500/40 transition"
-                                  title="Decline Transfer"
-                                >
-                                  Decline
-                                </button>
-                              {:else if linkedTransfer?.status === 'paused' && isOutgoing}
-                                <button
-                                  type="button"
-                                  on:click={() => raydropApi.resumeTransfer(linkedTransfer.id)}
-                                  class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-[11px] text-emerald-300 border border-emerald-500/40 font-bold transition"
-                                  title="Resume transfer"
-                                >
-                                  Resume
-                                </button>
-                              {:else if localPath && (linkedTransfer?.status === 'completed' || isOutgoing)}
-                                <button
-                                  type="button"
-                                  on:click={() => handleOpenFile(localPath)}
-                                  class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200 hover:text-white border border-slate-700 transition"
-                                  title="Open File Directly"
-                                >
-                                  Open
-                                </button>
-                                <button
-                                  type="button"
-                                  on:click={() => handleOpenFolder(localPath)}
-                                  class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-amber-300 border border-slate-700 transition"
-                                  title="Locate in Containing Folder"
-                                >
-                                  <FolderOpen class="w-3.5 h-3.5" />
-                                </button>
-                              {:else if linkedTransfer?.target_path}
-                                <button
-                                  type="button"
-                                  on:click={() => handleOpenFolder(linkedTransfer?.target_path || '')}
-                                  class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 border border-slate-700 transition"
-                                  title="Open Destination Folder"
-                                >
-                                  Folder
-                                </button>
-                              {/if}
-                            </div>
+                      <!-- Live Transfer Progress in Chat Bubble (Reactive) -->
+                      {#if linkedTransfer && linkedTransfer.status !== "completed" && (linkedTransfer.status === "in_progress" || (linkedTransfer.total_bytes > 0 && linkedTransfer.transferred_bytes < linkedTransfer.total_bytes))}
+                        {@const totalBytes =
+                          linkedTransfer.total_bytes > 0
+                            ? linkedTransfer.total_bytes
+                            : files[0]?.size || 0}
+                        {@const transferredBytes =
+                          linkedTransfer.transferred_bytes || 0}
+                        {@const pct =
+                          totalBytes > 0
+                            ? Math.min(
+                                100,
+                                Math.round(
+                                  (transferredBytes / totalBytes) * 100,
+                                ),
+                              )
+                            : 0}
+                        <div class="space-y-1 pt-1.5">
+                          <div
+                            class="w-full h-2 rounded-full bg-slate-950 overflow-hidden border border-slate-800"
+                          >
+                            <div
+                              class="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 transition-all duration-150"
+                              style="width: {pct}%"
+                            ></div>
+                          </div>
+                          <div
+                            class="flex items-center justify-between text-[10px] font-mono text-slate-400"
+                          >
+                            <span
+                              >{pct}% ({formatBytes(transferredBytes)} / {formatBytes(
+                                totalBytes,
+                              )})</span
+                            >
+                            <span class="text-cyan-400 font-bold"
+                              >{(linkedTransfer.speed_mbps || 0).toFixed(1)} MB/s</span
+                            >
                           </div>
                         </div>
-                      {/each}
+                      {/if}
+                    </div>
+                  {/if}
+
+                  <!-- Timestamp & Delivery Indicator (Relative format) -->
+                  <div
+                    class="flex items-center justify-end gap-1.5 mt-1.5 pt-1 text-[10px] font-mono text-slate-500"
+                  >
+                    <span
+                      title={new Date(msg.created_at * 1000).toLocaleString()}
+                    >
+                      <!-- Reactive dependency on relativeTimeTicker -->
+                      {#key relativeTimeTicker}
+                        {formatRelativeTime(msg.created_at)}
+                      {/key}
+                    </span>
+                    {#if isOutgoing}
+                      <CheckCheck class="w-3 h-3 text-cyan-400" />
+                    {/if}
+                  </div>
+                </div>
+              </div>
+            {/each}
+          {/if}
+        </div>
+
+        <!-- Collapsible Shared Media & Files Drawer -->
+        {#if showMediaDrawer}
+          <aside
+            class="w-72 sm:w-80 border-l border-slate-800 bg-slate-900/95 flex flex-col z-20 shrink-0 backdrop-blur-md animate-in slide-in-from-right duration-200"
+          >
+            <!-- Drawer Header -->
+            <div
+              class="p-3.5 border-b border-slate-800 flex items-center justify-between"
+            >
+              <div class="flex items-center gap-2">
+                <Folder class="w-4 h-4 text-cyan-400" />
+                <h4
+                  class="text-xs font-bold text-white uppercase tracking-wider"
+                >
+                  Shared Media & Files
+                </h4>
+              </div>
+              <button
+                type="button"
+                on:click={() => (showMediaDrawer = false)}
+                class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X class="w-4 h-4" />
+              </button>
+            </div>
+
+            <!-- Drawer Filter Tabs -->
+            <div
+              class="p-2 border-b border-slate-800 flex items-center gap-1 bg-slate-950/60"
+            >
+              <button
+                type="button"
+                on:click={() => (mediaDrawerFilter = "all")}
+                class="flex-1 py-1 rounded-lg text-[11px] font-semibold transition {mediaDrawerFilter ===
+                'all'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                  : 'text-slate-400 hover:text-slate-200'}"
+              >
+                All ({conversationFiles.length})
+              </button>
+              <button
+                type="button"
+                on:click={() => (mediaDrawerFilter = "media")}
+                class="flex-1 py-1 rounded-lg text-[11px] font-semibold transition {mediaDrawerFilter ===
+                'media'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                  : 'text-slate-400 hover:text-slate-200'}"
+              >
+                Media ({conversationFiles.filter((f) => f.type !== "file")
+                  .length})
+              </button>
+              <button
+                type="button"
+                on:click={() => (mediaDrawerFilter = "files")}
+                class="flex-1 py-1 rounded-lg text-[11px] font-semibold transition {mediaDrawerFilter ===
+                'files'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                  : 'text-slate-400 hover:text-slate-200'}"
+              >
+                Files ({conversationFiles.filter((f) => f.type === "file")
+                  .length})
+              </button>
+            </div>
+
+            <!-- Drawer File List -->
+            <div class="flex-1 overflow-y-auto p-3 space-y-2">
+              {#if filteredConversationFiles.length === 0}
+                <div
+                  class="h-40 flex flex-col items-center justify-center text-center p-4 text-slate-500 text-xs"
+                >
+                  <FileText class="w-8 h-8 text-slate-600 mb-2" />
+                  <p>
+                    No {mediaDrawerFilter === "all"
+                      ? "attachments"
+                      : mediaDrawerFilter} shared yet
+                  </p>
+                </div>
+              {:else}
+                {#each filteredConversationFiles as item}
+                  <div
+                    class="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition flex items-center justify-between gap-2.5 group"
+                  >
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      {#if item.type === "image"}
+                        <button
+                          type="button"
+                          on:click={() => {
+                            if (item.dataUrl) previewModalImage = item.dataUrl;
+                            else if (item.path)
+                              previewModalImage = convertFileSrc(item.path);
+                          }}
+                          class="w-9 h-9 rounded-lg bg-slate-800 border border-slate-700 overflow-hidden shrink-0 cursor-pointer"
+                        >
+                          <img
+                            src={item.dataUrl || convertFileSrc(item.path)}
+                            alt={item.name}
+                            class="w-full h-full object-cover"
+                          />
+                        </button>
+                      {:else if item.type === "video"}
+                        <div
+                          class="w-9 h-9 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 flex items-center justify-center shrink-0"
+                        >
+                          <Video class="w-4 h-4" />
+                        </div>
+                      {:else if item.type === "audio"}
+                        <div
+                          class="w-9 h-9 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 flex items-center justify-center shrink-0"
+                        >
+                          <Music class="w-4 h-4" />
+                        </div>
+                      {:else}
+                        <div
+                          class="w-9 h-9 rounded-lg bg-slate-800 border border-slate-700 text-cyan-400 flex items-center justify-center shrink-0"
+                        >
+                          <FileText class="w-4 h-4" />
+                        </div>
+                      {/if}
+
+                      <div class="min-w-0">
+                        <p
+                          class="text-xs font-medium text-slate-200 truncate"
+                          title={item.name}
+                        >
+                          {item.name}
+                        </p>
+                        <div
+                          class="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono mt-0.5"
+                        >
+                          {#if item.size}
+                            <span>{formatBytes(item.size)}</span>
+                            <span>•</span>
+                          {/if}
+                          <span
+                            >{item.sender === "me" ? "Sent" : "Received"}</span
+                          >
+                        </div>
+                      </div>
                     </div>
 
-                    <!-- Live Transfer Progress in Chat Bubble (Reactive) -->
-                    {#if linkedTransfer && linkedTransfer.status !== 'completed' && (linkedTransfer.status === 'in_progress' || (linkedTransfer.total_bytes > 0 && linkedTransfer.transferred_bytes < linkedTransfer.total_bytes))}
-                      {@const totalBytes = linkedTransfer.total_bytes > 0 ? linkedTransfer.total_bytes : (files[0]?.size || 0)}
-                      {@const transferredBytes = linkedTransfer.transferred_bytes || 0}
-                      {@const pct = totalBytes > 0
-                        ? Math.min(100, Math.round((transferredBytes / totalBytes) * 100))
-                        : 0}
-                      <div class="space-y-1 pt-1.5">
-                        <div class="w-full h-2 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
-                          <div
-                            class="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 transition-all duration-150"
-                            style="width: {pct}%"
-                          ></div>
-                        </div>
-                        <div class="flex items-center justify-between text-[10px] font-mono text-slate-400">
-                          <span>{pct}% ({formatBytes(transferredBytes)} / {formatBytes(totalBytes)})</span>
-                          <span class="text-cyan-400 font-bold">{(linkedTransfer.speed_mbps || 0).toFixed(1)} MB/s</span>
-                        </div>
+                    {#if item.path}
+                      <div class="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          on:click={() => raydropApi.openFilePath(item.path)}
+                          class="p-1 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition cursor-pointer"
+                          title="Open file"
+                        >
+                          <ExternalLink class="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          on:click={() => raydropApi.openFolderPath(item.path)}
+                          class="p-1 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition cursor-pointer"
+                          title="Locate folder"
+                        >
+                          <FolderOpen class="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     {/if}
                   </div>
-                {/if}
-
-                <!-- Timestamp & Delivery Indicator (Relative format) -->
-                <div class="flex items-center justify-end gap-1.5 mt-1.5 pt-1 text-[10px] font-mono text-slate-500">
-                  <span title={new Date(msg.created_at * 1000).toLocaleString()}>
-                    <!-- Reactive dependency on relativeTimeTicker -->
-                    {#key relativeTimeTicker}
-                      {formatRelativeTime(msg.created_at)}
-                    {/key}
-                  </span>
-                  {#if isOutgoing}
-                    <CheckCheck class="w-3 h-3 text-cyan-400" />
-                  {/if}
-                </div>
-              </div>
+                {/each}
+              {/if}
             </div>
-          {/each}
+          </aside>
         {/if}
       </div>
 
-      <!-- Collapsible Shared Media & Files Drawer -->
-      {#if showMediaDrawer}
-        <aside
-          class="w-72 sm:w-80 border-l border-slate-800 bg-slate-900/95 flex flex-col z-20 shrink-0 backdrop-blur-md animate-in slide-in-from-right duration-200"
-        >
-          <!-- Drawer Header -->
-          <div class="p-3.5 border-b border-slate-800 flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <Folder class="w-4 h-4 text-cyan-400" />
-              <h4 class="text-xs font-bold text-white uppercase tracking-wider">Shared Media & Files</h4>
-            </div>
-            <button
-              type="button"
-              on:click={() => (showMediaDrawer = false)}
-              class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-            >
-              <X class="w-4 h-4" />
-            </button>
-          </div>
-
-          <!-- Drawer Filter Tabs -->
-          <div class="p-2 border-b border-slate-800 flex items-center gap-1 bg-slate-950/60">
-            <button
-              type="button"
-              on:click={() => (mediaDrawerFilter = 'all')}
-              class="flex-1 py-1 rounded-lg text-[11px] font-semibold transition {mediaDrawerFilter === 'all'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                : 'text-slate-400 hover:text-slate-200'}"
-            >
-              All ({conversationFiles.length})
-            </button>
-            <button
-              type="button"
-              on:click={() => (mediaDrawerFilter = 'media')}
-              class="flex-1 py-1 rounded-lg text-[11px] font-semibold transition {mediaDrawerFilter === 'media'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                : 'text-slate-400 hover:text-slate-200'}"
-            >
-              Media ({conversationFiles.filter((f) => f.type !== 'file').length})
-            </button>
-            <button
-              type="button"
-              on:click={() => (mediaDrawerFilter = 'files')}
-              class="flex-1 py-1 rounded-lg text-[11px] font-semibold transition {mediaDrawerFilter === 'files'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                : 'text-slate-400 hover:text-slate-200'}"
-            >
-              Files ({conversationFiles.filter((f) => f.type === 'file').length})
-            </button>
-          </div>
-
-          <!-- Drawer File List -->
-          <div class="flex-1 overflow-y-auto p-3 space-y-2">
-            {#if filteredConversationFiles.length === 0}
-              <div class="h-40 flex flex-col items-center justify-center text-center p-4 text-slate-500 text-xs">
-                <FileText class="w-8 h-8 text-slate-600 mb-2" />
-                <p>No {mediaDrawerFilter === 'all' ? 'attachments' : mediaDrawerFilter} shared yet</p>
-              </div>
-            {:else}
-              {#each filteredConversationFiles as item}
-                <div class="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition flex items-center justify-between gap-2.5 group">
-                  <div class="flex items-center gap-2.5 min-w-0">
-                    {#if item.type === 'image'}
-                      <button
-                        type="button"
-                        on:click={() => {
-                          if (item.dataUrl) previewModalImage = item.dataUrl;
-                          else if (item.path) previewModalImage = convertFileSrc(item.path);
-                        }}
-                        class="w-9 h-9 rounded-lg bg-slate-800 border border-slate-700 overflow-hidden shrink-0 cursor-pointer"
-                      >
-                        <img
-                          src={item.dataUrl || convertFileSrc(item.path)}
-                          alt={item.name}
-                          class="w-full h-full object-cover"
-                        />
-                      </button>
-                    {:else if item.type === 'video'}
-                      <div class="w-9 h-9 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 flex items-center justify-center shrink-0">
-                        <Video class="w-4 h-4" />
-                      </div>
-                    {:else if item.type === 'audio'}
-                      <div class="w-9 h-9 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 flex items-center justify-center shrink-0">
-                        <Music class="w-4 h-4" />
-                      </div>
-                    {:else}
-                      <div class="w-9 h-9 rounded-lg bg-slate-800 border border-slate-700 text-cyan-400 flex items-center justify-center shrink-0">
-                        <FileText class="w-4 h-4" />
-                      </div>
-                    {/if}
-
-                    <div class="min-w-0">
-                      <p class="text-xs font-medium text-slate-200 truncate" title={item.name}>
-                        {item.name}
-                      </p>
-                      <div class="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono mt-0.5">
-                        {#if item.size}
-                          <span>{formatBytes(item.size)}</span>
-                          <span>•</span>
-                        {/if}
-                        <span>{item.sender === 'me' ? 'Sent' : 'Received'}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {#if item.path}
-                    <div class="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        on:click={() => raydropApi.openFilePath(item.path)}
-                        class="p-1 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition cursor-pointer"
-                        title="Open file"
-                      >
-                        <ExternalLink class="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        on:click={() => raydropApi.openFolderPath(item.path)}
-                        class="p-1 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition cursor-pointer"
-                        title="Locate folder"
-                      >
-                        <FolderOpen class="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  {/if}
-                </div>
-              {/each}
-            {/if}
-          </div>
-        </aside>
-      {/if}
-    </div>
-
       <!-- Blocked Peer Warning Banner -->
       {#if isPeerBlocked}
-        <div class="p-3 bg-rose-950/60 border-t border-rose-800/80 flex items-center justify-between gap-3 text-xs text-rose-200">
+        <div
+          class="p-3 bg-rose-950/60 border-t border-rose-800/80 flex items-center justify-between gap-3 text-xs text-rose-200"
+        >
           <div class="flex items-center gap-2">
             <ShieldAlert class="w-4 h-4 text-rose-400 shrink-0" />
-            <span>This contact is blocked. Messages and file transfers from this contact will not be received.</span>
+            <span
+              >This contact is blocked. Messages and file transfers from this
+              contact will not be received.</span
+            >
           </div>
           <button
             type="button"
@@ -2248,10 +2773,16 @@
 
       <!-- Attachment Preview Pills -->
       {#if attachingFiles.length > 0}
-        <div class="px-4 py-2 border-t border-slate-800/80 bg-slate-950/80 flex items-center gap-2 overflow-x-auto">
-          <span class="text-[11px] font-mono text-slate-400 shrink-0">Attached:</span>
+        <div
+          class="px-4 py-2 border-t border-slate-800/80 bg-slate-950/80 flex items-center gap-2 overflow-x-auto"
+        >
+          <span class="text-[11px] font-mono text-slate-400 shrink-0"
+            >Attached:</span
+          >
           {#each attachingFiles as fp, idx}
-            <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-700/80 text-xs text-white shrink-0">
+            <div
+              class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-700/80 text-xs text-white shrink-0"
+            >
               <FileText class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span class="truncate max-w-[150px]">{getBaseName(fp)}</span>
               <button
@@ -2268,9 +2799,13 @@
 
       <!-- Pasted Image Preview Card (Ctrl+V) -->
       {#if pastedImagePreview}
-        <div class="px-4 py-2 border-t border-slate-800/80 bg-slate-950/90 flex items-center justify-between gap-3">
+        <div
+          class="px-4 py-2 border-t border-slate-800/80 bg-slate-950/90 flex items-center justify-between gap-3"
+        >
           <div class="flex items-center gap-3 min-w-0">
-            <div class="relative group/pasted rounded-xl overflow-hidden border border-cyan-500/50 bg-slate-900 shadow-md shrink-0">
+            <div
+              class="relative group/pasted rounded-xl overflow-hidden border border-cyan-500/50 bg-slate-900 shadow-md shrink-0"
+            >
               <img
                 src={pastedImagePreview}
                 alt="Pasted clipboard"
@@ -2281,7 +2816,9 @@
               <p class="font-bold text-cyan-300 flex items-center gap-1.5">
                 <ImageIcon class="w-3.5 h-3.5" /> Gambar dari Clipboard
               </p>
-              <p class="text-[11px] text-slate-400 truncate">Tambahkan caption pesan atau langsung kirim gambar.</p>
+              <p class="text-[11px] text-slate-400 truncate">
+                Tambahkan caption pesan atau langsung kirim gambar.
+              </p>
             </div>
           </div>
           <button
@@ -2297,10 +2834,14 @@
 
       <!-- Emoticon Popover Picker -->
       {#if showEmojiPicker && !isPeerBlocked}
-        <div class="p-3 border-t border-slate-800 bg-slate-950/95 max-h-48 overflow-y-auto space-y-2 backdrop-blur-md">
+        <div
+          class="p-3 border-t border-slate-800 bg-slate-950/95 max-h-48 overflow-y-auto space-y-2 backdrop-blur-md"
+        >
           {#each emojiCategories as cat}
             <div>
-              <p class="text-[10px] font-mono text-slate-500 mb-1">{cat.name}</p>
+              <p class="text-[10px] font-mono text-slate-500 mb-1">
+                {cat.name}
+              </p>
               <div class="flex flex-wrap gap-1">
                 {#each cat.emojis as em}
                   <button
@@ -2318,24 +2859,39 @@
       {/if}
 
       <!-- Chat Input Area -->
-      <footer class="p-2 sm:p-3.5 border-t border-slate-800/80 bg-slate-950/80 shrink-0">
+      <footer
+        class="p-2 sm:p-3.5 border-t border-slate-800/80 bg-slate-950/80 shrink-0"
+      >
         {#if isGroupChat && !canSendInGroup}
-          <div class="p-3 bg-slate-900/90 border border-slate-800 rounded-2xl flex items-center justify-center gap-2 text-xs text-slate-400 shadow-inner">
+          <div
+            class="p-3 bg-slate-900/90 border border-slate-800 rounded-2xl flex items-center justify-center gap-2 text-xs text-slate-400 shadow-inner"
+          >
             <Lock class="w-4 h-4 text-amber-400 shrink-0" />
-            <span>Hanya Admin atau anggota yang diizinkan yang dapat mengirim pesan di grup ini.</span>
+            <span
+              >Hanya Admin atau anggota yang diizinkan yang dapat mengirim pesan
+              di grup ini.</span
+            >
           </div>
         {:else if isRecordingVoice}
           <!-- Voice Recording Active Bar -->
-          <div class="flex items-center justify-between gap-3 p-2.5 sm:p-3 bg-slate-900 border border-rose-500/40 rounded-2xl shadow-xl shadow-rose-950/20">
+          <div
+            class="flex items-center justify-between gap-3 p-2.5 sm:p-3 bg-slate-900 border border-rose-500/40 rounded-2xl shadow-xl shadow-rose-950/20"
+          >
             <div class="flex items-center gap-3">
               <span class="relative flex h-3 w-3">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+                <span
+                  class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"
+                ></span>
+                <span
+                  class="relative inline-flex rounded-full h-3 w-3 bg-rose-500"
+                ></span>
               </span>
               <span class="text-xs font-mono font-bold text-rose-400">
                 REC {formatVoiceDuration(recordingDuration)}
               </span>
-              <span class="text-[11px] text-slate-400 hidden sm:inline">Recording Quick Voice Note...</span>
+              <span class="text-[11px] text-slate-400 hidden sm:inline"
+                >Recording Quick Voice Note...</span
+              >
             </div>
 
             <div class="flex items-center gap-2">
@@ -2405,7 +2961,9 @@
                 on:paste={handlePaste}
                 disabled={isPeerBlocked}
                 rows="1"
-                placeholder={isPeerBlocked ? "This contact is blocked" : "Type a message... (Ctrl+V to paste image)"}
+                placeholder={isPeerBlocked
+                  ? "This contact is blocked"
+                  : "Type a message... (Ctrl+V to paste image)"}
                 class="w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 resize-none max-h-36 transition font-sans disabled:opacity-40"
               ></textarea>
             </div>
@@ -2420,7 +2978,8 @@
                 title="Record Quick Voice Note"
               >
                 <Mic class="w-4 h-4" />
-                <span class="hidden sm:inline text-xs font-semibold">Voice</span>
+                <span class="hidden sm:inline text-xs font-semibold">Voice</span
+                >
               </button>
             {:else}
               <button
@@ -2439,7 +2998,9 @@
           </form>
         {/if}
 
-        <div class="hidden sm:flex items-center justify-between text-[10px] text-slate-500 font-mono mt-2 px-1">
+        <div
+          class="hidden sm:flex items-center justify-between text-[10px] text-slate-500 font-mono mt-2 px-1"
+        >
           <div class="flex items-center gap-2">
             <span>⚡ Markdown: `code`, **bold**, *italic*, - list</span>
             <span>•</span>
@@ -2470,7 +3031,9 @@
       on:click|stopPropagation
     >
       <!-- Top Action Bar -->
-      <div class="w-full flex items-center justify-between pb-3 mb-3 border-b border-slate-800 text-xs">
+      <div
+        class="w-full flex items-center justify-between pb-3 mb-3 border-b border-slate-800 text-xs"
+      >
         <span class="text-slate-200 font-semibold flex items-center gap-2">
           <ImageIcon class="w-4 h-4 text-cyan-400" />
           <span>Clipboard Image Preview</span>
@@ -2478,11 +3041,13 @@
         <div class="flex items-center gap-2">
           <button
             type="button"
-            on:click={() => previewModalImage && handleCopyImage(previewModalImage, 'modal-preview')}
+            on:click={() =>
+              previewModalImage &&
+              handleCopyImage(previewModalImage, "modal-preview")}
             class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 flex items-center gap-1.5 transition-all text-xs font-medium cursor-pointer active:scale-95"
             title="Copy image directly to system clipboard"
           >
-            {#if copiedMessageId === 'modal-preview'}
+            {#if copiedMessageId === "modal-preview"}
               <Check class="w-3.5 h-3.5 text-emerald-400" />
               <span class="text-emerald-400 font-bold">Copied!</span>
             {:else}
@@ -2492,15 +3057,17 @@
           </button>
           <button
             type="button"
-            on:click={() => previewModalImage && handleDownloadImage(previewModalImage, 'modal-preview')}
+            on:click={() =>
+              previewModalImage &&
+              handleDownloadImage(previewModalImage, "modal-preview")}
             class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white flex items-center gap-1.5 transition-all text-xs font-semibold shadow-md shadow-cyan-500/20 active:scale-95 cursor-pointer disabled:opacity-75"
-            disabled={downloadingMessageId === 'modal-preview'}
+            disabled={downloadingMessageId === "modal-preview"}
             title="Download image to Downloads folder"
           >
-            {#if downloadingMessageId === 'modal-preview'}
+            {#if downloadingMessageId === "modal-preview"}
               <Loader2 class="w-3.5 h-3.5 animate-spin" />
               <span>Saving...</span>
-            {:else if downloadSuccessId === 'modal-preview'}
+            {:else if downloadSuccessId === "modal-preview"}
               <Check class="w-3.5 h-3.5 text-emerald-300" />
               <span class="text-emerald-300 font-bold">Saved!</span>
             {:else}
@@ -2519,7 +3086,9 @@
         </div>
       </div>
       <!-- Image Viewport -->
-      <div class="flex items-center justify-center overflow-auto max-h-[75vh] p-2 bg-slate-950/60 rounded-xl border border-slate-800/80">
+      <div
+        class="flex items-center justify-center overflow-auto max-h-[75vh] p-2 bg-slate-950/60 rounded-xl border border-slate-800/80"
+      >
         <img
           src={previewModalImage}
           alt="Full size preview"
@@ -2555,14 +3124,20 @@
       role="document"
       on:click|stopPropagation
     >
-      <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+      <div
+        class="flex items-center justify-between pb-3 mb-4 border-b border-slate-800"
+      >
         <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md">
+          <div
+            class="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md"
+          >
             <Users class="w-4 h-4" />
           </div>
           <div>
             <h3 class="text-sm font-bold text-white">Buat Grup Chat Baru</h3>
-            <p class="text-[11px] text-slate-400">P2P mesh chat terenkripsi multi-device</p>
+            <p class="text-[11px] text-slate-400">
+              P2P mesh chat terenkripsi multi-device
+            </p>
           </div>
         </div>
         <button
@@ -2576,7 +3151,9 @@
 
       <div class="space-y-4 overflow-y-auto flex-1 pr-1">
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">Nama Grup <span class="text-rose-400">*</span></label>
+          <label class="block text-xs font-semibold text-slate-300 mb-1"
+            >Nama Grup <span class="text-rose-400">*</span></label
+          >
           <input
             type="text"
             bind:value={newGroupName}
@@ -2586,7 +3163,9 @@
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">Deskripsi (Opsional)</label>
+          <label class="block text-xs font-semibold text-slate-300 mb-1"
+            >Deskripsi (Opsional)</label
+          >
           <input
             type="text"
             bind:value={newGroupDesc}
@@ -2596,23 +3175,43 @@
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1.5">Izin Pengiriman Pesan Awal</label>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5"
+            >Izin Pengiriman Pesan Awal</label
+          >
           <div class="grid grid-cols-2 gap-2 text-xs">
-            <label class="flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition {newGroupSendPermission === 'all'
-              ? 'bg-cyan-500/10 border-cyan-500/50 text-cyan-300'
-              : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'}">
-              <input type="radio" bind:group={newGroupSendPermission} value="all" class="text-cyan-500" />
+            <label
+              class="flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition {newGroupSendPermission ===
+              'all'
+                ? 'bg-cyan-500/10 border-cyan-500/50 text-cyan-300'
+                : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'}"
+            >
+              <input
+                type="radio"
+                bind:group={newGroupSendPermission}
+                value="all"
+                class="text-cyan-500"
+              />
               <div>
                 <p class="font-bold">Semua Anggota</p>
                 <p class="text-[10px] text-slate-400">Semua bisa chat</p>
               </div>
             </label>
-            <label class="flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition {newGroupSendPermission === 'admins_only'
-              ? 'bg-purple-500/10 border-purple-500/50 text-purple-300'
-              : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'}">
-              <input type="radio" bind:group={newGroupSendPermission} value="admins_only" class="text-purple-500" />
+            <label
+              class="flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition {newGroupSendPermission ===
+              'admins_only'
+                ? 'bg-purple-500/10 border-purple-500/50 text-purple-300'
+                : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'}"
+            >
+              <input
+                type="radio"
+                bind:group={newGroupSendPermission}
+                value="admins_only"
+                class="text-purple-500"
+              />
               <div>
-                <p class="font-bold flex items-center gap-1"><Lock class="w-3 h-3" /> Hanya Admin</p>
+                <p class="font-bold flex items-center gap-1">
+                  <Lock class="w-3 h-3" /> Hanya Admin
+                </p>
                 <p class="text-[10px] text-slate-400">Kanal pengumuman</p>
               </div>
             </label>
@@ -2621,10 +3220,14 @@
 
         <div>
           <div class="flex items-center justify-between mb-1.5">
-            <label class="text-xs font-semibold text-slate-300">Pilih Anggota ({selectedGroupMemberIds.size} dipilih)</label>
+            <label class="text-xs font-semibold text-slate-300"
+              >Pilih Anggota ({selectedGroupMemberIds.size} dipilih)</label
+            >
           </div>
 
-          <div class="max-h-44 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950/60 p-2 space-y-1">
+          <div
+            class="max-h-44 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950/60 p-2 space-y-1"
+          >
             {#each allPeers.filter((p) => !p.isOwnDevice) as p (p.id)}
               {@const isChecked = selectedGroupMemberIds.has(p.id)}
               <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -2643,12 +3246,18 @@
                   : 'hover:bg-slate-900 border border-transparent'}"
               >
                 <div class="flex items-center gap-2.5 min-w-0">
-                  <div class="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-cyan-300 shrink-0">
+                  <div
+                    class="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-cyan-300 shrink-0"
+                  >
                     {(p.customName || p.name).slice(0, 2).toUpperCase()}
                   </div>
                   <div class="min-w-0">
-                    <p class="text-xs font-medium text-white truncate">{p.customName || p.name}</p>
-                    <p class="text-[10px] text-slate-500 font-mono truncate">{p.email || p.id}</p>
+                    <p class="text-xs font-medium text-white truncate">
+                      {p.customName || p.name}
+                    </p>
+                    <p class="text-[10px] text-slate-500 font-mono truncate">
+                      {p.email || p.id}
+                    </p>
                   </div>
                 </div>
                 <div>
@@ -2661,13 +3270,17 @@
               </div>
             {/each}
             {#if allPeers.filter((p) => !p.isOwnDevice).length === 0}
-              <p class="text-center text-xs text-slate-500 py-4">Belum ada kontak yang tersedia untuk diundang.</p>
+              <p class="text-center text-xs text-slate-500 py-4">
+                Belum ada kontak yang tersedia untuk diundang.
+              </p>
             {/if}
           </div>
         </div>
       </div>
 
-      <div class="flex items-center justify-end gap-2.5 pt-4 mt-4 border-t border-slate-800 shrink-0">
+      <div
+        class="flex items-center justify-end gap-2.5 pt-4 mt-4 border-t border-slate-800 shrink-0"
+      >
         <button
           type="button"
           on:click={() => (showCreateGroupModal = false)}
@@ -2707,14 +3320,20 @@
       on:click|stopPropagation
     >
       <!-- Header -->
-      <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+      <div
+        class="flex items-center justify-between pb-3 mb-4 border-b border-slate-800"
+      >
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md">
+          <div
+            class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md"
+          >
             <Users class="w-5 h-5" />
           </div>
           <div>
             <h3 class="text-sm font-bold text-white">{activeGroup.name}</h3>
-            <p class="text-[11px] text-slate-400">{activeGroup.members.length} Anggota • P2P Mesh Group</p>
+            <p class="text-[11px] text-slate-400">
+              {activeGroup.members.length} Anggota • P2P Mesh Group
+            </p>
           </div>
         </div>
         <button
@@ -2728,66 +3347,113 @@
 
       <div class="space-y-4 overflow-y-auto flex-1 pr-1">
         {#if activeGroup.description}
-          <div class="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-slate-300">
-            <p class="text-[10px] font-mono text-slate-500 mb-0.5">DESKRIPSI GRUP</p>
+          <div
+            class="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-slate-300"
+          >
+            <p class="text-[10px] font-mono text-slate-500 mb-0.5">
+              DESKRIPSI GRUP
+            </p>
             <p>{activeGroup.description}</p>
           </div>
         {/if}
 
         <!-- Message Sending Permission Section (Admin Configurable) -->
-        <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2.5">
+        <div
+          class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2.5"
+        >
           <div class="flex items-center justify-between">
             <div>
               <p class="text-xs font-bold text-white flex items-center gap-1.5">
                 <Lock class="w-3.5 h-3.5 text-cyan-400" />
                 <span>Izin Pengiriman Pesan</span>
               </p>
-              <p class="text-[10px] text-slate-400">Atur siapa saja yang diperbolehkan mengirim chat di grup</p>
+              <p class="text-[10px] text-slate-400">
+                Atur siapa saja yang diperbolehkan mengirim chat di grup
+              </p>
             </div>
             {#if !isGroupAdmin}
-              <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">Hanya Admin</span>
+              <span
+                class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono"
+                >Hanya Admin</span
+              >
             {/if}
           </div>
 
           {#if isGroupAdmin}
             <div class="space-y-1.5">
-              <label class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-xs {editingSendPermission === 'all'
-                ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-200'
-                : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'}">
-                <input type="radio" bind:group={editingSendPermission} value="all" class="text-cyan-500" />
+              <label
+                class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-xs {editingSendPermission ===
+                'all'
+                  ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-200'
+                  : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'}"
+              >
+                <input
+                  type="radio"
+                  bind:group={editingSendPermission}
+                  value="all"
+                  class="text-cyan-500"
+                />
                 <div>
                   <span class="font-semibold">Semua Anggota (All Member)</span>
-                  <p class="text-[10px] text-slate-400">Semua anggota diizinkan bebas mengirim pesan</p>
+                  <p class="text-[10px] text-slate-400">
+                    Semua anggota diizinkan bebas mengirim pesan
+                  </p>
                 </div>
               </label>
 
-              <label class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-xs {editingSendPermission === 'admins_only'
-                ? 'bg-purple-500/15 border-purple-500/40 text-purple-200'
-                : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'}">
-                <input type="radio" bind:group={editingSendPermission} value="admins_only" class="text-purple-500" />
+              <label
+                class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-xs {editingSendPermission ===
+                'admins_only'
+                  ? 'bg-purple-500/15 border-purple-500/40 text-purple-200'
+                  : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'}"
+              >
+                <input
+                  type="radio"
+                  bind:group={editingSendPermission}
+                  value="admins_only"
+                  class="text-purple-500"
+                />
                 <div>
                   <span class="font-semibold">Hanya Admin (Admins Only)</span>
-                  <p class="text-[10px] text-slate-400">Hanya owner & admin yang dapat mengirim pesan (Kanal pengumuman)</p>
+                  <p class="text-[10px] text-slate-400">
+                    Hanya owner & admin yang dapat mengirim pesan (Kanal
+                    pengumuman)
+                  </p>
                 </div>
               </label>
 
-              <label class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-xs {editingSendPermission === 'custom'
-                ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-200'
-                : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'}">
-                <input type="radio" bind:group={editingSendPermission} value="custom" class="text-indigo-500" />
+              <label
+                class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-xs {editingSendPermission ===
+                'custom'
+                  ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-200'
+                  : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'}"
+              >
+                <input
+                  type="radio"
+                  bind:group={editingSendPermission}
+                  value="custom"
+                  class="text-indigo-500"
+                />
                 <div>
                   <span class="font-semibold">Kustom (Custom Whitelist)</span>
-                  <p class="text-[10px] text-slate-400">Admin + anggota tertentu yang dicentang di bawah dapat mengirim pesan</p>
+                  <p class="text-[10px] text-slate-400">
+                    Admin + anggota tertentu yang dicentang di bawah dapat
+                    mengirim pesan
+                  </p>
                 </div>
               </label>
             </div>
 
             <!-- Custom Member Whitelist Checklist -->
-            {#if editingSendPermission === 'custom'}
-              <div class="mt-2 p-2.5 rounded-xl border border-indigo-500/30 bg-slate-900/90 space-y-1.5">
-                <p class="text-[11px] font-bold text-indigo-300">Pilih Anggota yang Diizinkan Mengirim Pesan:</p>
+            {#if editingSendPermission === "custom"}
+              <div
+                class="mt-2 p-2.5 rounded-xl border border-indigo-500/30 bg-slate-900/90 space-y-1.5"
+              >
+                <p class="text-[11px] font-bold text-indigo-300">
+                  Pilih Anggota yang Diizinkan Mengirim Pesan:
+                </p>
                 <div class="max-h-36 overflow-y-auto space-y-1">
-                  {#each activeGroup.members.filter((m) => m.role !== 'admin' && m.device_id !== activeGroup.owner_id) as m (m.device_id)}
+                  {#each activeGroup.members.filter((m) => m.role !== "admin" && m.device_id !== activeGroup.owner_id) as m (m.device_id)}
                     {@const isAllowed = editingAllowedSenders.has(m.device_id)}
                     <!-- svelte-ignore a11y-click-events-have-key-events -->
                     <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -2800,7 +3466,9 @@
                         }
                         editingAllowedSenders = new Set(editingAllowedSenders);
                       }}
-                      class="flex items-center justify-between p-1.5 rounded-lg cursor-pointer transition {isAllowed ? 'bg-indigo-500/20 text-white' : 'hover:bg-slate-800/80 text-slate-400'}"
+                      class="flex items-center justify-between p-1.5 rounded-lg cursor-pointer transition {isAllowed
+                        ? 'bg-indigo-500/20 text-white'
+                        : 'hover:bg-slate-800/80 text-slate-400'}"
                     >
                       <span class="text-xs font-medium">{m.alias}</span>
                       {#if isAllowed}
@@ -2810,8 +3478,10 @@
                       {/if}
                     </div>
                   {/each}
-                  {#if activeGroup.members.filter((m) => m.role !== 'admin' && m.device_id !== activeGroup.owner_id).length === 0}
-                    <p class="text-[11px] text-slate-500 italic py-1">Semua anggota di grup ini adalah admin/owner.</p>
+                  {#if activeGroup.members.filter((m) => m.role !== "admin" && m.device_id !== activeGroup.owner_id).length === 0}
+                    <p class="text-[11px] text-slate-500 italic py-1">
+                      Semua anggota di grup ini adalah admin/owner.
+                    </p>
                   {/if}
                 </div>
               </div>
@@ -2833,17 +3503,26 @@
               </button>
             </div>
           {:else}
-            <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300">
-              {#if activeGroup.send_permission === 'admins_only'}
-                <p class="text-amber-400 font-semibold flex items-center gap-1.5">
+            <div
+              class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300"
+            >
+              {#if activeGroup.send_permission === "admins_only"}
+                <p
+                  class="text-amber-400 font-semibold flex items-center gap-1.5"
+                >
                   <Lock class="w-3.5 h-3.5" /> Hanya Admin yang dapat mengirim pesan.
                 </p>
-              {:else if activeGroup.send_permission === 'custom'}
-                <p class="text-indigo-400 font-semibold flex items-center gap-1.5">
-                  <Shield class="w-3.5 h-3.5" /> Pengiriman pesan dibatasi untuk anggota tertentu.
+              {:else if activeGroup.send_permission === "custom"}
+                <p
+                  class="text-indigo-400 font-semibold flex items-center gap-1.5"
+                >
+                  <Shield class="w-3.5 h-3.5" /> Pengiriman pesan dibatasi untuk
+                  anggota tertentu.
                 </p>
               {:else}
-                <p class="text-emerald-400 font-semibold flex items-center gap-1.5">
+                <p
+                  class="text-emerald-400 font-semibold flex items-center gap-1.5"
+                >
                   <Check class="w-3.5 h-3.5" /> Semua anggota dapat mengirim pesan.
                 </p>
               {/if}
@@ -2853,29 +3532,42 @@
 
         <!-- Invite New Members Accordion / Dropdown (Only Admin) -->
         {#if isGroupAdmin}
-          {@const nonMembers = allPeers.filter((p) => !p.isOwnDevice && !activeGroup.members.some((m) => m.device_id === p.id))}
-          <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+          {@const nonMembers = allPeers.filter(
+            (p) =>
+              !p.isOwnDevice &&
+              !activeGroup.members.some((m) => m.device_id === p.id),
+          )}
+          <div
+            class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2"
+          >
             <div class="flex items-center justify-between">
               <div>
-                <p class="text-xs font-bold text-white flex items-center gap-1.5">
+                <p
+                  class="text-xs font-bold text-white flex items-center gap-1.5"
+                >
                   <UserPlus class="w-3.5 h-3.5 text-cyan-400" />
                   <span>Undang Anggota Baru</span>
                 </p>
-                <p class="text-[10px] text-slate-400">Hanya Admin yang dapat mengundang anggota ke grup</p>
+                <p class="text-[10px] text-slate-400">
+                  Hanya Admin yang dapat mengundang anggota ke grup
+                </p>
               </div>
               <button
                 type="button"
-                on:click={() => (showInviteMemberDropdown = !showInviteMemberDropdown)}
+                on:click={() =>
+                  (showInviteMemberDropdown = !showInviteMemberDropdown)}
                 class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer"
               >
-                {showInviteMemberDropdown ? 'Tutup' : '+ Pilih Kontak'}
+                {showInviteMemberDropdown ? "Tutup" : "+ Pilih Kontak"}
               </button>
             </div>
 
             {#if showInviteMemberDropdown}
               <div class="pt-2 border-t border-slate-800/80 space-y-2">
                 {#if nonMembers.length === 0}
-                  <p class="text-xs text-slate-500 py-2 text-center">Semua kontak Anda sudah berada di dalam grup ini.</p>
+                  <p class="text-xs text-slate-500 py-2 text-center">
+                    Semua kontak Anda sudah berada di dalam grup ini.
+                  </p>
                 {:else}
                   <div class="max-h-36 overflow-y-auto space-y-1">
                     {#each nonMembers as p (p.id)}
@@ -2895,7 +3587,9 @@
                           ? 'bg-cyan-500/15 border border-cyan-500/30'
                           : 'hover:bg-slate-900 border border-transparent'}"
                       >
-                        <span class="text-xs font-medium text-white">{p.customName || p.name}</span>
+                        <span class="text-xs font-medium text-white"
+                          >{p.customName || p.name}</span
+                        >
                         {#if isChecked}
                           <CheckSquare class="w-4 h-4 text-cyan-400" />
                         {:else}
@@ -2923,35 +3617,52 @@
 
         <!-- Members List -->
         <div class="space-y-1.5">
-          <p class="text-xs font-bold text-slate-300">Daftar Anggota ({activeGroup.members.length})</p>
+          <p class="text-xs font-bold text-slate-300">
+            Daftar Anggota ({activeGroup.members.length})
+          </p>
           <div class="space-y-1 max-h-56 overflow-y-auto">
             {#each activeGroup.members as m (m.device_id)}
               {@const isMe = m.device_id === myDeviceId}
               {@const isOwner = m.device_id === activeGroup.owner_id}
-              {@const isAdmin = m.role === 'admin' || isOwner}
+              {@const isAdmin = m.role === "admin" || isOwner}
 
-              <div class="flex items-center justify-between p-2 rounded-xl bg-slate-950/60 border border-slate-800">
+              <div
+                class="flex items-center justify-between p-2 rounded-xl bg-slate-950/60 border border-slate-800"
+              >
                 <div class="flex items-center gap-2.5 min-w-0">
-                  <div class="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-cyan-300 shrink-0">
+                  <div
+                    class="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-cyan-300 shrink-0"
+                  >
                     {m.alias.slice(0, 2).toUpperCase()}
                   </div>
                   <div class="min-w-0">
                     <div class="flex items-center gap-1.5">
-                      <span class="text-xs font-semibold text-white truncate">{m.alias}</span>
+                      <span class="text-xs font-semibold text-white truncate"
+                        >{m.alias}</span
+                      >
                       {#if isMe}
-                        <span class="text-[9px] px-1 rounded bg-indigo-500/20 text-indigo-300 font-mono">You</span>
+                        <span
+                          class="text-[9px] px-1 rounded bg-indigo-500/20 text-indigo-300 font-mono"
+                          >You</span
+                        >
                       {/if}
                       {#if isOwner}
-                        <span class="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono flex items-center gap-0.5">
+                        <span
+                          class="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono flex items-center gap-0.5"
+                        >
                           <Crown class="w-2.5 h-2.5" /> Owner
                         </span>
-                      {:else if m.role === 'admin'}
-                        <span class="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-mono flex items-center gap-0.5">
+                      {:else if m.role === "admin"}
+                        <span
+                          class="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-mono flex items-center gap-0.5"
+                        >
                           <Shield class="w-2.5 h-2.5" /> Admin
                         </span>
                       {/if}
                     </div>
-                    <p class="text-[10px] text-slate-500 font-mono truncate">{m.device_id}</p>
+                    <p class="text-[10px] text-slate-500 font-mono truncate">
+                      {m.device_id}
+                    </p>
                   </div>
                 </div>
 
@@ -2962,12 +3673,15 @@
                     <button
                       type="button"
                       on:click={() => handleToggleAdminRole(m)}
-                      class="px-2 py-1 rounded-lg text-[11px] font-medium border transition cursor-pointer {m.role === 'admin'
+                      class="px-2 py-1 rounded-lg text-[11px] font-medium border transition cursor-pointer {m.role ===
+                      'admin'
                         ? 'bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border-purple-500/30'
                         : 'bg-slate-800 hover:bg-purple-500/20 text-slate-300 hover:text-purple-300 border-slate-700'}"
-                      title={m.role === 'admin' ? 'Turunkan dari Admin' : 'Jadikan Admin'}
+                      title={m.role === "admin"
+                        ? "Turunkan dari Admin"
+                        : "Jadikan Admin"}
                     >
-                      {m.role === 'admin' ? 'Hapus Admin' : 'Jadikan Admin'}
+                      {m.role === "admin" ? "Hapus Admin" : "Jadikan Admin"}
                     </button>
                   {/if}
 
@@ -2989,7 +3703,9 @@
         </div>
 
         <!-- Danger Zone: Leave Group -->
-        <div class="pt-2 border-t border-slate-800 flex items-center justify-between">
+        <div
+          class="pt-2 border-t border-slate-800 flex items-center justify-between"
+        >
           <p class="text-[11px] text-slate-500">Keluar dari obrolan grup ini</p>
           <button
             type="button"
@@ -3020,7 +3736,8 @@
     border-radius: 0.75rem;
     padding: 0.75rem 1rem;
     overflow-x: auto;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      monospace;
     font-size: 0.75rem;
     margin: 0.5rem 0;
   }
@@ -3029,7 +3746,8 @@
     border: 1px solid rgba(51, 65, 85, 0.6);
     border-radius: 0.25rem;
     padding: 0.1rem 0.3rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      monospace;
     font-size: 0.75rem;
     color: #38bdf8;
   }

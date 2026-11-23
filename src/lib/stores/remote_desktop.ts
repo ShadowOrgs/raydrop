@@ -313,7 +313,9 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
   }
 
   const requireNativeWinlogonCapture = await raydropApi.isSecureDesktopActive().catch(() => false);
-  if (requireNativeWinlogonCapture) {
+  const isWindowsHost =
+    typeof navigator !== 'undefined' && /Win/i.test(navigator.platform || navigator.userAgent);
+  if (requireNativeWinlogonCapture || isWindowsHost) {
     const nativeStream = await startNativeCanvasStream();
     if (nativeStream && nativeStream.getVideoTracks().length > 0) {
       const track = nativeStream.getVideoTracks()[0];

@@ -1009,31 +1009,31 @@
       <!-- Click-Expanded Floating Top Control Bar (Clean, non-wrapping, generous spacing) -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
-        class="absolute top-4 left-1/2 -translate-x-1/2 z-40 transition-all duration-300 ease-out {showToolbar
+        class="absolute top-4 left-1/2 -translate-x-1/2 z-40 w-max max-w-[96vw] transition-all duration-300 ease-out {showToolbar
           ? 'translate-y-0 opacity-100 pointer-events-auto'
           : '-translate-y-16 opacity-0 pointer-events-none'}"
       >
         <div
-          class="flex items-center gap-3 px-3.5 py-1.5 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs whitespace-nowrap"
+          class="flex flex-wrap sm:flex-nowrap items-center justify-center gap-1.5 sm:gap-3 px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs max-w-full"
         >
           <!-- Host & Latency Info -->
-          <div class="flex items-center gap-2 pr-3 border-r border-slate-800 shrink-0">
+          <div class="flex items-center gap-1.5 sm:gap-2 sm:pr-3 sm:border-r border-slate-800 shrink-0">
             <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.6)]"></span>
             <span
-              class="font-semibold text-white max-w-[140px] truncate"
+              class="font-semibold text-white max-w-[90px] sm:max-w-[140px] truncate"
               title={$activeRemoteSession?.peerAlias}
             >
               {$activeRemoteSession?.peerAlias}
             </span>
             <span
-              class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-slate-800/90 text-cyan-300 border border-slate-700 shrink-0 whitespace-nowrap flex items-center gap-1"
+              class="text-[10px] sm:text-[11px] font-mono px-1.5 sm:px-2 py-0.5 rounded-md bg-slate-800/90 text-cyan-300 border border-slate-700 shrink-0 whitespace-nowrap flex items-center gap-1"
             >
               ⚡ {$remoteLatencyMs} ms
             </span>
           </div>
 
           <!-- Shortcuts Dropdown / Quick Buttons -->
-          <div class="flex items-center gap-1 pr-3 border-r border-slate-800 shrink-0">
+          <div class="flex items-center gap-1 sm:pr-3 sm:border-r border-slate-800 shrink-0">
             <button
               type="button"
               on:click={() => sendShortcutToHost("win_d")}

@@ -1048,7 +1048,7 @@
       <!-- In-Meeting Side Drawer (Chat & File Share) -->
       {#if showChatDrawer}
         <div
-          class="w-80 border-l border-slate-800 bg-slate-900/95 flex flex-col h-full shrink-0 animate-in slide-in-from-right duration-150"
+          class="w-full sm:w-80 absolute sm:relative inset-y-0 right-0 z-40 border-l border-slate-800 bg-slate-900/95 flex flex-col h-full shrink-0 animate-in slide-in-from-right duration-150"
         >
           <!-- Drawer Header -->
           <div
@@ -1128,7 +1128,7 @@
 
     <!-- Floating / Bottom Meeting Control Bar (Discord + Zoom style) -->
     <div
-      class="px-4 py-3 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between gap-2 shrink-0 z-30"
+      class="px-2 sm:px-4 py-2.5 sm:py-3 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between gap-1.5 sm:gap-2 overflow-x-auto max-w-full shrink-0 z-30"
     >
       <!-- Left Controls: Audio / Video Toggles -->
       <div class="flex items-center gap-1.5 sm:gap-2">
