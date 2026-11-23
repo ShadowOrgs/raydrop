@@ -401,6 +401,18 @@
   });
 
   // Comprehensive Peer List: Combines local SQLite contacts, LAN mDNS, Cloud Devices & Contacts
+  let chatThreadPeers: [string, string | null, number][] = [];
+
+  async function refreshChatThreadPeers() {
+    try {
+      chatThreadPeers = await raydropApi.getChatThreadPeers();
+    } catch (_) {}
+  }
+
+  $: if ($unreadCounts || $chatStore) {
+    refreshChatThreadPeers();
+  }
+
   $: allPeers = (() => {
     const peerMap = new Map<string, any>();
 
@@ -480,6 +492,46 @@
             dev.last_seen_at || 0,
           );
         }
+      }
+    }
+
+    for (const [peerId, threadAlias, lastTs] of chatThreadPeers) {
+      if (!peerId || peerId.startsWith("group_") || peerId === $appSettings.device_id) continue;
+      if (!peerMap.has(peerId)) {
+        peerMap.set(peerId, {
+          id: peerId,
+          name: threadAlias || `Raydrop-${peerId.slice(0, 6)}`,
+          customName: "",
+          avatarHash: "",
+          email: "",
+          osType: "windows",
+          isOnline: true,
+          lastSeenAt: lastTs || 0,
+          networkType: "wan",
+          isOwnDevice: false,
+          trustLevel: "ask",
+          isUnknownChatPeer: true,
+        });
+      }
+    }
+
+    for (const peerId of Object.keys($unreadCounts)) {
+      if (!peerId || peerId.startsWith("group_") || peerId === $appSettings.device_id) continue;
+      if (!peerMap.has(peerId) && ($unreadCounts[peerId] || 0) > 0) {
+        peerMap.set(peerId, {
+          id: peerId,
+          name: `Raydrop-${peerId.slice(0, 6)}`,
+          customName: "",
+          avatarHash: "",
+          email: "",
+          osType: "windows",
+          isOnline: true,
+          lastSeenAt: Math.floor(Date.now() / 1000),
+          networkType: "wan",
+          isOwnDevice: false,
+          trustLevel: "ask",
+          isUnknownChatPeer: true,
+        });
       }
     }
 

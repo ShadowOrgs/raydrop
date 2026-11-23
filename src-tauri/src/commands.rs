@@ -1828,6 +1828,13 @@ pub fn clear_chat_messages(
 }
 
 #[tauri::command]
+pub fn get_chat_thread_peers(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<(String, Option<String>, i64)>, String> {
+    state.db.list_chat_thread_peers()
+}
+
+#[tauri::command]
 pub fn get_unread_chat_counts(
     state: State<'_, Arc<AppState>>,
 ) -> Result<std::collections::HashMap<String, u32>, String> {

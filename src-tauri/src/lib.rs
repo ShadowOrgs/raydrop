@@ -568,6 +568,7 @@ pub fn run() {
             commands::get_chat_messages,
             commands::mark_chat_messages_read,
             commands::clear_chat_messages,
+            commands::get_chat_thread_peers,
             commands::get_unread_chat_counts,
             commands::create_chat_group,
             commands::get_chat_groups,

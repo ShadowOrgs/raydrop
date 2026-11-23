@@ -12,6 +12,9 @@ import {
   sendNotification,
 } from '@tauri-apps/plugin-notification';
 
+export const UPDATE_SNOOZE_KEY = 'raydrop_update_snooze_until';
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
 export async function checkForUpdates(manual: boolean = false): Promise<boolean> {
   try {
     updateChecking.set(true);
@@ -21,6 +24,14 @@ export async function checkForUpdates(manual: boolean = false): Promise<boolean>
     updateInfo.set(res);
 
     if (res.has_update) {
+      if (!manual) {
+        const snoozeUntil = Number(localStorage.getItem(UPDATE_SNOOZE_KEY) || '0');
+        if (Date.now() < snoozeUntil) {
+          return true;
+        }
+        localStorage.setItem(UPDATE_SNOOZE_KEY, String(Date.now() + ONE_DAY_MS));
+      }
+
       updateModalOpen.set(true);
 
       // Trigger native OS notification

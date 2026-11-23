@@ -1225,6 +1225,33 @@ impl Database {
         Ok(map)
     }
 
+    pub fn list_chat_thread_peers(&self) -> Result<Vec<(String, Option<String>, i64)>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT peer_device_id,
+                        MAX(CASE WHEN direction = 'incoming' AND sender_alias IS NOT NULL AND sender_alias != '' THEN sender_alias END) AS sender_alias,
+                        MAX(created_at) AS last_ts
+                 FROM chat_messages
+                 WHERE peer_device_id NOT LIKE 'group_%'
+                 GROUP BY peer_device_id
+                 ORDER BY last_ts DESC",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .map_err(|e| e.to_string())?;
+
+        let mut list = Vec::new();
+        for r in rows {
+            if let Ok(item) = r {
+                list.push(item);
+            }
+        }
+        Ok(list)
+    }
+
     pub fn insert_folder_sync_task(&self, task: &FolderSyncTask) -> Result<(), String> {
         let conn = self.conn.lock().unwrap();
         conn.execute(

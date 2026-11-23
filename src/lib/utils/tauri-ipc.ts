@@ -513,6 +513,8 @@ export const raydropApi = {
     invoke<void>('mark_chat_messages_read', { peerDeviceId }),
   clearChatMessages: (peerDeviceId: string) =>
     invoke<void>('clear_chat_messages', { peerDeviceId }),
+  getChatThreadPeers: () =>
+    invoke<[string, string | null, number][]>('get_chat_thread_peers'),
   getUnreadChatCounts: () =>
     invoke<Record<string, number>>('get_unread_chat_counts'),
   createChatGroup: (
