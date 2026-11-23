@@ -48,7 +48,7 @@
   let saveError = "";
   let isSaving = false;
   let justSaved = false;
-  let appVersion = "1.2.51";
+  let appVersion = "1.2.61";
 
   onMount(async () => {
     try {
@@ -169,7 +169,8 @@
         maxConcurrentDownloads,
       });
       appSettings.set(updated);
-      statusBanner = "Settings saved! Autorun & Signaling configuration updated.";
+      statusBanner =
+        "Settings saved! Autorun & Signaling configuration updated.";
       justSaved = true;
       setTimeout(() => (justSaved = false), 2500);
       setTimeout(() => (statusBanner = ""), 4000);
@@ -764,7 +765,6 @@
             {/if}
           </button>
         </div>
-
       </div>
 
       {#if saveError}

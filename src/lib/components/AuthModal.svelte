@@ -130,9 +130,9 @@
       >
         <div class="flex items-center gap-3">
           <img
-            src="/logo.png"
+            src="/icon.png"
             alt="Raydrop"
-            class="w-12 h-12 object-contain rounded-xl bg-slate-950/60 p-1 border border-slate-800"
+            class="w-12 h-12 object-contain rounded-xl bg-slate-950/60 p-0.5 border border-slate-800"
           />
           <div>
             <h3 class="text-base font-bold text-white">

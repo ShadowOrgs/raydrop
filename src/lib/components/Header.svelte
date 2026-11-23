@@ -55,7 +55,7 @@
   import { onMount } from "svelte";
   import { getVersion } from "@tauri-apps/api/app";
 
-  let appVersion = "1.2.51";
+  let appVersion = "1.2.61";
   let copied = false;
   let themeMenuOpen = false;
   let profileMenuOpen = false;
@@ -122,7 +122,12 @@
   }
 </script>
 
-<svelte:window on:click={() => { themeMenuOpen = false; profileMenuOpen = false; }} />
+<svelte:window
+  on:click={() => {
+    themeMenuOpen = false;
+    profileMenuOpen = false;
+  }}
+/>
 
 <header
   class="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-xl px-3 sm:px-5 pt-8 pb-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 z-20 shrink-0"
@@ -199,7 +204,8 @@
             {$appSettings.user_email}
           </span>
         {:else}
-          <span class="text-xs font-mono text-slate-400 truncate max-w-[130px] lg:max-w-[170px]"
+          <span
+            class="text-xs font-mono text-slate-400 truncate max-w-[130px] lg:max-w-[170px]"
             >{$appSettings.device_id}</span
           >
         {/if}
@@ -218,238 +224,7 @@
     </div>
   </div>
 
-  <!-- Center Segmented Navigation Tabs (Icon-only, compact & no wrapping) -->
-  <nav
-    class="hidden md:flex items-center gap-1 bg-slate-950/80 p-1 rounded-2xl border border-slate-800/80 shadow-inner"
-  >
-    <!-- 1. Transfers & Torrents -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("transfers")}
-      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
-      'transfers'
-        ? 'bg-gradient-to-r from-cyan-500/25 to-indigo-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
-      title="Transfers & Torrents"
-    >
-      <Zap
-        class="w-4 h-4 {$activeMainTab === 'transfers'
-          ? 'text-cyan-400'
-          : 'text-slate-400'}"
-      />
-      {#if $activeTransfers.length > 0}
-        <span
-          class="absolute -top-1 -right-1 text-[9px] min-w-[16px] h-4 px-1 rounded-full bg-cyan-400 text-slate-950 font-bold font-mono flex items-center justify-center animate-pulse shadow-sm"
-        >
-          {$activeTransfers.length}
-        </span>
-      {/if}
-    </button>
-
-    <!-- 2. P2P Chat -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("chat")}
-      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
-      'chat'
-        ? 'bg-gradient-to-r from-cyan-500/25 to-indigo-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
-      title="P2P Encrypted Chat"
-    >
-      <MessageSquare
-        class="w-4 h-4 {$activeMainTab === 'chat'
-          ? 'text-cyan-400'
-          : 'text-slate-400'}"
-      />
-      {#if $totalUnreadCount > 0}
-        <span
-          class="absolute -top-1 -right-1 text-[9px] min-w-[16px] h-4 px-1 rounded-full bg-cyan-400 text-slate-950 font-bold font-mono flex items-center justify-center animate-pulse shadow-sm"
-        >
-          {$totalUnreadCount}
-        </span>
-      {/if}
-    </button>
-
-    <!-- 3. Online Meeting & Voice Room -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("meeting")}
-      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
-      'meeting'
-        ? 'bg-gradient-to-r from-indigo-500/25 to-sky-500/25 text-indigo-300 border border-indigo-500/40 shadow-sm shadow-indigo-500/15'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
-      title="Online Meeting & Voice Room"
-    >
-      <Video
-        class="w-4 h-4 {$activeMainTab === 'meeting'
-          ? 'text-indigo-400'
-          : 'text-slate-400'}"
-      />
-    </button>
-
-    <!-- 4. Remote Desktop -->
-    <button
-      type="button"
-      disabled={!$appSettings.discoverable}
-      on:click={() => {
-        if ($appSettings.discoverable) activeMainTab.set("remote");
-      }}
-      class="relative p-2 rounded-xl transition-all {!$appSettings.discoverable
-        ? 'opacity-40 cursor-not-allowed text-slate-600'
-        : $activeMainTab === 'remote'
-          ? 'bg-gradient-to-r from-cyan-500/25 to-blue-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15 cursor-pointer'
-          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 cursor-pointer'}"
-      title={!$appSettings.discoverable
-        ? "Remote Desktop disabled while Hidden (Offline) — switch to Visible first"
-        : "Raydrop P2P Remote Desktop"}
-    >
-      <Monitor
-        class="w-4 h-4 {$activeMainTab === 'remote'
-          ? 'text-cyan-400'
-          : 'text-slate-400'}"
-      />
-    </button>
-
-    <!-- 5. LAN Radar -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("lan")}
-      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
-      'lan'
-        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
-      title="LAN Radar Discovery"
-    >
-      <Wifi
-        class="w-4 h-4 {$activeMainTab === 'lan'
-          ? 'text-cyan-400'
-          : 'text-slate-400'}"
-      />
-      {#if $lanContacts.length > 0}
-        <span
-          class="absolute -top-1 -right-1 text-[9px] min-w-[16px] h-4 px-1 rounded-full bg-slate-800 text-cyan-300 border border-slate-700 font-mono flex items-center justify-center"
-        >
-          {$lanContacts.length}
-        </span>
-      {/if}
-    </button>
-
-    <!-- 6. My Devices -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("devices")}
-      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
-      'devices'
-        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
-      title="My Cloud Devices"
-    >
-      <Laptop
-        class="w-4 h-4 {$activeMainTab === 'devices'
-          ? 'text-cyan-400'
-          : 'text-slate-400'}"
-      />
-      {#if $cloudMyDevices.length > 0}
-        <span
-          class="absolute -top-1 -right-1 text-[9px] min-w-[16px] h-4 px-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono flex items-center justify-center"
-        >
-          {$cloudMyDevices.length}
-        </span>
-      {/if}
-    </button>
-
-    <!-- 7. Contacts -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("contacts")}
-      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
-      'contacts'
-        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
-      title="Contacts List"
-    >
-      <Users
-        class="w-4 h-4 {$activeMainTab === 'contacts'
-          ? 'text-cyan-400'
-          : 'text-slate-400'}"
-      />
-      {#if $cloudContacts.length > 0}
-        <span
-          class="absolute -top-1 -right-1 text-[9px] min-w-[16px] h-4 px-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono flex items-center justify-center"
-        >
-          {$cloudContacts.length}
-        </span>
-      {/if}
-    </button>
-
-    <!-- 8. System Monitor & Transfer Analytics Dashboard -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("dashboard")}
-      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
-      'dashboard'
-        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
-      title="System Monitor & Transfer Analytics"
-    >
-      <Activity
-        class="w-4 h-4 {$activeMainTab === 'dashboard'
-          ? 'text-cyan-400'
-          : 'text-slate-400'}"
-      />
-    </button>
-
-    <!-- 9. Copy History (Win+V) -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("clipboard")}
-      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
-      'clipboard'
-        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
-      title="Copy History (Win+V)"
-    >
-      <ClipboardList
-        class="w-4 h-4 {$activeMainTab === 'clipboard'
-          ? 'text-cyan-400'
-          : 'text-slate-400'}"
-      />
-    </button>
-
-    <!-- 10. Notes & Task Lists (Google Keep style) -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("notes")}
-      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
-      'notes'
-        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
-      title="Notes & Task Lists"
-    >
-      <StickyNote
-        class="w-4 h-4 {$activeMainTab === 'notes'
-          ? 'text-cyan-400'
-          : 'text-slate-400'}"
-      />
-    </button>
-
-    <!-- 11. File Converter, Image Resizer & Mobile Icon Pack -->
-    <button
-      type="button"
-      on:click={() => activeMainTab.set("converter")}
-      class="relative p-2 rounded-xl transition-all cursor-pointer {$activeMainTab ===
-      'converter'
-        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/15'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}"
-      title="File Converter, Image Resizer & App Icons"
-    >
-      <Wand2
-        class="w-4 h-4 {$activeMainTab === 'converter'
-          ? 'text-cyan-400'
-          : 'text-slate-400'}"
-      />
-    </button>
-  </nav>
+  <!-- Navigation moved to FloatingRail on desktop for a clean editorial workspace -->
 
   <!-- Status Badges & Quick Action Controls (Right - Compact & Profile Always Visible) -->
   <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
@@ -472,7 +247,7 @@
         ? 'bg-emerald-500/15 text-emerald-300'
         : 'bg-slate-800/90 text-slate-400'}"
       title={$networkInfo.signalingConnected
-        ? `WAN Online (NAT: ${$networkInfo.wanReflexiveAddr || 'Connected'})`
+        ? `WAN Online (NAT: ${$networkInfo.wanReflexiveAddr || "Connected"})`
         : "WAN Signaling Offline — LAN Only"}
     >
       <Globe
@@ -517,17 +292,20 @@
           profileMenuOpen = false;
         }}
         class="p-2 rounded-xl bg-slate-800/70 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
-        title="Switch Theme ({RAYDROP_THEMES.find((t) => t.id === $currentTheme)?.name || 'Carbon Azure'})"
+        title="Switch Theme ({RAYDROP_THEMES.find((t) => t.id === $currentTheme)
+          ?.name || 'Raydrop Obsidian'})"
       >
         <Palette class="w-4 h-4 text-cyan-400" />
       </button>
 
       {#if themeMenuOpen}
         <div
-          class="absolute right-0 mt-2 w-56 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-2 z-50 space-y-1"
+          class="absolute right-0 mt-2 w-64 rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-slate-800 shadow-2xl p-2 z-50 space-y-1"
         >
-          <div class="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            UI Theme
+          <div
+            class="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500"
+          >
+            Appearance
           </div>
           {#each RAYDROP_THEMES as themeOpt}
             <button
@@ -536,21 +314,29 @@
                 applyTheme(themeOpt.id);
                 themeMenuOpen = false;
               }}
-              class="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-left text-xs transition cursor-pointer {$currentTheme === themeOpt.id
-                ? 'bg-cyan-500/20 text-white font-semibold'
-                : 'text-slate-300 hover:bg-slate-800'}"
+              class="w-full flex items-center justify-between gap-2.5 px-2.5 py-2 rounded-xl text-left transition cursor-pointer {$currentTheme ===
+              themeOpt.id
+                ? 'bg-cyan-500/15 text-white ring-1 ring-cyan-500/35'
+                : 'text-slate-300 hover:bg-slate-800/80'}"
             >
               <div class="flex items-center gap-2.5 min-w-0">
                 <span
-                  class="w-4 h-4 rounded-full shrink-0 flex items-center justify-center border border-white/15"
+                  class="w-6 h-6 rounded-lg shrink-0 flex items-center justify-center border border-white/15 shadow-inner"
                   style="background: {themeOpt.previewBg}"
                 >
                   <span
-                    class="w-2 h-2 rounded-full"
+                    class="w-2.5 h-2.5 rounded-full shadow-sm"
                     style="background: {themeOpt.previewAccent}"
                   ></span>
                 </span>
-                <span class="truncate">{themeOpt.name}</span>
+                <div class="min-w-0">
+                  <div class="text-xs font-semibold truncate">
+                    {themeOpt.name}
+                  </div>
+                  <div class="text-[10px] text-slate-400 truncate">
+                    {themeOpt.description}
+                  </div>
+                </div>
               </div>
               {#if $currentTheme === themeOpt.id}
                 <Check class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
@@ -606,15 +392,20 @@
                 class="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap"
                 style={myRank.badgeStyle}
               >
-                {myRank.icon} {myRank.tierName} Lv.{myRank.level}
+                {myRank.icon}
+                {myRank.tierName} Lv.{myRank.level}
               </span>
             </div>
             <div class="space-y-1">
-              <div class="flex items-center justify-between text-[10px] font-mono text-slate-400">
+              <div
+                class="flex items-center justify-between text-[10px] font-mono text-slate-400"
+              >
                 <span>{myRank.exp.toLocaleString()} EXP</span>
                 <span>Next: {myRank.nextLevelExp.toLocaleString()}</span>
               </div>
-              <div class="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+              <div
+                class="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden"
+              >
                 <div
                   class="h-full rounded-full transition-all"
                   style="width: {myRank.progressPercent}%; background: {myRank.barColor}"

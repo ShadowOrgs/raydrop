@@ -1,18 +1,22 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import {
     Activity,
     Cpu,
     MemoryStick,
-    MonitorPlay,
     Wifi,
-    HardDrive,
-    ArrowDownLeft,
-    ArrowUpRight,
-    Server,
+    Laptop,
+    Users,
+    Zap,
+    MessageSquare,
+    Video,
+    Monitor,
+    StickyNote,
     RefreshCw,
-    Database,
-    CheckCircle2,
+    Plus,
+    Minus,
+    Globe,
+    ShieldCheck,
   } from "lucide-svelte";
   import {
     raydropApi,
@@ -20,65 +24,67 @@
     type SystemTelemetry,
     type TransferAnalytics,
   } from "../utils/tauri-ipc";
-  import { appSettings, networkInfo, myRankExp } from "../stores/state";
+  import {
+    appSettings,
+    networkInfo,
+    myRankExp,
+    activeMainTab,
+  } from "../stores/state";
+  import { lanContacts } from "../stores/contacts";
+  import { activeTransfers } from "../stores/transfers";
+  import { totalUnreadCount } from "../stores/chat";
   import { getRankInfo } from "../utils/rank";
 
   export let active: boolean = false;
 
-  const MAX_POINTS = 40;
+  const isTauriRuntime =
+    typeof window !== "undefined" && Boolean((window as any).__TAURI_INTERNALS__);
 
   let telemetry: SystemTelemetry | null = null;
   let analytics: TransferAnalytics | null = null;
   let loading = false;
-  let errorMsg: string | null = null;
-
-  let cpuHistory: number[] = Array(MAX_POINTS).fill(0);
-  let ramHistory: number[] = Array(MAX_POINTS).fill(0);
-  let gpuHistory: number[] = Array(MAX_POINTS).fill(0);
-  let netRxHistory: number[] = Array(MAX_POINTS).fill(0);
-  let netTxHistory: number[] = Array(MAX_POINTS).fill(0);
+  let nowTime = "";
+  let dialMode: "reliability" | "cpu" | "ram" = "reliability";
 
   let telemetryTimer: any = null;
   let analyticsTimer: any = null;
+  let clockTimer: any = null;
 
-  function pushSample(arr: number[], val: number): number[] {
-    const next = [...arr.slice(1), val];
-    return next;
+  function updateClock() {
+    nowTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
+  onMount(() => {
+    updateClock();
+    clockTimer = setInterval(updateClock, 15000);
+  });
+
   async function fetchTelemetry() {
+    if (!isTauriRuntime) return;
     try {
-      const t = await raydropApi.getSystemTelemetry();
-      telemetry = t;
-      cpuHistory = pushSample(cpuHistory, t.cpu_usage_percent);
-      ramHistory = pushSample(ramHistory, t.ram_usage_percent);
-      gpuHistory = pushSample(gpuHistory, t.gpu_usage_percent);
-      netRxHistory = pushSample(netRxHistory, t.net_rx_bytes_per_sec);
-      netTxHistory = pushSample(netTxHistory, t.net_tx_bytes_per_sec);
-      errorMsg = null;
-    } catch (e: any) {
-      errorMsg = e?.message || String(e);
-    }
+      telemetry = await raydropApi.getSystemTelemetry();
+    } catch (_) {}
   }
 
   async function fetchAnalytics() {
+    if (!isTauriRuntime) return;
     try {
       analytics = await raydropApi.getTransferAnalytics();
     } catch (_) {}
   }
 
   function startPolling() {
+    if (!isTauriRuntime) {
+      loading = false;
+      return;
+    }
     if (telemetryTimer) return;
     loading = !telemetry;
     Promise.all([fetchTelemetry(), fetchAnalytics()]).finally(() => {
       loading = false;
     });
-    telemetryTimer = setInterval(() => {
-      fetchTelemetry();
-    }, 1200);
-    analyticsTimer = setInterval(() => {
-      fetchAnalytics();
-    }, 5000);
+    telemetryTimer = setInterval(fetchTelemetry, 1500);
+    analyticsTimer = setInterval(fetchAnalytics, 5000);
   }
 
   function stopPolling() {
@@ -100,56 +106,25 @@
 
   onDestroy(() => {
     stopPolling();
+    if (clockTimer) clearInterval(clockTimer);
   });
 
-  function buildLinePath(values: number[], maxVal: number, w = 240, h = 64): string {
-    if (!values.length) return "";
-    const safeMax = Math.max(maxVal, 1);
-    const stepX = w / Math.max(values.length - 1, 1);
-    return values
-      .map((v, i) => {
-        const x = (i * stepX).toFixed(1);
-        const clamped = Math.min(Math.max(v, 0), safeMax);
-        const y = (h - (clamped / safeMax) * (h - 6) - 3).toFixed(1);
-        return `${i === 0 ? "M" : "L"}${x},${y}`;
-      })
-      .join(" ");
-  }
-
-  function buildAreaPath(values: number[], maxVal: number, w = 240, h = 64): string {
-    const line = buildLinePath(values, maxVal, w, h);
-    if (!line) return "";
-    return `${line} L${w},${h} L0,${h} Z`;
-  }
-
   function formatUptime(secs: number): string {
-    const d = Math.floor(secs / 86400);
-    const h = Math.floor((secs % 86400) / 3600);
+    const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
-    if (d > 0) return `${d}d ${h}h ${m}m`;
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m`;
+    return `${h}H ${m}M`;
   }
 
   function formatDayShort(epochSecs: number): string {
-    const dt = new Date(epochSecs * 1000);
-    return dt.toLocaleDateString(undefined, { weekday: "short" });
+    return new Date(epochSecs * 1000).toLocaleDateString(undefined, { weekday: "short" });
   }
-
-  $: netMaxScale = Math.max(
-    1024 * 64,
-    ...netRxHistory,
-    ...netTxHistory,
-  );
 
   $: totalLifetimeBytes =
     (analytics?.total_received_bytes || 0) + (analytics?.total_sent_bytes || 0);
-
   $: totalSessions =
     (analytics?.sent_sessions || 0) +
     (analytics?.received_sessions || 0) +
     (analytics?.failed_sessions || 0);
-
   $: successRate =
     totalSessions > 0
       ? Math.round(
@@ -158,429 +133,372 @@
             100,
         )
       : 100;
-
   $: maxDailyBytes = Math.max(
     1,
     ...(analytics?.daily || []).map((d) => Math.max(d.sent_bytes, d.received_bytes)),
   );
+
+  // Circular dial metric
+  $: dialValue =
+    dialMode === "reliability"
+      ? successRate
+      : dialMode === "cpu"
+        ? Math.round(telemetry?.cpu_usage_percent || 0)
+        : Math.round(telemetry?.ram_usage_percent || 0);
+  $: dialLabel =
+    dialMode === "reliability"
+      ? "Mesh Reliability"
+      : dialMode === "cpu"
+        ? "CPU Load"
+        : "Memory Load";
+  $: dialCircumference = 2 * Math.PI * 52;
+  $: dialOffset = dialCircumference - (Math.min(100, Math.max(0, dialValue)) / 100) * dialCircumference;
+
+  function cycleDial(dir: 1 | -1) {
+    const order: ("reliability" | "cpu" | "ram")[] = ["reliability", "cpu", "ram"];
+    const next = (order.indexOf(dialMode) + dir + order.length) % order.length;
+    dialMode = order[next];
+  }
 </script>
 
-<div class="h-full w-full overflow-y-auto pr-1 space-y-4">
-  <!-- Header Strip -->
-  <div
-    class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/70 border border-slate-800/80 rounded-2xl p-4"
-  >
-    <div class="flex items-center gap-3">
-      <div
-        class="w-10 h-10 rounded-xl bg-cyan-500/15 flex items-center justify-center text-cyan-400 shrink-0"
-      >
-        <Activity class="w-5 h-5" />
-      </div>
-      <div>
-        <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-          <span>System Monitor & Transfer Analytics</span>
-          <span
-            class="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 font-mono text-[10px] flex items-center gap-1"
+<div class="h-full w-full flex flex-col xl:flex-row gap-3.5 overflow-y-auto xl:overflow-hidden">
+  <!-- LEFT / CENTER SPATIAL GLASS GRID -->
+  <div class="flex-1 min-w-0 xl:overflow-y-auto space-y-3.5 pr-0.5">
+    <!-- Top Row: Node Hero Card + Rounded Bar Chart -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
+      <!-- Device / Node Hero Card (7 cols) -->
+      <div class="lg:col-span-7 spatial-card rounded-[22px] bg-white/[0.08] backdrop-blur-xl border border-white/[0.14] p-4 sm:p-5 flex flex-col justify-between gap-4">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-center gap-3.5 min-w-0">
+            <div class="w-14 h-14 rounded-2xl bg-white/[0.08] border border-white/15 flex items-center justify-center shrink-0 shadow-inner">
+              <img src="/icon.png" alt="Raydrop" class="w-11 h-11 object-contain rounded-xl" />
+            </div>
+            <div class="min-w-0">
+              <div class="text-[11px] font-medium text-white/55 uppercase tracking-wider">Raydrop Node</div>
+              <h2 class="text-base sm:text-lg font-bold text-white truncate">
+                {$appSettings.alias_name || "Raydrop Workstation"}
+              </h2>
+            </div>
+          </div>
+          <button
+            type="button"
+            on:click={() => {
+              fetchTelemetry();
+              fetchAnalytics();
+            }}
+            class="w-8 h-8 rounded-full bg-white/[0.08] hover:bg-white/15 border border-white/10 flex items-center justify-center text-white/80 transition cursor-pointer shrink-0"
+            title="Refresh Telemetry"
           >
-            <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
-            Live
-          </span>
-        </h2>
-        <p class="text-xs text-slate-400">
-          Real-time CPU, RAM, GPU, Network & Disk telemetry (active only while viewing this page).
-        </p>
-      </div>
-    </div>
+            <RefreshCw class="w-3.5 h-3.5 {loading ? 'animate-spin' : ''}" />
+          </button>
+        </div>
 
-    <button
-      type="button"
-      on:click={() => {
-        fetchTelemetry();
-        fetchAnalytics();
-      }}
-      class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1.5 self-end sm:self-auto cursor-pointer transition"
-    >
-      <RefreshCw class="w-3.5 h-3.5 {loading ? 'animate-spin' : ''}" />
-      <span>Refresh Now</span>
-    </button>
-  </div>
-
-  {#if errorMsg}
-    <div class="p-3 rounded-xl bg-rose-950/60 border border-rose-500/30 text-xs text-rose-300">
-      {errorMsg}
-    </div>
-  {/if}
-
-  <!-- Real-Time Task Manager Grid (CPU, RAM, GPU, Network) -->
-  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
-    <!-- CPU Card -->
-    <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 flex flex-col gap-3">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <Cpu class="w-4 h-4 text-cyan-400" />
-          <span class="text-xs font-bold text-white">CPU</span>
-        </div>
-        <span class="text-lg font-extrabold font-mono text-white">
-          {telemetry ? telemetry.cpu_usage_percent.toFixed(1) : "0.0"}%
-        </span>
-      </div>
-
-      <div class="w-full h-16 rounded-xl bg-slate-950/70 overflow-hidden relative">
-        <svg viewBox="0 0 240 64" preserveAspectRatio="none" class="w-full h-full">
-          <line x1="0" y1="16" x2="240" y2="16" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
-          <line x1="0" y1="32" x2="240" y2="32" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
-          <line x1="0" y1="48" x2="240" y2="48" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
-          <path d={buildAreaPath(cpuHistory, 100)} fill="rgba(0, 120, 232, 0.22)" />
-          <path d={buildLinePath(cpuHistory, 100)} fill="none" stroke="#3898ff" stroke-width="2" />
-        </svg>
-      </div>
-
-      <div class="text-[11px] text-slate-400 space-y-0.5">
-        <div class="truncate text-slate-300 font-medium" title={telemetry?.cpu_brand}>
-          {telemetry?.cpu_brand || "Detecting CPU..."}
-        </div>
-        <div class="flex items-center justify-between font-mono text-[10px] text-slate-500">
-          <span>{telemetry ? `${telemetry.cpu_cores_physical}C / ${telemetry.cpu_cores_logical}T` : "--"}</span>
-          <span>
-            {telemetry?.cpu_freq_mhz ? `${(telemetry.cpu_freq_mhz / 1000).toFixed(2)} GHz` : "--"}
-            {telemetry?.cpu_temp_celsius ? ` • ${telemetry.cpu_temp_celsius.toFixed(0)}°C` : ""}
-          </span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Memory (RAM) Card -->
-    <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 flex flex-col gap-3">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <MemoryStick class="w-4 h-4 text-cyan-400" />
-          <span class="text-xs font-bold text-white">Memory (RAM)</span>
-        </div>
-        <span class="text-lg font-extrabold font-mono text-white">
-          {telemetry ? telemetry.ram_usage_percent.toFixed(1) : "0.0"}%
-        </span>
-      </div>
-
-      <div class="w-full h-16 rounded-xl bg-slate-950/70 overflow-hidden relative">
-        <svg viewBox="0 0 240 64" preserveAspectRatio="none" class="w-full h-full">
-          <line x1="0" y1="16" x2="240" y2="16" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
-          <line x1="0" y1="32" x2="240" y2="32" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
-          <line x1="0" y1="48" x2="240" y2="48" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
-          <path d={buildAreaPath(ramHistory, 100)} fill="rgba(139, 92, 246, 0.22)" />
-          <path d={buildLinePath(ramHistory, 100)} fill="none" stroke="#a78bfa" stroke-width="2" />
-        </svg>
-      </div>
-
-      <div class="text-[11px] text-slate-400 space-y-0.5">
-        <div class="text-slate-300 font-medium font-mono">
-          {telemetry
-            ? `${formatBytes(telemetry.ram_used_bytes)} / ${formatBytes(telemetry.ram_total_bytes)}`
-            : "-- / --"}
-        </div>
-        <div class="flex items-center justify-between font-mono text-[10px] text-slate-500">
-          <span>Swap Used</span>
-          <span>
-            {telemetry ? `${formatBytes(telemetry.swap_used_bytes)} / ${formatBytes(telemetry.swap_total_bytes)}` : "--"}
-          </span>
-        </div>
-      </div>
-    </div>
-
-    <!-- GPU Card -->
-    <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 flex flex-col gap-3">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <MonitorPlay class="w-4 h-4 text-cyan-400" />
-          <span class="text-xs font-bold text-white">GPU</span>
-        </div>
-        <span class="text-lg font-extrabold font-mono text-white">
-          {telemetry ? telemetry.gpu_usage_percent.toFixed(1) : "0.0"}%
-        </span>
-      </div>
-
-      <div class="w-full h-16 rounded-xl bg-slate-950/70 overflow-hidden relative">
-        <svg viewBox="0 0 240 64" preserveAspectRatio="none" class="w-full h-full">
-          <line x1="0" y1="16" x2="240" y2="16" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
-          <line x1="0" y1="32" x2="240" y2="32" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
-          <line x1="0" y1="48" x2="240" y2="48" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
-          <path d={buildAreaPath(gpuHistory, 100)} fill="rgba(56, 189, 248, 0.2)" />
-          <path d={buildLinePath(gpuHistory, 100)} fill="none" stroke="#38bdf8" stroke-width="2" />
-        </svg>
-      </div>
-
-      <div class="text-[11px] text-slate-400 space-y-0.5">
-        <div class="truncate text-slate-300 font-medium" title={telemetry?.gpu_name}>
-          {telemetry?.gpu_name || "Detecting GPU..."}
-        </div>
-        <div class="flex items-center justify-between font-mono text-[10px] text-slate-500">
-          <span>3D Engine</span>
-          <span>Live PDH Sampler</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Network Throughput Card -->
-    <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 flex flex-col gap-3">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <Wifi class="w-4 h-4 text-cyan-400" />
-          <span class="text-xs font-bold text-white">Network</span>
-        </div>
-        <span class="text-[11px] font-mono text-cyan-300 font-semibold">
-          {telemetry ? `${formatBytes(telemetry.net_rx_bytes_per_sec)}/s` : "0 B/s"}
-        </span>
-      </div>
-
-      <div class="w-full h-16 rounded-xl bg-slate-950/70 overflow-hidden relative">
-        <svg viewBox="0 0 240 64" preserveAspectRatio="none" class="w-full h-full">
-          <line x1="0" y1="16" x2="240" y2="16" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
-          <line x1="0" y1="32" x2="240" y2="32" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
-          <line x1="0" y1="48" x2="240" y2="48" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
-          <path d={buildAreaPath(netRxHistory, netMaxScale)} fill="rgba(0, 120, 232, 0.22)" />
-          <path d={buildLinePath(netRxHistory, netMaxScale)} fill="none" stroke="#3898ff" stroke-width="2" />
-          <path d={buildLinePath(netTxHistory, netMaxScale)} fill="none" stroke="#a78bfa" stroke-width="1.6" stroke-dasharray="3 2" />
-        </svg>
-      </div>
-
-      <div class="text-[11px] text-slate-400 space-y-0.5">
-        <div class="flex items-center justify-between font-mono text-[11px]">
-          <span class="text-cyan-300">↓ {telemetry ? `${formatBytes(telemetry.net_rx_bytes_per_sec)}/s` : "0 B/s"}</span>
-          <span class="text-violet-300">↑ {telemetry ? `${formatBytes(telemetry.net_tx_bytes_per_sec)}/s` : "0 B/s"}</span>
-        </div>
-        <div class="flex items-center justify-between font-mono text-[10px] text-slate-500">
-          <span>LAN: {$networkInfo.localIp}</span>
-          <span>Port: {$networkInfo.listenPort}</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- My Raydrop Rank & EXP Progress -->
-  {#if true}
-    {@const myRank = getRankInfo($myRankExp)}
-    <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <div class="flex items-center gap-3.5">
-        <div
-          class="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0"
-          style={myRank.badgeStyle}
-        >
-          {myRank.icon}
-        </div>
-        <div>
-          <div class="flex items-center gap-2 flex-wrap">
-            <h3 class="text-sm font-bold text-white">
-              {myRank.tierName} Tier — Level {myRank.level}
-            </h3>
-            <span
-              class="text-[10px] font-bold px-2 py-0.5 rounded-full font-mono"
-              style={myRank.badgeStyle}
-            >
-              {myRank.exp.toLocaleString()} EXP
-            </span>
-          </div>
-          <p class="text-[11px] text-slate-400 mt-0.5">
-            Earn EXP from File Transfers (+2 EXP/MB), Chat (+5 EXP/msg), Remote Desktop, Meeting & Tablet Extend (+10 EXP/min), and Sync/Share (+25 EXP).
-          </p>
-        </div>
-      </div>
-
-      <div class="w-full sm:w-64 space-y-1.5 shrink-0">
-        <div class="flex items-center justify-between text-[11px] font-mono text-slate-400">
-          <span>Lv.{myRank.level} Progress</span>
-          <span>{myRank.progressPercent}% ({myRank.exp.toLocaleString()} / {myRank.nextLevelExp.toLocaleString()})</span>
-        </div>
-        <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-          <div
-            class="h-full rounded-full transition-all"
-            style="width: {myRank.progressPercent}%; background: {myRank.barColor}"
-          ></div>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  <!-- Persistent File Transfer Analytics -->
-  <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 space-y-4">
-    <div class="flex items-center justify-between flex-wrap gap-2">
-      <div class="flex items-center gap-2">
-        <Database class="w-4 h-4 text-cyan-400" />
-        <h3 class="text-sm font-bold text-white">Persistent File Transfer Analytics</h3>
-      </div>
-      <span class="text-[11px] font-mono text-slate-400">
-        Stored permanently in local SQLite
-      </span>
-    </div>
-
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      <div class="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/70 space-y-1">
-        <div class="flex items-center justify-between text-xs text-slate-400">
-          <span>Total Downloaded (Received)</span>
-          <ArrowDownLeft class="w-4 h-4 text-cyan-400" />
-        </div>
-        <div class="text-xl font-extrabold font-mono text-white">
-          {formatBytes(analytics?.total_received_bytes || 0)}
-        </div>
-        <div class="text-[11px] text-slate-500 font-mono">
-          {analytics?.total_received_files || 0} files • {analytics?.received_sessions || 0} sessions
-        </div>
-      </div>
-
-      <div class="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/70 space-y-1">
-        <div class="flex items-center justify-between text-xs text-slate-400">
-          <span>Total Uploaded (Sent)</span>
-          <ArrowUpRight class="w-4 h-4 text-violet-400" />
-        </div>
-        <div class="text-xl font-extrabold font-mono text-white">
-          {formatBytes(analytics?.total_sent_bytes || 0)}
-        </div>
-        <div class="text-[11px] text-slate-500 font-mono">
-          {analytics?.total_sent_files || 0} files • {analytics?.sent_sessions || 0} sessions
-        </div>
-      </div>
-
-      <div class="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/70 space-y-1">
-        <div class="flex items-center justify-between text-xs text-slate-400">
-          <span>Lifetime Total Volume</span>
-          <Activity class="w-4 h-4 text-cyan-400" />
-        </div>
-        <div class="text-xl font-extrabold font-mono text-white">
-          {formatBytes(totalLifetimeBytes)}
-        </div>
-        <div class="text-[11px] text-slate-500 font-mono">
-          LAN: {formatBytes(analytics?.lan_bytes || 0)} • WAN: {formatBytes(analytics?.wan_bytes || 0)}
-        </div>
-      </div>
-
-      <div class="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/70 space-y-1">
-        <div class="flex items-center justify-between text-xs text-slate-400">
-          <span>Transfer Reliability</span>
-          <CheckCircle2 class="w-4 h-4 text-cyan-400" />
-        </div>
-        <div class="text-xl font-extrabold font-mono text-white">
-          {successRate}%
-        </div>
-        <div class="text-[11px] text-slate-500 font-mono">
-          {totalSessions} total • {analytics?.failed_sessions || 0} failed
-        </div>
-      </div>
-    </div>
-
-    <!-- 7-Day Activity Chart -->
-    {#if analytics && analytics.daily.length > 0}
-      <div class="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/70 space-y-2.5">
-        <div class="flex items-center justify-between text-xs">
-          <span class="font-semibold text-slate-300">7-Day Transfer Volume</span>
-          <div class="flex items-center gap-3 text-[11px] font-mono">
-            <span class="flex items-center gap-1 text-cyan-300">
-              <span class="w-2 h-2 rounded-sm bg-cyan-500"></span> Received
-            </span>
-            <span class="flex items-center gap-1 text-violet-300">
-              <span class="w-2 h-2 rounded-sm bg-violet-400"></span> Sent
-            </span>
-          </div>
-        </div>
-        <div class="grid grid-cols-7 gap-2 h-24 items-end pt-2">
-          {#each analytics.daily as day}
-            {@const rxPct = Math.max(4, Math.round((day.received_bytes / maxDailyBytes) * 100))}
-            {@const txPct = Math.max(4, Math.round((day.sent_bytes / maxDailyBytes) * 100))}
-            <div class="flex flex-col items-center gap-1.5 h-full justify-end">
-              <div class="flex items-end gap-1 w-full justify-center flex-1">
-                <div
-                  class="w-2.5 rounded-t bg-cyan-500 transition-all"
-                  style="height: {day.received_bytes > 0 ? rxPct : 4}%; opacity: {day.received_bytes > 0 ? 1 : 0.25}"
-                  title="Received: {formatBytes(day.received_bytes)}"
-                ></div>
-                <div
-                  class="w-2.5 rounded-t bg-violet-400 transition-all"
-                  style="height: {day.sent_bytes > 0 ? txPct : 4}%; opacity: {day.sent_bytes > 0 ? 1 : 0.25}"
-                  title="Sent: {formatBytes(day.sent_bytes)}"
-                ></div>
-              </div>
-              <span class="text-[10px] font-mono text-slate-500">
-                {formatDayShort(day.day_epoch_secs)}
-              </span>
+        <div class="grid grid-cols-2 gap-3 bg-black/20 rounded-2xl p-3 border border-white/[0.07]">
+          <div>
+            <div class="text-lg sm:text-xl font-extrabold font-mono text-white">
+              {telemetry ? formatUptime(telemetry.uptime_secs) : "0H 0M"}
             </div>
-          {/each}
-        </div>
-      </div>
-    {/if}
-  </div>
-
-  <!-- Bottom Row: System Information + Storage Drives -->
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5 pb-4">
-    <!-- System Information -->
-    <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 space-y-3">
-      <div class="flex items-center gap-2">
-        <Server class="w-4 h-4 text-cyan-400" />
-        <h3 class="text-sm font-bold text-white">System Information</h3>
-      </div>
-
-      <div class="grid grid-cols-2 gap-2.5 text-xs">
-        <div class="p-2.5 rounded-xl bg-slate-950/60">
-          <div class="text-[10px] text-slate-500 uppercase">Hostname</div>
-          <div class="font-semibold text-slate-200 truncate">{telemetry?.hostname || "--"}</div>
-        </div>
-        <div class="p-2.5 rounded-xl bg-slate-950/60">
-          <div class="text-[10px] text-slate-500 uppercase">Operating System</div>
-          <div class="font-semibold text-slate-200 truncate">
-            {telemetry ? `${telemetry.os_name} ${telemetry.os_version}` : "--"}
+            <div class="text-[10px] text-white/55">System Uptime</div>
           </div>
-        </div>
-        <div class="p-2.5 rounded-xl bg-slate-950/60">
-          <div class="text-[10px] text-slate-500 uppercase">Architecture & Kernel</div>
-          <div class="font-mono text-slate-200 truncate">
-            {telemetry ? `${telemetry.arch} • ${telemetry.kernel_version}` : "--"}
-          </div>
-        </div>
-        <div class="p-2.5 rounded-xl bg-slate-950/60">
-          <div class="text-[10px] text-slate-500 uppercase">System Uptime</div>
-          <div class="font-mono text-slate-200">
-            {telemetry ? formatUptime(telemetry.uptime_secs) : "--"}
-          </div>
-        </div>
-        <div class="p-2.5 rounded-xl bg-slate-950/60 col-span-2">
-          <div class="text-[10px] text-slate-500 uppercase">Raydrop Device ID & Network</div>
-          <div class="font-mono text-slate-300 text-[11px] truncate">
-            {$appSettings.device_id} • LAN {$networkInfo.localIp}:{$networkInfo.listenPort}
-            {$networkInfo.wanReflexiveAddr ? ` • WAN ${$networkInfo.wanReflexiveAddr}` : ""}
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Disk / Storage Usage -->
-    <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 space-y-3">
-      <div class="flex items-center gap-2">
-        <HardDrive class="w-4 h-4 text-cyan-400" />
-        <h3 class="text-sm font-bold text-white">Storage & Disks</h3>
-      </div>
-
-      <div class="space-y-2.5 max-h-56 overflow-y-auto pr-1">
-        {#if telemetry && telemetry.disks.length > 0}
-          {#each telemetry.disks as d}
-            <div class="p-2.5 rounded-xl bg-slate-950/60 space-y-1.5">
-              <div class="flex items-center justify-between text-xs">
-                <span class="font-semibold text-slate-200 truncate">
-                  {d.mount_point} {d.name ? `(${d.name})` : ""}
-                </span>
-                <span class="font-mono text-[11px] text-slate-400 shrink-0">
-                  {formatBytes(d.used_bytes)} / {formatBytes(d.total_bytes)} ({d.usage_percent.toFixed(0)}%)
-                </span>
-              </div>
-              <div class="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                <div
-                  class="h-full bg-cyan-500 rounded-full transition-all"
-                  style="width: {Math.min(100, d.usage_percent)}%"
-                ></div>
-              </div>
+          <div class="border-l border-white/10 pl-3">
+            <div class="text-lg sm:text-xl font-extrabold font-mono text-white">
+              {formatBytes(totalLifetimeBytes)}
             </div>
-          {/each}
-        {:else}
-          <div class="text-xs text-slate-500 py-4 text-center">
-            Loading storage telemetry...
+            <div class="text-[10px] text-white/55">Lifetime P2P Volume</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2.5 text-xs">
+          <div class="rounded-xl bg-black/20 border border-white/[0.08] px-3 py-2 flex items-center justify-between">
+            <span class="text-white/55 text-[10px]">Local IP</span>
+            <span class="font-mono font-semibold text-white text-[11px]">{$networkInfo.localIp}</span>
+          </div>
+          <div class="rounded-xl bg-black/20 border border-white/[0.08] px-3 py-2 flex items-center justify-between">
+            <span class="text-white/55 text-[10px]">Port</span>
+            <span class="font-mono font-semibold text-white text-[11px]">{$networkInfo.listenPort}</span>
+          </div>
+        </div>
+
+        <!-- Brightness/Progress-style Rank Bar -->
+        {#if true}
+          {@const myRank = getRankInfo($myRankExp)}
+          <div class="space-y-1">
+            <div class="flex items-center justify-between text-[10px] font-mono text-white/70">
+              <span>{myRank.icon} {myRank.tierName} • Lv.{myRank.level}</span>
+              <span>{myRank.progressPercent}%</span>
+            </div>
+            <div class="w-full h-2.5 rounded-full bg-black/30 overflow-hidden p-0.5 border border-white/10">
+              <div
+                class="h-full rounded-full bg-white transition-all duration-300"
+                style="width: {Math.max(8, myRank.progressPercent)}%"
+              ></div>
+            </div>
           </div>
         {/if}
       </div>
+
+      <!-- 7-Day Rounded Pill Bar Chart Card (5 cols) -->
+      <div class="lg:col-span-5 spatial-card rounded-[22px] bg-white/[0.08] backdrop-blur-xl border border-white/[0.14] p-4 sm:p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-bold text-white">Transfer Volume (7 Days)</h3>
+          <span class="text-[10px] font-mono text-white/60">RX + TX</span>
+        </div>
+
+        <div class="grid grid-cols-7 gap-2.5 h-36 items-end pt-4 pb-1">
+          {#if analytics && analytics.daily.length > 0}
+            {#each analytics.daily as day, i}
+              {@const total = day.received_bytes + day.sent_bytes}
+              {@const pct = Math.max(18, Math.round((total / (maxDailyBytes * 2)) * 100))}
+              {@const isPeak = total > 0 && total >= maxDailyBytes * 0.7}
+              <div class="flex flex-col items-center gap-2 h-full justify-end">
+                <div
+                  class="w-3.5 sm:w-4 rounded-full transition-all duration-300 {isPeak
+                    ? 'bg-sky-400 shadow-[0_0_16px_rgba(56,189,248,0.65)]'
+                    : 'bg-white/25 hover:bg-white/40'}"
+                  style="height: {total > 0 ? pct : 22}%"
+                  title="{formatDayShort(day.day_epoch_secs)}: {formatBytes(total)}"
+                ></div>
+                <span class="text-[10px] font-mono text-white/60">{formatDayShort(day.day_epoch_secs)}</span>
+              </div>
+            {/each}
+          {:else}
+            {#each ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as dayLabel, idx}
+              <div class="flex flex-col items-center gap-2 h-full justify-end">
+                <div
+                  class="w-3.5 sm:w-4 rounded-full {idx === 2 ? 'bg-sky-400/70' : 'bg-white/20'}"
+                  style="height: {[48, 35, 82, 55, 68, 42, 30][idx]}%"
+                ></div>
+                <span class="text-[10px] font-mono text-white/55">{dayLabel}</span>
+              </div>
+            {/each}
+          {/if}
+        </div>
+      </div>
+    </div>
+
+    <!-- Middle Row: 3 Spatial Stat Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+      <div class="spatial-card rounded-[20px] bg-white/[0.08] backdrop-blur-xl border border-white/[0.14] p-4 space-y-1">
+        <div class="text-[11px] text-white/60 font-medium">Downloaded</div>
+        <div class="text-2xl font-extrabold font-mono text-white">
+          {formatBytes(analytics?.total_received_bytes || 0)}
+        </div>
+      </div>
+      <div class="spatial-card rounded-[20px] bg-white/[0.08] backdrop-blur-xl border border-white/[0.14] p-4 space-y-1">
+        <div class="text-[11px] text-white/60 font-medium">Memory Usage</div>
+        <div class="text-2xl font-extrabold font-mono text-white">
+          {telemetry ? `${telemetry.ram_usage_percent.toFixed(1)} %` : "0.0 %"}
+        </div>
+      </div>
+      <div class="spatial-card rounded-[20px] bg-white/[0.08] backdrop-blur-xl border border-white/[0.14] p-4 space-y-1">
+        <div class="text-[11px] text-white/60 font-medium">CPU Load</div>
+        <div class="text-2xl font-extrabold font-mono text-white">
+          {telemetry ? `${telemetry.cpu_usage_percent.toFixed(1)} %` : "0.0 %"}
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Row: 4 Interactive Spatial Quick-Tiles (with visionOS pill switches) -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3.5 pb-2">
+      <button
+        type="button"
+        on:click={() => activeMainTab.set("transfers")}
+        class="spatial-card group rounded-[22px] bg-white/[0.11] hover:bg-white/[0.16] backdrop-blur-xl border border-white/[0.16] p-4 text-left flex flex-col justify-between min-h-[120px] transition cursor-pointer"
+      >
+        <div class="flex items-center justify-between w-full">
+          <div class="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center text-white">
+            <Zap class="w-4 h-4" />
+          </div>
+          <span class="w-9 h-5 rounded-full bg-sky-400 p-0.5 flex items-center justify-end">
+            <span class="w-4 h-4 rounded-full bg-white shadow"></span>
+          </span>
+        </div>
+        <div class="mt-4">
+          <div class="text-[10px] text-white/60">{$activeTransfers.length} Active</div>
+          <div class="text-sm font-bold text-white">File Transfers</div>
+        </div>
+      </button>
+
+      <button
+        type="button"
+        on:click={() => activeMainTab.set("chat")}
+        class="spatial-card group rounded-[22px] bg-white/[0.08] hover:bg-white/[0.14] backdrop-blur-xl border border-white/[0.14] p-4 text-left flex flex-col justify-between min-h-[120px] transition cursor-pointer"
+      >
+        <div class="flex items-center justify-between w-full">
+          <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white">
+            <MessageSquare class="w-4 h-4" />
+          </div>
+          <span class="w-9 h-5 rounded-full p-0.5 flex items-center {$totalUnreadCount > 0 ? 'bg-sky-400 justify-end' : 'bg-white/20 justify-start'}">
+            <span class="w-4 h-4 rounded-full bg-white shadow"></span>
+          </span>
+        </div>
+        <div class="mt-4">
+          <div class="text-[10px] text-white/60">{$totalUnreadCount} Unread</div>
+          <div class="text-sm font-bold text-white">Encrypted Chat</div>
+        </div>
+      </button>
+
+      <button
+        type="button"
+        on:click={() => activeMainTab.set("meeting")}
+        class="spatial-card group rounded-[22px] bg-white/[0.11] hover:bg-white/[0.16] backdrop-blur-xl border border-white/[0.16] p-4 text-left flex flex-col justify-between min-h-[120px] transition cursor-pointer"
+      >
+        <div class="flex items-center justify-between w-full">
+          <div class="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center text-white">
+            <Video class="w-4 h-4" />
+          </div>
+          <span class="w-9 h-5 rounded-full bg-sky-400 p-0.5 flex items-center justify-end">
+            <span class="w-4 h-4 rounded-full bg-white shadow"></span>
+          </span>
+        </div>
+        <div class="mt-4">
+          <div class="text-[10px] text-white/60">P2P Room</div>
+          <div class="text-sm font-bold text-white">Online Meeting</div>
+        </div>
+      </button>
+
+      <button
+        type="button"
+        disabled={!$appSettings.discoverable}
+        on:click={() => {
+          if ($appSettings.discoverable) activeMainTab.set("remote");
+        }}
+        class="spatial-card group rounded-[22px] bg-white/[0.08] hover:bg-white/[0.14] backdrop-blur-xl border border-white/[0.14] p-4 text-left flex flex-col justify-between min-h-[120px] transition {!$appSettings.discoverable
+          ? 'opacity-45 cursor-not-allowed'
+          : 'cursor-pointer'}"
+      >
+        <div class="flex items-center justify-between w-full">
+          <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white">
+            <Monitor class="w-4 h-4" />
+          </div>
+          <span class="w-9 h-5 rounded-full p-0.5 flex items-center {$appSettings.discoverable ? 'bg-sky-400 justify-end' : 'bg-white/20 justify-start'}">
+            <span class="w-4 h-4 rounded-full bg-white shadow"></span>
+          </span>
+        </div>
+        <div class="mt-4">
+          <div class="text-[10px] text-white/60">{$appSettings.discoverable ? "Ready" : "Hidden"}</div>
+          <div class="text-sm font-bold text-white">Remote Desktop</div>
+        </div>
+      </button>
     </div>
   </div>
+
+  <!-- RIGHT SPATIAL SIDEBAR (Clock + Circular Gauge + Quick Mode Tiles + Mesh Status) -->
+  <aside class="w-full xl:w-72 shrink-0 spatial-card rounded-[24px] bg-white/[0.07] backdrop-blur-2xl border border-white/[0.14] p-4 flex flex-col justify-between gap-4">
+    <!-- Live Clock -->
+    <div class="text-center pt-1">
+      <div class="text-xl font-bold tracking-tight text-white font-display">{nowTime || "20:54"}</div>
+      <div class="flex items-center justify-between mt-2 text-[11px] text-white/70 px-1">
+        <span>{dialLabel}</span>
+        <span class="inline-flex items-center gap-1 text-[10px] font-mono">
+          <Globe class="w-3 h-3 text-sky-400" />
+          {$networkInfo.signalingConnected ? "WAN" : "LAN"}
+        </span>
+      </div>
+    </div>
+
+    <!-- Circular Spatial Gauge (Thermostat-inspired) -->
+    <div class="flex flex-col items-center justify-center relative py-1">
+      <div class="relative w-36 h-36 flex items-center justify-center">
+        <svg class="w-full h-full -rotate-90" viewBox="0 0 120 120">
+          <circle
+            cx="60"
+            cy="60"
+            r="52"
+            fill="none"
+            stroke="rgba(255,255,255,0.14)"
+            stroke-width="6"
+          />
+          <circle
+            cx="60"
+            cy="60"
+            r="52"
+            fill="none"
+            stroke="#38bdf8"
+            stroke-width="6"
+            stroke-linecap="round"
+            stroke-dasharray={dialCircumference}
+            stroke-dashoffset={dialOffset}
+            class="transition-all duration-500"
+          />
+        </svg>
+        <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span class="text-3xl font-extrabold font-mono text-white">{dialValue}%</span>
+          <span class="text-[10px] text-white/60 uppercase tracking-wider mt-0.5">{dialMode}</span>
+        </div>
+      </div>
+
+      <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/[0.1] border border-white/15 -mt-2">
+        <button
+          type="button"
+          on:click={() => cycleDial(-1)}
+          class="w-5 h-5 rounded-full hover:bg-white/15 flex items-center justify-center text-white cursor-pointer"
+          title="Previous Metric"
+        >
+          <Minus class="w-3 h-3" />
+        </button>
+        <span class="text-[10px] font-mono text-white/75 px-1">Metric</span>
+        <button
+          type="button"
+          on:click={() => cycleDial(1)}
+          class="w-5 h-5 rounded-full hover:bg-white/15 flex items-center justify-center text-white cursor-pointer"
+          title="Next Metric"
+        >
+          <Plus class="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+
+    <!-- 4 Quick Mode Tiles (Hot/Eco/Fan/Cold equivalent) -->
+    <div class="grid grid-cols-4 gap-2">
+      <button
+        type="button"
+        on:click={() => activeMainTab.set("lan")}
+        class="rounded-2xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/10 py-2.5 flex flex-col items-center gap-1 text-white transition cursor-pointer"
+      >
+        <Wifi class="w-4 h-4" />
+        <span class="text-[9px] text-white/75">LAN ({$lanContacts.length})</span>
+      </button>
+      <button
+        type="button"
+        on:click={() => activeMainTab.set("devices")}
+        class="rounded-2xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/10 py-2.5 flex flex-col items-center gap-1 text-white transition cursor-pointer"
+      >
+        <Laptop class="w-4 h-4" />
+        <span class="text-[9px] text-white/75">Devices</span>
+      </button>
+      <button
+        type="button"
+        on:click={() => activeMainTab.set("contacts")}
+        class="rounded-2xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/10 py-2.5 flex flex-col items-center gap-1 text-white transition cursor-pointer"
+      >
+        <Users class="w-4 h-4" />
+        <span class="text-[9px] text-white/75">Peers</span>
+      </button>
+      <button
+        type="button"
+        on:click={() => activeMainTab.set("notes")}
+        class="rounded-2xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/10 py-2.5 flex flex-col items-center gap-1 text-white transition cursor-pointer"
+      >
+        <StickyNote class="w-4 h-4" />
+        <span class="text-[9px] text-white/75">Notes</span>
+      </button>
+    </div>
+
+    <!-- Bottom Spatial Mesh Player Card -->
+    <div class="rounded-2xl bg-white/[0.09] border border-white/15 p-3.5 space-y-2.5">
+      <div class="flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <div class="text-[10px] text-white/55 truncate">ChaCha20-Poly1305 • P2P Mesh</div>
+          <div class="text-xs font-bold text-white truncate">
+            {telemetry ? `↓ ${formatBytes(telemetry.net_rx_bytes_per_sec)}/s • ↑ ${formatBytes(telemetry.net_tx_bytes_per_sec)}/s` : "Standby • Zero Cloud"}
+          </div>
+        </div>
+        <ShieldCheck class="w-4 h-4 text-sky-400 shrink-0" />
+      </div>
+      <div class="w-full h-1 rounded-full bg-white/15 overflow-hidden">
+        <div class="h-full w-2/3 rounded-full bg-white"></div>
+      </div>
+    </div>
+  </aside>
 </div>

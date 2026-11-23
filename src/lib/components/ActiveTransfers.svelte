@@ -510,7 +510,14 @@
     .filter((t) => t.status === 'in_progress')
     .reduce((sum, t) => sum + (t.speed_mbps || 0), 0);
 
+  const isTauriRuntime =
+    typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__);
+
   async function handlePickFiles() {
+    if (!isTauriRuntime) {
+      actionError = 'Native file picker requires the Raydrop Desktop/Mobile app (Tauri runtime).';
+      return;
+    }
     try {
       const picked = await openWithLastDir({
         multiple: true,
@@ -526,6 +533,10 @@
   }
 
   async function handlePickFolder() {
+    if (!isTauriRuntime) {
+      actionError = 'Native folder picker requires the Raydrop Desktop/Mobile app (Tauri runtime).';
+      return;
+    }
     try {
       const picked = await openWithLastDir({
         directory: true,
@@ -546,6 +557,10 @@
   }
 
   async function handleShareViaWeb() {
+    if (!isTauriRuntime) {
+      actionError = 'Web Share requires the Raydrop Desktop/Mobile app (Tauri runtime).';
+      return;
+    }
     try {
       const picked = await openWithLastDir({
         multiple: true,
@@ -601,80 +616,82 @@
   }
 </script>
 
-<div class="flex flex-col h-full bg-slate-900/40 border border-slate-800/80 rounded-2xl overflow-hidden backdrop-blur-xl">
-  <!-- Top Hub: Quick Action Toolbar & Full-Width Drop Zone -->
-  <div class="p-3 sm:p-4 border-b border-slate-800/80 bg-slate-950/60 flex flex-col gap-2.5 sm:gap-3">
-    <!-- Row 1: Action Toolbar (Compact, Logically Grouped, Responsive) -->
+<div class="spatial-card flex flex-col h-full bg-white/[0.05] border border-white/[0.12] rounded-[22px] overflow-hidden backdrop-blur-xl">
+  <!-- Top Hub: Spatial Pill Toolbar & Frosted Drop Zone -->
+  <div class="p-3 sm:p-4 border-b border-white/[0.1] bg-white/[0.03] flex flex-col gap-3">
+    <!-- Row 1: Unified Spatial Pill Controls -->
     <div class="flex flex-wrap items-center justify-between gap-2">
-      <!-- P2P Transfer & Sharing Group -->
-      <div class="flex items-center flex-wrap gap-1.5 sm:gap-2">
+      <!-- Primary & Sharing Pills -->
+      <div class="flex items-center flex-wrap gap-2">
         <button
           type="button"
           on:click={handlePickFiles}
-          class="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-semibold text-xs shadow-md shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
+          class="flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs shadow-md transition-all cursor-pointer"
           title="Pick files to send via P2P"
         >
           <Plus class="w-3.5 h-3.5 stroke-[2.5]" />
           <span>Send Files</span>
         </button>
 
-        <button
-          type="button"
-          on:click={handlePickFolder}
-          class="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-xs border border-slate-700/80 transition-all hover:-translate-y-0.5 cursor-pointer shadow-sm"
-          title="Pick an entire folder to send"
-        >
-          <FolderUp class="w-3.5 h-3.5 text-cyan-400" />
-          <span>Folder</span>
-        </button>
+        <div class="inline-flex items-center flex-wrap gap-1 p-1 rounded-full bg-white/[0.06] border border-white/[0.12]">
+          <button
+            type="button"
+            on:click={handlePickFolder}
+            class="flex items-center gap-1.5 px-3 py-1 rounded-full hover:bg-white/15 text-slate-200 hover:text-white font-medium text-xs transition cursor-pointer"
+            title="Pick an entire folder to send"
+          >
+            <FolderUp class="w-3.5 h-3.5 text-cyan-400" />
+            <span>Folder</span>
+          </button>
 
-        <button
-          type="button"
-          on:click={handleShareViaWeb}
-          class="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-purple-600/25 hover:bg-purple-600/40 text-purple-200 hover:text-white font-medium text-xs border border-purple-500/40 transition-all hover:-translate-y-0.5 shadow-sm cursor-pointer"
-          title="Share files to phone or any device via QR code (no app needed)"
-        >
-          <QrCode class="w-3.5 h-3.5 text-purple-300" />
-          <span>Web Share</span>
-        </button>
+          <button
+            type="button"
+            on:click={handleShareViaWeb}
+            class="flex items-center gap-1.5 px-3 py-1 rounded-full hover:bg-white/15 text-slate-200 hover:text-white font-medium text-xs transition cursor-pointer"
+            title="Share files to phone or any device via QR code (no app needed)"
+          >
+            <QrCode class="w-3.5 h-3.5 text-cyan-400" />
+            <span>Web Share</span>
+          </button>
 
-        <button
-          type="button"
-          on:click={() => (showClipboardModal = true)}
-          class="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-200 hover:text-white font-medium text-xs border border-indigo-500/40 transition-all hover:-translate-y-0.5 shadow-sm cursor-pointer"
-          title="Sync text, links, or code directly to your other devices' clipboard"
-        >
-          <Clipboard class="w-3.5 h-3.5 text-indigo-300" />
-          <span>Clipboard</span>
-        </button>
+          <button
+            type="button"
+            on:click={() => (showClipboardModal = true)}
+            class="flex items-center gap-1.5 px-3 py-1 rounded-full hover:bg-white/15 text-slate-200 hover:text-white font-medium text-xs transition cursor-pointer"
+            title="Sync text, links, or code directly to your other devices' clipboard"
+          >
+            <Clipboard class="w-3.5 h-3.5 text-cyan-400" />
+            <span>Clipboard</span>
+          </button>
 
-        <button
-          type="button"
-          on:click={() => (showFolderSyncModal = true)}
-          class="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-emerald-600/25 hover:bg-emerald-600/40 text-emerald-200 hover:text-white font-medium text-xs border border-emerald-500/40 transition-all hover:-translate-y-0.5 shadow-sm cursor-pointer"
-          title="Mirror / sync whole folders directly to your trusted peers"
-        >
-          <FolderSync class="w-3.5 h-3.5 text-emerald-300" />
-          <span>Folder Sync</span>
-        </button>
+          <button
+            type="button"
+            on:click={() => (showFolderSyncModal = true)}
+            class="flex items-center gap-1.5 px-3 py-1 rounded-full hover:bg-white/15 text-slate-200 hover:text-white font-medium text-xs transition cursor-pointer"
+            title="Mirror / sync whole folders directly to your trusted peers"
+          >
+            <FolderSync class="w-3.5 h-3.5 text-cyan-400" />
+            <span>Folder Sync</span>
+          </button>
+        </div>
       </div>
 
-      <!-- Downloader & Extension Tools Group -->
-      <div class="flex items-center flex-wrap gap-1.5 sm:gap-2">
+      <!-- Downloader & Extension Pills -->
+      <div class="inline-flex items-center gap-1 p-1 rounded-full bg-white/[0.06] border border-white/[0.12]">
         <button
           type="button"
           on:click={() => ($magnetModalOpen = true)}
-          class="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500/25 to-cyan-600/25 hover:from-amber-500/35 hover:to-cyan-600/35 text-amber-200 hover:text-white font-medium text-xs border border-amber-500/40 transition-all hover:-translate-y-0.5 cursor-pointer shadow-sm"
+          class="flex items-center gap-1.5 px-3 py-1 rounded-full hover:bg-white/15 text-slate-200 hover:text-white font-medium text-xs transition cursor-pointer"
           title="Download file via URL Multi-Segment Accelerator (IDM-style) or BitTorrent Magnet"
         >
-          <Download class="w-3.5 h-3.5 text-amber-300" />
-          <span>+ Add URL / Torrent</span>
+          <Download class="w-3.5 h-3.5 text-cyan-400" />
+          <span>+ URL / Torrent</span>
         </button>
 
         <button
           type="button"
           on:click={() => ($browserExtensionModalOpen = true)}
-          class="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-xs border border-slate-700/80 transition-all hover:-translate-y-0.5 cursor-pointer shadow-sm"
+          class="flex items-center gap-1.5 px-3 py-1 rounded-full hover:bg-white/15 text-slate-200 hover:text-white font-medium text-xs transition cursor-pointer"
           title="Install Chrome / Edge Extension for automatic download catching"
         >
           <Puzzle class="w-3.5 h-3.5 text-cyan-400" />
@@ -683,32 +700,32 @@
       </div>
     </div>
 
-    <!-- Row 2: Dedicated Full-Width Drop Zone Strip -->
+    <!-- Row 2: Frosted Spatial Drop Zone -->
     <button
       type="button"
       on:click={handlePickFiles}
-      class="w-full px-3.5 py-2 sm:py-2.5 rounded-xl border border-dashed border-slate-700/80 hover:border-cyan-500/60 bg-slate-900/40 hover:bg-slate-900/80 transition-all cursor-pointer flex items-center justify-between gap-3 text-xs text-slate-400 group text-left"
+      class="w-full px-4 py-2.5 rounded-2xl border border-dashed border-white/20 hover:border-cyan-400/60 bg-white/[0.04] hover:bg-white/[0.08] transition-all cursor-pointer flex items-center justify-between gap-3 text-xs text-slate-400 group text-left"
       title="Click or drag files here to send"
     >
-      <div class="flex items-center gap-2.5 min-w-0">
-        <div class="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-cyan-500/10 group-hover:bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0 transition-colors">
-          <Upload class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-8 h-8 rounded-full bg-white/10 group-hover:bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0 transition-colors">
+          <Upload class="w-4 h-4" />
         </div>
         <div class="truncate min-w-0">
-          <span class="text-slate-200 font-semibold group-hover:text-cyan-300 transition-colors text-xs">
+          <span class="text-white font-semibold transition-colors text-xs">
             Drop files or folders anywhere here to send
           </span>
-          <span class="text-slate-500 hidden md:inline text-[11px]">
+          <span class="text-slate-400 hidden md:inline text-[11px]">
             — Direct End-to-End Encrypted P2P • Zero Cloud Storage
           </span>
         </div>
       </div>
 
       <div class="flex items-center gap-2 shrink-0">
-        <span class="hidden sm:inline-flex items-center gap-1 text-[11px] text-slate-400 group-hover:text-slate-300">
+        <span class="hidden sm:inline-flex items-center gap-1 text-[11px] text-slate-400">
           Click to browse
         </span>
-        <span class="px-2 py-0.5 rounded-full bg-slate-800/80 border border-slate-700 text-[10px] font-mono text-cyan-400">
+        <span class="px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15 text-[10px] font-mono text-cyan-400">
           Unlimited Size
         </span>
       </div>
@@ -1416,21 +1433,21 @@
       </div>
 
       {#if filteredHistory.length === 0 && filteredActive.length === 0}
-        <!-- Beautiful Empty State (Matching Landing Page Demo Aesthetic) -->
-        <div class="min-h-[22rem] flex flex-col items-center justify-center text-center p-4 sm:p-8 border border-dashed border-slate-800 rounded-2xl bg-slate-950/30">
-          <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mb-3 sm:mb-4 text-cyan-400 shadow-xl shadow-cyan-500/10">
-            <Upload class="w-7 h-7 sm:w-8 sm:h-8 stroke-[1.8]" />
+        <!-- Spatial Empty State -->
+        <div class="min-h-[20rem] flex flex-col items-center justify-center text-center p-6 sm:p-8 border border-dashed border-white/15 rounded-[22px] bg-white/[0.03]">
+          <div class="w-16 h-16 rounded-full bg-white/[0.08] border border-white/15 flex items-center justify-center mb-4 text-cyan-400 shadow-lg">
+            <Upload class="w-7 h-7 stroke-[1.8]" />
           </div>
           <h4 class="text-sm sm:text-base font-bold text-white font-display">Ready for High-Speed P2P Transfers</h4>
-          <p class="text-xs text-slate-400 mt-1 sm:mt-1.5 max-w-md leading-relaxed">
+          <p class="text-xs text-slate-400 mt-1.5 max-w-md leading-relaxed">
             Send files and folders of any size directly between computers on your local network (LAN) or internet (WAN). Zero cloud servers involved.
           </p>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap items-center justify-center gap-2 sm:gap-3 mt-4 sm:mt-5 w-full max-w-xl">
+          <div class="flex flex-wrap items-center justify-center gap-2.5 mt-5">
             <button
               type="button"
               on:click={handlePickFiles}
-              class="col-span-1 sm:col-span-2 lg:col-span-1 flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 transition-all"
+              class="flex items-center justify-center gap-2 px-5 py-2 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
             >
               <Plus class="w-4 h-4" />
               <span>Select Files to Send</span>
@@ -1439,37 +1456,10 @@
             <button
               type="button"
               on:click={() => activeMainTab.set('lan')}
-              class="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+              class="flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-white/[0.08] hover:bg-white/[0.15] text-slate-200 text-xs font-semibold border border-white/15 transition cursor-pointer"
             >
               <Radio class="w-4 h-4 text-cyan-400" />
               <span>Scan LAN Radar</span>
-            </button>
-
-            <button
-              type="button"
-              on:click={handleShareViaWeb}
-              class="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 text-xs font-semibold border border-purple-500/40 transition"
-            >
-              <QrCode class="w-4 h-4 text-purple-300" />
-              <span>Share to Phone</span>
-            </button>
-
-            <button
-              type="button"
-              on:click={() => (showClipboardModal = true)}
-              class="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-200 text-xs font-semibold border border-indigo-500/40 transition"
-            >
-              <Clipboard class="w-4 h-4 text-indigo-300" />
-              <span>Sync Clipboard</span>
-            </button>
-
-            <button
-              type="button"
-              on:click={() => (showFolderSyncModal = true)}
-              class="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-200 text-xs font-semibold border border-emerald-500/40 transition"
-            >
-              <FolderSync class="w-4 h-4 text-emerald-300" />
-              <span>Folder Sync</span>
             </button>
           </div>
         </div>

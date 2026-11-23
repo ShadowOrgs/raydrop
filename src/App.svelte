@@ -4,6 +4,7 @@
   import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import Header from "./lib/components/Header.svelte";
+  import FloatingRail from "./lib/components/FloatingRail.svelte";
   import ContactList from "./lib/components/ContactList.svelte";
   import ActiveTransfers from "./lib/components/ActiveTransfers.svelte";
   import ChatView from "./lib/components/ChatView.svelte";
@@ -579,10 +580,14 @@
 
   <Header />
 
-  <!-- Main View: FULL width & height for Transfers & Streams, or active tab -->
-  <main
-    class="flex-1 w-full max-w-full p-2 sm:p-4 overflow-x-hidden overflow-y-hidden relative flex flex-col min-h-0"
-  >
+  <!-- Workspace: Spatial Floating Left Pill Dock + Translucent Spatial Window -->
+  <div class="flex-1 flex min-h-0 w-full overflow-hidden gap-2 sm:gap-3 px-2 sm:px-3 pb-2 sm:pb-3 pt-1">
+    <FloatingRail />
+
+    <div class="flex-1 flex flex-col min-w-0 min-h-0">
+      <main
+        class="spatial-window flex-1 w-full max-w-full p-2.5 sm:p-4 overflow-x-hidden overflow-y-hidden relative flex flex-col min-h-0 rounded-[26px] bg-white/[0.04] backdrop-blur-2xl border border-white/[0.14] shadow-[0_28px_70px_-15px_rgba(0,0,0,0.6)]"
+      >
     <!-- Mobile Windows-Phone / Metro Tile Home Menu (md:hidden) -->
     {#if $activeMainTab === "home"}
       <div class="md:hidden h-full w-full overflow-y-auto overflow-x-hidden pb-6 space-y-3">
@@ -851,6 +856,41 @@
     </div>
   </main>
 
+      <!-- Bottom Spatial Pill Bar + visionOS Grabber -->
+      <div class="hidden md:flex flex-col items-center gap-1.5 pt-2 shrink-0 select-none">
+        <div class="spatial-glass-pill inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/[0.08] backdrop-blur-2xl border border-white/15 shadow-xl">
+          {#each [
+            { id: "dashboard", label: "Dashboard" },
+            { id: "transfers", label: "Transfers" },
+            { id: "chat", label: "Messages" },
+            { id: "meeting", label: "Meeting" },
+            { id: "remote", label: "Remote" },
+          ] as tab}
+            <button
+              type="button"
+              on:click={() => activeMainTab.set(tab.id)}
+              class="px-3.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer {$activeMainTab === tab.id
+                ? 'bg-white/20 text-white shadow-sm'
+                : 'text-white/65 hover:text-white hover:bg-white/10'}"
+            >
+              {tab.label}
+            </button>
+          {/each}
+          <div class="w-px h-4 bg-white/15 mx-0.5"></div>
+          <button
+            type="button"
+            on:click={() => activeMainTab.set("converter")}
+            class="w-7 h-7 rounded-full bg-sky-400 hover:bg-sky-300 text-slate-950 font-bold flex items-center justify-center transition cursor-pointer"
+            title="Tools & Converter"
+          >
+            +
+          </button>
+        </div>
+        <div class="w-24 h-1 rounded-full bg-white/30"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Fullscreen Drag & Drop Overlay Indicator -->
   {#if $isDraggingFiles}
     <div
@@ -974,7 +1014,7 @@
         <div class="relative w-16 h-16 flex items-center justify-center">
           <div class="absolute inset-0 rounded-2xl border-2 border-cyan-500/30 animate-ping"></div>
           <div class="w-16 h-16 rounded-2xl bg-slate-900 border border-cyan-500/40 shadow-2xl shadow-cyan-500/20 flex items-center justify-center overflow-hidden">
-            <img src="/logo.png" alt="Raydrop" class="w-10 h-10 object-contain" />
+            <img src="/icon.png" alt="Raydrop" class="w-14 h-14 object-contain rounded-xl" />
           </div>
         </div>
         <div class="space-y-1">
