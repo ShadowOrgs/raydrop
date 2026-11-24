@@ -910,6 +910,51 @@
                         >
                           <FolderUp class="w-3.5 h-3.5" />
                         </button>
+                        {#if true}
+                        {@const localRec = $contacts.find((x) => x.device_id === cdev.device_id)}
+                        {@const meshStatus = localRec?.mesh_status || "none"}
+                        {#if meshStatus === "approved"}
+                          <button
+                            on:click={() => raydropApi.revokeDirectMesh(cdev.device_id)}
+                            class="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-rose-500/20 text-emerald-300 hover:text-rose-300 border border-emerald-500/30 hover:border-rose-500/30 text-[11px] font-semibold transition flex items-center gap-1 cursor-pointer"
+                            title="Direct Mesh Virtual LAN Active (Click to disconnect)"
+                          >
+                            <Wifi class="w-3 h-3" />
+                            <span>Mesh LAN</span>
+                          </button>
+                        {:else if meshStatus === "pending_in"}
+                          <button
+                            on:click={() => raydropApi.respondDirectMesh(cdev.device_id, true)}
+                            class="px-2 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[11px] font-bold transition cursor-pointer"
+                            title="Approve Direct Mesh Virtual LAN connection"
+                          >
+                            Approve Mesh
+                          </button>
+                          <button
+                            on:click={() => raydropApi.respondDirectMesh(cdev.device_id, false)}
+                            class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 text-[11px] font-medium transition cursor-pointer"
+                            title="Decline Direct Mesh request"
+                          >
+                            Decline
+                          </button>
+                        {:else if meshStatus === "pending_out"}
+                          <span
+                            class="px-2 py-1 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/25 text-[11px] font-medium"
+                            title="Waiting for peer approval"
+                          >
+                            Mesh Pending...
+                          </span>
+                        {:else}
+                          <button
+                            on:click={() => raydropApi.requestDirectMesh(cdev.device_id)}
+                            class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-sky-500/20 text-slate-300 hover:text-sky-300 border border-slate-700 hover:border-sky-500/40 text-[11px] font-medium transition flex items-center gap-1 cursor-pointer"
+                            title="Connect as Virtual LAN peer via Raydrop Direct Mesh"
+                          >
+                            <Wifi class="w-3 h-3" />
+                            <span>+ Mesh LAN</span>
+                          </button>
+                        {/if}
+                        {/if}
                         <button
                           on:click={() =>
                             (remoteBrowserTarget = {

@@ -115,6 +115,16 @@
   let viewerContainerEl: HTMLDivElement | null = null;
   let videoCanvasWrapEl: HTMLDivElement | null = null;
   let isPointerLocked = false;
+  let showGameModeToast = false;
+  let gameModeToastTimer: any = null;
+
+  function triggerGameModeHintToast() {
+    showGameModeToast = true;
+    if (gameModeToastTimer) clearTimeout(gameModeToastTimer);
+    gameModeToastTimer = setTimeout(() => {
+      showGameModeToast = false;
+    }, 3500);
+  }
   let isFullscreen = false;
   let showToolbar = false;
   let hideLocalCursor = false;
@@ -861,6 +871,7 @@
     if (!isClientConnected) return;
     resumeClientAudio();
     if ($remoteSessionMode === "game" && videoCanvasWrapEl && document.pointerLockElement !== videoCanvasWrapEl) {
+      showToolbar = false;
       videoCanvasWrapEl.requestPointerLock?.();
     }
     const button =
@@ -965,8 +976,51 @@
     }
   }
 
+  let autoFullscreenTriggered = false;
+  $: if (!isClientConnected || $remoteSessionMode !== "game") {
+    autoFullscreenTriggered = false;
+  } else if (viewerContainerEl && !autoFullscreenTriggered) {
+    autoFullscreenTriggered = true;
+    if (!document.fullscreenElement) {
+      viewerContainerEl.requestFullscreen?.().catch(() => {});
+    }
+    triggerGameModeHintToast();
+  }
+
+  function handleSelectGameMode() {
+    autoFullscreenTriggered = true;
+    setRemoteSessionMode("game");
+    showToolbar = false;
+    triggerGameModeHintToast();
+    if (viewerContainerEl && !document.fullscreenElement) {
+      viewerContainerEl.requestFullscreen?.().catch(() => {});
+    }
+  }
+
+  function handleSelectDesktopMode() {
+    setRemoteSessionMode("desktop");
+    if (document.pointerLockElement) {
+      document.exitPointerLock?.();
+    }
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  }
+
   function handleKeyDown(e: KeyboardEvent) {
     if (!isClientConnected) return;
+    if (e.ctrlKey && e.altKey && e.shiftKey && e.code === "KeyQ") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (document.pointerLockElement) {
+        document.exitPointerLock?.();
+      }
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.().catch(() => {});
+      }
+      showToolbar = true;
+      return;
+    }
     // Don't intercept if user is typing in a local input field
     const target = e.target as HTMLElement;
     if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA"))
@@ -1028,7 +1082,11 @@
 />
 <svelte:document
   on:pointerlockchange={() => {
+    const wasLocked = isPointerLocked;
     isPointerLocked = !!videoCanvasWrapEl && document.pointerLockElement === videoCanvasWrapEl;
+    if (wasLocked && !isPointerLocked) {
+      showToolbar = true;
+    }
   }}
 />
 
@@ -1113,19 +1171,35 @@
       {/if}
 
       <div class="flex-1 w-full relative flex flex-col bg-black overflow-hidden">
-      <!-- Tiny Top Arrow Trigger Handle (Click-to-expand, tiny footprint so it never blocks apps) -->
-      <button
-        type="button"
-        on:click={() => (showToolbar = !showToolbar)}
-        class="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-3.5 z-50 bg-slate-900/90 hover:bg-slate-800 text-slate-400 hover:text-cyan-400 border-x border-b border-slate-700/80 rounded-b-md flex items-center justify-center cursor-pointer shadow-md transition-all group"
-        title={showToolbar ? "Hide remote controls" : "Show remote controls"}
-      >
-        {#if showToolbar}
-          <ChevronUp class="w-3 h-3 text-cyan-400 transition-transform" />
-        {:else}
-          <ChevronDown class="w-3 h-3 group-hover:translate-y-0.5 transition-transform" />
-        {/if}
-      </button>
+      <!-- Tiny Top Arrow Trigger Handle (hidden in Game Mode so 0 UI blocks gameplay; use Ctrl+Alt+Shift+Q) -->
+      {#if $remoteSessionMode !== "game" || showToolbar}
+        <button
+          type="button"
+          on:click={() => (showToolbar = !showToolbar)}
+          class="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-3.5 z-50 bg-slate-900/90 hover:bg-slate-800 text-slate-400 hover:text-cyan-400 border-x border-b border-slate-700/80 rounded-b-md flex items-center justify-center cursor-pointer shadow-md transition-all group"
+          title={showToolbar ? "Hide remote controls" : "Show remote controls"}
+        >
+          {#if showToolbar}
+            <ChevronUp class="w-3 h-3 text-cyan-400 transition-transform" />
+          {:else}
+            <ChevronDown class="w-3 h-3 group-hover:translate-y-0.5 transition-transform" />
+          {/if}
+        </button>
+      {/if}
+
+      <!-- Ephemeral 3.5s Non-Blocking Toast when entering Game Mode (auto-hides completely) -->
+      {#if showGameModeToast && $remoteSessionMode === "game"}
+        <div
+          class="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-full bg-slate-950/90 border border-purple-500/50 shadow-2xl backdrop-blur-md text-xs text-slate-100 animate-in fade-in duration-200"
+        >
+          <Gamepad2 class="w-4 h-4 text-purple-400 shrink-0" />
+          <span>
+            Game Mode Aktif • Tekan
+            <kbd class="px-1.5 py-0.5 mx-1 rounded bg-slate-800 border border-purple-400/40 font-mono text-[11px] text-purple-200">Ctrl+Alt+Shift+Q</kbd>
+            untuk menu & disconnect
+          </span>
+        </div>
+      {/if}
 
       <!-- Click-Expanded Floating Top Control Bar (Clean, non-wrapping, generous spacing) -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -1157,7 +1231,7 @@
           <div class="flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-950/90 border border-slate-700/80 sm:mr-1 shrink-0">
             <button
               type="button"
-              on:click={() => setRemoteSessionMode("desktop")}
+              on:click={handleSelectDesktopMode}
               class="px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer {$remoteSessionMode === 'desktop'
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
                 : 'text-slate-400 hover:text-white border border-transparent'}"
@@ -1168,11 +1242,11 @@
             </button>
             <button
               type="button"
-              on:click={() => setRemoteSessionMode("game")}
+              on:click={handleSelectGameMode}
               class="px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer {$remoteSessionMode === 'game'
                 ? 'bg-purple-500/25 text-purple-300 border border-purple-500/40'
                 : 'text-slate-400 hover:text-white border border-transparent'}"
-              title="Game Mode: 60 FPS DXGI, 35 Mbps, Pointer Lock & Gamepad/Joystick"
+              title="Game Mode (Auto Fullscreen): 60 FPS DXGI, 35 Mbps, Pointer Lock & Gamepad. Tekan Ctrl+Alt+Shift+Q untuk keluar."
             >
               <Gamepad2 class="w-3 h-3" />
               <span>Game</span>

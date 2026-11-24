@@ -317,6 +317,54 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 return;
             }
 
+            // Direct Mesh Virtual LAN Approval & Sync Handler
+            if session_id.starts_with("mesh_ctl:") {
+                if let Ok(bytes) = hex::decode(payload_json) {
+                    if let Ok(ctl_val) = serde_json::from_slice::<Value>(&bytes) {
+                        let ctl_type = ctl_val.get("control_type").and_then(|v| v.as_str()).unwrap_or("");
+                        let from_alias = ctl_val
+                            .get("from_alias")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Raydrop Peer")
+                            .to_string();
+                        match ctl_type {
+                            "MESH_REQUEST" => {
+                                let _ = state.db.set_contact_mesh_status(&from_device_id, "pending_in");
+                                let _ = app.emit("contacts_updated", ());
+                                let _ = app.emit(
+                                    "mesh_request_received",
+                                    serde_json::json!({
+                                        "device_id": from_device_id,
+                                        "alias_name": from_alias,
+                                    }),
+                                );
+                                crate::network::transport::notify_os(
+                                    app,
+                                    "Direct Mesh LAN Request",
+                                    &format!("{} wants to connect via Raydrop Direct Mesh (Virtual LAN).", from_alias),
+                                );
+                            }
+                            "MESH_APPROVE" => {
+                                let _ = state.db.set_contact_mesh_status(&from_device_id, "approved");
+                                let _ = app.emit("contacts_updated", ());
+                                let st = state.clone();
+                                let pid = from_device_id.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    let _ = crate::network::transport::warm_direct_mesh_peer(&st, &pid).await;
+                                });
+                            }
+                            "MESH_REVOKE" => {
+                                let _ = state.db.set_contact_mesh_status(&from_device_id, "none");
+                                state.mesh_connections.lock().unwrap().remove(&from_device_id);
+                                let _ = app.emit("contacts_updated", ());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                return;
+            }
+
             // Transfer Control WAN Relay Handler (2-way Cancel, Pause, Resume sync)
             if session_id.starts_with("transfer_ctl:") {
                 if let Ok(bytes) = hex::decode(payload_json) {

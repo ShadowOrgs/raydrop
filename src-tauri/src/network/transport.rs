@@ -411,10 +411,18 @@ fn build_quic_endpoints(port: u16) -> Result<quinn::Endpoint, String> {
         .with_single_cert(vec![cert_der], priv_key)
         .map_err(|e| e.to_string())?;
 
-    let server_config = quinn::ServerConfig::with_crypto(Arc::new(
+    let mut transport_cfg = quinn::TransportConfig::default();
+    transport_cfg.keep_alive_interval(Some(Duration::from_secs(10)));
+    if let Ok(idle) = Duration::from_secs(45).try_into() {
+        transport_cfg.max_idle_timeout(Some(idle));
+    }
+    let transport_arc = Arc::new(transport_cfg);
+
+    let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(
         quinn::crypto::rustls::QuicServerConfig::try_from(server_crypto)
             .map_err(|e| e.to_string())?,
     ));
+    server_config.transport_config(transport_arc.clone());
 
     let std_udp = bind_reusable_udp_socket(port)?;
     let runtime = quinn::default_runtime().ok_or_else(|| "No Tokio runtime".to_string())?;
@@ -431,10 +439,11 @@ fn build_quic_endpoints(port: u16) -> Result<quinn::Endpoint, String> {
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(SkipServerVerification))
         .with_no_client_auth();
-    let client_config = quinn::ClientConfig::new(Arc::new(
+    let mut client_config = quinn::ClientConfig::new(Arc::new(
         quinn::crypto::rustls::QuicClientConfig::try_from(client_crypto)
             .map_err(|e| e.to_string())?,
     ));
+    client_config.transport_config(transport_arc);
     endpoint.set_default_client_config(client_config);
 
     Ok(endpoint)
@@ -483,6 +492,7 @@ impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
 }
 
 pub fn start_transport_listeners(app: AppHandle, state: Arc<AppState>) {
+    let state_for_mesh = state.clone();
     // 1. Start Direct TCP Listener (LAN high-speed transport)
     let app_tcp = app.clone();
     let state_tcp = state.clone();
@@ -531,19 +541,23 @@ pub fn start_transport_listeners(app: AppHandle, state: Arc<AppState>) {
                     tauri::async_runtime::spawn(async move {
                         if let Ok(conn) = incoming.await {
                             let peer_addr = conn.remote_address();
-                            if let Ok((send_stream, recv_stream)) = conn.accept_bi().await {
-                                if let Err(e) = handle_incoming_stream(
-                                    app_c,
-                                    state_c,
-                                    recv_stream,
-                                    send_stream,
-                                    peer_addr,
-                                    "wan_p2p".to_string(),
-                                )
-                                .await
-                                {
-                                    warn!("Incoming QUIC transfer error from {peer_addr}: {e}");
-                                }
+                            while let Ok((send_stream, recv_stream)) = conn.accept_bi().await {
+                                let app_s = app_c.clone();
+                                let state_s = state_c.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    if let Err(e) = handle_incoming_stream(
+                                        app_s,
+                                        state_s,
+                                        recv_stream,
+                                        send_stream,
+                                        peer_addr,
+                                        "wan_p2p".to_string(),
+                                    )
+                                    .await
+                                    {
+                                        warn!("Incoming QUIC transfer error from {peer_addr}: {e}");
+                                    }
+                                });
                             }
                         }
                     });
@@ -552,6 +566,119 @@ pub fn start_transport_listeners(app: AppHandle, state: Arc<AppState>) {
             Err(e) => warn!("Failed to initialize QUIC endpoint: {e}"),
         }
     });
+
+    // 3. Start Raydrop Direct Mesh Daemon (maintains warm QUIC P2P tunnels for same-account & approved WAN peers)
+    let state_mesh = state_for_mesh;
+    tauri::async_runtime::spawn(async move {
+        start_direct_mesh_daemon(state_mesh).await;
+    });
+}
+
+async fn start_direct_mesh_daemon(state: Arc<AppState>) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        if !state.is_signaling_connected() {
+            continue;
+        }
+        let Ok(contacts) = state.db.list_contacts() else {
+            continue;
+        };
+        for c in contacts {
+            if !c.is_online || (!c.is_own_device && c.mesh_status != "approved") {
+                continue;
+            }
+            let already_warm = state
+                .mesh_connections
+                .lock()
+                .unwrap()
+                .get(&c.device_id)
+                .map(|conn| conn.close_reason().is_none())
+                .unwrap_or(false);
+            if already_warm {
+                continue;
+            }
+            let st = state.clone();
+            let peer_id = c.device_id.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = warm_direct_mesh_peer(&st, &peer_id).await;
+            });
+        }
+    }
+}
+
+pub(crate) async fn warm_direct_mesh_peer(state: &Arc<AppState>, peer_device_id: &str) -> Result<(), String> {
+    if let Some(existing) = state.mesh_connections.lock().unwrap().get(peer_device_id) {
+        if existing.close_reason().is_none() {
+            return Ok(());
+        }
+    }
+    let signaling_tx = state
+        .signaling_tx
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "Signaling not connected".to_string())?;
+    let endpoint = state
+        .quic_endpoint
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "QUIC endpoint not ready".to_string())?;
+
+    let stun_addr = state.settings.lock().unwrap().stun_addr.clone();
+    let mut my_wan = state.wan_reflexive_addr.lock().unwrap().clone();
+    if my_wan.is_none() {
+        if let Some(refl) = discover_wan_reflexive_address(state.listen_port, &stun_addr).await {
+            *state.wan_reflexive_addr.lock().unwrap() = Some(refl.clone());
+            my_wan = Some(refl);
+        }
+    }
+    let my_lan = collect_all_lan_addresses(state.listen_port);
+    let my_alias = state.settings.lock().unwrap().alias_name.clone();
+    let probe_sid = format!("mesh_{}", Uuid::new_v4().simple());
+
+    let (cand_tx, cand_rx) = oneshot::channel();
+    state
+        .pending_wan_candidates
+        .lock()
+        .unwrap()
+        .insert(probe_sid.clone(), cand_tx);
+
+    let intent_msg = json!({
+        "type": "CONNECT_INTENT",
+        "session_id": probe_sid,
+        "from_device_id": state.identity.device_id,
+        "from_alias": my_alias,
+        "from_ed25519_pubkey": state.identity.public_hex(),
+        "target_device_id": peer_device_id,
+        "lan_candidates": my_lan,
+        "wan_candidate": my_wan
+    })
+    .to_string();
+    let _ = signaling_tx.send(intent_msg);
+
+    let answer = tokio::time::timeout(Duration::from_millis(3000), cand_rx)
+        .await
+        .map_err(|_| "Mesh candidate timeout".to_string())?
+        .map_err(|_| "Mesh candidate channel closed".to_string())?;
+
+    if let Some(target_wan_str) = answer.wan_candidate {
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        if let Ok(target_addr) = target_wan_str.parse::<SocketAddr>() {
+            if let Ok(connecting) = endpoint.connect(target_addr, "raydrop.local") {
+                if let Ok(Ok(quic_conn)) = tokio::time::timeout(Duration::from_millis(3500), connecting).await {
+                    state
+                        .mesh_connections
+                        .lock()
+                        .unwrap()
+                        .insert(peer_device_id.to_string(), quic_conn);
+                    info!("Raydrop Direct Mesh warm QUIC tunnel established with {peer_device_id}");
+                    return Ok(());
+                }
+            }
+        }
+    }
+    Err("Direct Mesh QUIC handshake could not bypass NAT".to_string())
 }
 
 /// Creates a virtual full-duplex `AsyncRead + AsyncWrite` stream bridged over `RELAY_CONTROL`
@@ -690,6 +817,7 @@ where
                 avatar_hash: from_avatar_hash.clone().or_else(|| existing.as_ref().and_then(|e| e.avatar_hash.clone())),
                 rank_exp: from_rank_exp.max(existing.as_ref().map(|e| e.rank_exp).unwrap_or(0)),
                 mac_address: existing.as_ref().and_then(|e| e.mac_address.clone()),
+                mesh_status: existing.as_ref().map(|e| e.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
             };
             let _ = state.db.upsert_contact(&c);
             let _ = app.emit("contacts_updated", ());
@@ -1002,6 +1130,7 @@ where
         avatar_hash: existing_contact.as_ref().and_then(|c| c.avatar_hash.clone()),
         rank_exp: existing_contact.as_ref().map(|c| c.rank_exp).unwrap_or(0),
         mac_address: existing_contact.as_ref().and_then(|c| c.mac_address.clone()),
+        mesh_status: existing_contact.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
     };
     let _ = state.db.upsert_contact(&contact);
     let _ = app.emit("contacts_updated", ());
@@ -1943,6 +2072,7 @@ async fn start_or_resume_transfer(
                 avatar_hash: None,
                 rank_exp: 0,
                 mac_address: None,
+                mesh_status: "none".to_string(),
             };
             let _ = state.db.upsert_contact(&fallback);
             fallback
@@ -2235,7 +2365,38 @@ async fn run_outgoing_session(
             }
         }
 
-        // 2b. Try Direct WAN QUIC over hole-punched UDP using the shared QUIC endpoint
+        // 2b. Try Warm Direct Mesh QUIC tunnel first (instant 0ms P2P for same-account & approved WAN peers)
+        let warm_mesh_conn = state
+            .mesh_connections
+            .lock()
+            .unwrap()
+            .get(&fresh_contact.device_id)
+            .cloned()
+            .filter(|c| c.close_reason().is_none());
+        if let Some(mesh_conn) = warm_mesh_conn {
+            if let Ok((send_stream, recv_stream)) = mesh_conn.open_bi().await {
+                return stream_outgoing_files(
+                    app,
+                    state,
+                    session_id,
+                    session_uuid,
+                    fresh_contact,
+                    files_with_paths,
+                    total_bytes,
+                    source_paths_json,
+                    cancel_flag,
+                    recv_stream,
+                    send_stream,
+                    "wan_p2p".to_string(),
+                )
+                .await;
+            } else {
+                // Remove stale/broken warm connection so the Direct Mesh daemon re-establishes it
+                state.mesh_connections.lock().unwrap().remove(&fresh_contact.device_id);
+            }
+        }
+
+        // 2c. Try On-Demand Direct WAN QUIC over hole-punched UDP using the shared QUIC endpoint
         if let Some(target_wan_str) = answer.wan_candidate {
             tokio::time::sleep(Duration::from_millis(150)).await;
             if let Ok(target_addr) = target_wan_str.parse::<SocketAddr>() {
@@ -2245,6 +2406,13 @@ async fn run_outgoing_session(
                         if let Ok(Ok(quic_conn)) =
                             tokio::time::timeout(Duration::from_millis(3500), connecting).await
                         {
+                            if fresh_contact.is_own_device || fresh_contact.mesh_status == "approved" {
+                                state
+                                    .mesh_connections
+                                    .lock()
+                                    .unwrap()
+                                    .insert(fresh_contact.device_id.clone(), quic_conn.clone());
+                            }
                             if let Ok((send_stream, recv_stream)) = quic_conn.open_bi().await {
                                 return stream_outgoing_files(
                                     app,

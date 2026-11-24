@@ -179,6 +179,7 @@ pub fn start_mdns_daemon(app: AppHandle, state: Arc<AppState>) {
                         avatar_hash: peer_avatar_hash.or_else(|| existing.as_ref().and_then(|c| c.avatar_hash.clone())),
                         rank_exp: peer_rank_exp.max(existing.as_ref().map(|c| c.rank_exp).unwrap_or(0)),
                         mac_address: peer_mac.or_else(|| existing.as_ref().and_then(|c| c.mac_address.clone())),
+                        mesh_status: existing.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
                     };
 
                     let _ = state.db.upsert_contact(&contact);

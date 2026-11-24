@@ -172,6 +172,7 @@ export interface Contact {
   avatar_hash?: string | null;
   rank_exp?: number;
   mac_address?: string | null;
+  mesh_status?: 'none' | 'pending_out' | 'pending_in' | 'approved';
 }
 
 export interface CloudDeviceNode {
@@ -714,6 +715,12 @@ export const raydropApi = {
     rt: number
   ) =>
     invoke<void>('simulate_remote_gamepad', { buttons, lx, ly, rx, ry, lt, rt }),
+  requestDirectMesh: (deviceId: string) =>
+    invoke<void>('request_direct_mesh', { deviceId }),
+  respondDirectMesh: (deviceId: string, accept: boolean) =>
+    invoke<void>('respond_direct_mesh', { deviceId, accept }),
+  revokeDirectMesh: (deviceId: string) =>
+    invoke<void>('revoke_direct_mesh', { deviceId }),
   simulateRemoteMouseClick: (
     button: string,
     action: string,

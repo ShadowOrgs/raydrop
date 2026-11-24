@@ -115,6 +115,7 @@
   let statusSyncTimer: any = null;
   let isAppReady = false;
   let initStatusText = "Menyiapkan komponen & layanan Raydrop...";
+  let pendingMeshRequest: { device_id: string; alias_name: string } | null = null;
 
   const BOTTOM_TABS_STORAGE_KEY = "raydrop_bottom_bar_tabs_v1";
   const ALL_BOTTOM_MENUS = [
@@ -216,6 +217,13 @@
 
     await raydropApi.listenEvent("peer_discovered", async () => {
       contacts.set(await raydropApi.getContacts());
+    });
+
+    await raydropApi.listenEvent<{
+      device_id: string;
+      alias_name: string;
+    }>("mesh_request_received", (ev) => {
+      pendingMeshRequest = ev;
     });
 
     let contactsUpdateTimer: any = null;
@@ -1130,6 +1138,50 @@
   <BrowserExtensionModal />
   <MeetingInviteModal />
   <WolModal />
+
+  {#if pendingMeshRequest}
+    <div
+      class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="w-full max-w-sm bg-slate-900 border border-sky-500/40 rounded-2xl p-5 shadow-2xl space-y-4"
+      >
+        <div>
+          <h3 class="text-sm font-bold text-white">Direct Mesh (Virtual LAN) Request</h3>
+          <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">
+            <span class="font-semibold text-sky-300">{pendingMeshRequest.alias_name}</span>
+            wants to link with this device via Raydrop Direct Mesh (persistent P2P tunnel for faster file transfers & remote control).
+          </p>
+        </div>
+        <div class="flex items-center gap-2 pt-1">
+          <button
+            type="button"
+            on:click={async () => {
+              if (!pendingMeshRequest) return;
+              const req = pendingMeshRequest;
+              pendingMeshRequest = null;
+              await raydropApi.respondDirectMesh(req.device_id, false).catch(() => {});
+            }}
+            class="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700 transition cursor-pointer"
+          >
+            Decline
+          </button>
+          <button
+            type="button"
+            on:click={async () => {
+              if (!pendingMeshRequest) return;
+              const req = pendingMeshRequest;
+              pendingMeshRequest = null;
+              await raydropApi.respondDirectMesh(req.device_id, true).catch(() => {});
+            }}
+            class="flex-1 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-xs font-bold text-slate-950 transition cursor-pointer"
+          >
+            Approve Mesh
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 
   {#if !isAppReady}
     <div

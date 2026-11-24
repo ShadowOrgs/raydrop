@@ -258,14 +258,24 @@ let pendingFrameDraw = false;
 async function startNativeCanvasStream(): Promise<MediaStream | null> {
   try {
     if (!nativeCanvasEl) {
+      let initW = 1920;
+      let initH = 1080;
+      try {
+        const [sw, sh] = await raydropApi.getHostScreenSize();
+        if (sw > 0 && sh > 0) {
+          const scale = sw > 1920 ? 1920 / sw : 1;
+          initW = Math.max(2, Math.round(sw * scale) & ~1);
+          initH = Math.max(2, Math.round(sh * scale) & ~1);
+        }
+      } catch (_) {}
       nativeCanvasEl = document.createElement('canvas');
-      nativeCanvasEl.width = 1280;
-      nativeCanvasEl.height = 720;
+      nativeCanvasEl.width = initW;
+      nativeCanvasEl.height = initH;
       nativeCanvasCtx = nativeCanvasEl.getContext('2d', { alpha: false });
       if (nativeCanvasCtx) {
         nativeCanvasCtx.imageSmoothingEnabled = false;
         nativeCanvasCtx.fillStyle = '#000000';
-        nativeCanvasCtx.fillRect(0, 0, 1280, 720);
+        nativeCanvasCtx.fillRect(0, 0, initW, initH);
       }
     } else if (!nativeCanvasCtx) {
       nativeCanvasCtx = nativeCanvasEl.getContext('2d', { alpha: false });
@@ -563,11 +573,43 @@ async function proceedHostAcceptRemote(
   }
 }
 
-// Utility to tune SDP bitrate: smooth 500kbps-8Mbps adaptive bandwidth for WAN & LAN without bufferbloat
-function boostSdpBitrate(sdp: string, kbps: number = 8000): string {
+// Utility to tune SDP bitrate across ALL video codecs (VP8, VP9, H264, AV1)
+// so WebRTC never starts at Chromium's blurry 300kbps default
+function boostSdpBitrate(sdp: string, kbps: number = 20000): string {
   if (!sdp) return sdp;
   const bps = kbps * 1000;
+  const minKbps = kbps >= 30000 ? 6000 : 4000;
+  const startKbps = kbps >= 30000 ? 15000 : 10000;
+  const bitrateParams = `x-google-min-bitrate=${minKbps};x-google-max-bitrate=${kbps};x-google-start-bitrate=${startKbps}`;
+
   const lines = sdp.split(/\r\n|\n/);
+  // Collect video codec payload types and which ones already have a=fmtp:
+  const videoCodecPts = new Set<string>();
+  const existingFmtpPts = new Set<string>();
+  let scanningVideo = false;
+  for (const l of lines) {
+    if (l.startsWith('m=video')) {
+      scanningVideo = true;
+      continue;
+    }
+    if (l.startsWith('m=')) {
+      scanningVideo = false;
+      continue;
+    }
+    if (!scanningVideo) continue;
+    const rtpmapMatch = /^a=rtpmap:(\d+)\s+([A-Za-z0-9_-]+)/.exec(l);
+    if (rtpmapMatch) {
+      const codec = rtpmapMatch[2].toUpperCase();
+      if (codec !== 'RTX' && codec !== 'RED' && codec !== 'ULPFEC' && codec !== 'FLEXFEC') {
+        videoCodecPts.add(rtpmapMatch[1]);
+      }
+    }
+    const fmtpMatch = /^a=fmtp:(\d+)\s+/.exec(l);
+    if (fmtpMatch) {
+      existingFmtpPts.add(fmtpMatch[1]);
+    }
+  }
+
   const result: string[] = [];
   let inVideo = false;
   let bandwidthAdded = false;
@@ -595,13 +637,22 @@ function boostSdpBitrate(sdp: string, kbps: number = 8000): string {
     }
 
     if (inVideo && line.startsWith('a=fmtp:')) {
-      if (!line.includes('x-google-min-bitrate')) {
-        result.push(`${line};x-google-min-bitrate=4000;x-google-max-bitrate=${kbps};x-google-start-bitrate=10000`);
+      const m = /^a=fmtp:(\d+)\s+/.exec(line);
+      if (m && videoCodecPts.has(m[1]) && !line.includes('x-google-min-bitrate')) {
+        result.push(`${line};${bitrateParams}`);
         continue;
       }
     }
 
     result.push(line);
+
+    // Inject a=fmtp:<pt> right after a=rtpmap:<pt> for codecs like VP8/VP9 that lack fmtp
+    if (inVideo && line.startsWith('a=rtpmap:')) {
+      const m = /^a=rtpmap:(\d+)\s+/.exec(line);
+      if (m && videoCodecPts.has(m[1]) && !existingFmtpPts.has(m[1])) {
+        result.push(`a=fmtp:${m[1]} ${bitrateParams}`);
+      }
+    }
   }
 
   return result.join('\r\n');

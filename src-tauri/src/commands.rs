@@ -194,6 +194,7 @@ pub fn sync_cloud_data_to_local(
             avatar_hash: existing.as_ref().and_then(|c| c.avatar_hash.clone()),
             rank_exp: existing.as_ref().map(|c| c.rank_exp).unwrap_or(0),
             mac_address: existing.as_ref().and_then(|c| c.mac_address.clone()),
+            mesh_status: existing.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "approved".to_string()),
         };
         let _ = state.db.upsert_contact(&c);
     }
@@ -234,6 +235,7 @@ pub fn sync_cloud_data_to_local(
                 avatar_hash: existing.as_ref().and_then(|c| c.avatar_hash.clone()),
                 rank_exp: existing.as_ref().map(|c| c.rank_exp).unwrap_or(0),
                 mac_address: existing.as_ref().and_then(|c| c.mac_address.clone()),
+                mesh_status: existing.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
             };
             let _ = state.db.upsert_contact(&c);
         }
@@ -436,6 +438,7 @@ pub fn add_wan_contact(
         avatar_hash: None,
         rank_exp: 0,
         mac_address: None,
+        mesh_status: "none".to_string(),
     };
     state.db.upsert_contact(&contact)?;
 
@@ -1473,6 +1476,7 @@ pub fn auto_add_contact_from_chat(
         avatar_hash: existing.as_ref().and_then(|c| c.avatar_hash.clone()),
         rank_exp: existing.as_ref().map(|c| c.rank_exp).unwrap_or(0),
         mac_address: existing.as_ref().and_then(|c| c.mac_address.clone()),
+        mesh_status: existing.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
     };
     let _ = state.db.upsert_contact(&contact);
     let _ = app.emit("contacts_updated", ());
@@ -3617,6 +3621,7 @@ pub async fn connect_peer_by_ip(
         avatar_hash: peer_avatar_hash.clone().or_else(|| existing.as_ref().and_then(|e| e.avatar_hash.clone())),
         rank_exp: existing.as_ref().map(|e| e.rank_exp).unwrap_or(0),
         mac_address: existing.as_ref().and_then(|e| e.mac_address.clone()),
+        mesh_status: existing.as_ref().map(|e| e.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
     };
 
     state.db.upsert_contact(&contact)?;
@@ -3713,6 +3718,82 @@ pub async fn simulate_remote_gamepad(
     rt: f32,
 ) -> Result<(), String> {
     crate::remote_input::simulate_gamepad_input(buttons, lx, ly, rx, ry, lt, rt)
+}
+
+fn send_mesh_control(state: &Arc<AppState>, peer_device_id: &str, control_type: &str) {
+    if let Some(tx) = state.signaling_tx.lock().unwrap().as_ref() {
+        let my_alias = state
+            .settings
+            .lock()
+            .map(|s| s.alias_name.clone())
+            .unwrap_or_else(|_| "Raydrop Peer".to_string());
+        let payload = serde_json::json!({
+            "control_type": control_type,
+            "from_alias": my_alias,
+        })
+        .to_string();
+        let msg = serde_json::json!({
+            "type": "RELAY_CONTROL",
+            "session_id": format!("mesh_ctl:{}", state.identity.device_id),
+            "from_device_id": state.identity.device_id,
+            "target_device_id": peer_device_id,
+            "payload_json": hex::encode(payload.as_bytes()),
+        })
+        .to_string();
+        let _ = tx.send(msg);
+    }
+}
+
+#[tauri::command]
+pub async fn request_direct_mesh(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    device_id: String,
+) -> Result<(), String> {
+    state.db.set_contact_mesh_status(&device_id, "pending_out")?;
+    let _ = app.emit("contacts_updated", ());
+    send_mesh_control(state.inner(), &device_id, "MESH_REQUEST");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn respond_direct_mesh(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    device_id: String,
+    accept: bool,
+) -> Result<(), String> {
+    let status = if accept { "approved" } else { "none" };
+    state.db.set_contact_mesh_status(&device_id, status)?;
+    let _ = app.emit("contacts_updated", ());
+    send_mesh_control(
+        state.inner(),
+        &device_id,
+        if accept { "MESH_APPROVE" } else { "MESH_REVOKE" },
+    );
+    if accept {
+        let st = state.inner().clone();
+        let pid = device_id.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = crate::network::transport::warm_direct_mesh_peer(&st, &pid).await;
+        });
+    } else {
+        state.mesh_connections.lock().unwrap().remove(&device_id);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn revoke_direct_mesh(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    device_id: String,
+) -> Result<(), String> {
+    state.db.set_contact_mesh_status(&device_id, "none")?;
+    state.mesh_connections.lock().unwrap().remove(&device_id);
+    let _ = app.emit("contacts_updated", ());
+    send_mesh_control(state.inner(), &device_id, "MESH_REVOKE");
+    Ok(())
 }
 
 #[tauri::command]
