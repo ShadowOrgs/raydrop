@@ -202,8 +202,8 @@ fn detect_cursor_css_shape() -> &'static str {
 #[cfg(target_os = "windows")]
 fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
     use base64::Engine;
-    use image::codecs::jpeg::JpegEncoder;
-    use image::ExtendedColorType;
+    use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+    use image::{ExtendedColorType, ImageEncoder};
 
     const SRCCOPY: u32 = 0x00CC0020;
     const HALFTONE: i32 = 4;
@@ -251,9 +251,9 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
             },
         };
 
-        // Scale to max 1920px width for crisp 1080p/1366p text & UI clarity
-        let scale = if src_w > 1920 {
-            1920.0 / src_w as f32
+        // Scale to max 2560px width so 1080p/1440p screens keep native pixel sharpness
+        let scale = if src_w > 2560 {
+            2560.0 / src_w as f32
         } else {
             1.0
         };
@@ -341,9 +341,13 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
                                 }
 
                                 jpeg_buf.clear();
-                                let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buf, 92);
+                                let encoder = PngEncoder::new_with_quality(
+                                    &mut jpeg_buf,
+                                    CompressionType::Fast,
+                                    FilterType::NoFilter,
+                                );
                                 if encoder
-                                    .encode(&rgb, dst_w as u32, dst_h as u32, ExtendedColorType::Rgb8)
+                                    .write_image(&rgb, dst_w as u32, dst_h as u32, ExtendedColorType::Rgb8)
                                     .is_ok()
                                 {
                                     let b64 = base64::engine::general_purpose::STANDARD.encode(&jpeg_buf);

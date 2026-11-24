@@ -30,6 +30,15 @@
     remoteConnectionStatus,
   } from "./lib/stores/remote_desktop";
   import { initTorrentStore } from "./lib/stores/torrents";
+  import { refreshLanStatuses } from "./lib/stores/contacts";
+  import {
+    initPresenceNotifications,
+    notifyIncomingTransferRequest,
+    notifyTransferState,
+    playAppSound,
+    presenceToasts,
+    removePresenceToast,
+  } from "./lib/stores/presence";
   import { initAvatarStore, peerAvatars } from "./lib/stores/avatars";
   import { applyTheme, type RaydropTheme } from "./lib/stores/theme";
   import {
@@ -217,12 +226,14 @@
 
     await raydropApi.listenEvent("peer_discovered", async () => {
       contacts.set(await raydropApi.getContacts());
+      refreshLanStatuses();
     });
 
     await raydropApi.listenEvent<{
       device_id: string;
       alias_name: string;
     }>("mesh_request_received", (ev) => {
+      playAppSound("mesh_request");
       pendingMeshRequest = ev;
     });
 
@@ -232,9 +243,16 @@
       contactsUpdateTimer = setTimeout(async () => {
         try {
           contacts.set(await raydropApi.getContacts());
+          refreshLanStatuses();
         } catch (_) {}
       }, 300);
     });
+
+    refreshLanStatuses();
+    const lanStatusPollTimer = setInterval(() => {
+      refreshLanStatuses();
+    }, 5000);
+    initPresenceNotifications();
 
     await raydropApi.listenEvent("cloud_state_changed", async () => {
       await refreshCloudState(
@@ -352,6 +370,7 @@
       "incoming_transfer_request",
       async (evt) => {
         incomingRequestQueue.update((q) => [...q, evt]);
+        notifyIncomingTransferRequest(evt);
         try {
           const win = getCurrentWindow();
           await win.setAlwaysOnTop(true);
@@ -379,6 +398,7 @@
       "transfer_state_changed",
       (rec) => {
         upsertTransferRecord(rec);
+        notifyTransferState(rec);
       },
     );
 
@@ -1061,6 +1081,64 @@
           <span>⚡ Unlimited Size • Resumable • Zero Cloud Storage</span>
         </div>
       </div>
+    </div>
+  {/if}
+
+  <!-- In-app Floating Presence (Online/Offline) Toast Notifications -->
+  {#if $presenceToasts.length > 0}
+    <div
+      class="fixed top-16 right-5 z-50 flex flex-col gap-2 max-w-xs pointer-events-auto"
+    >
+      {#each $presenceToasts as pt (pt.id)}
+        <div
+          class="px-3.5 py-2.5 rounded-xl bg-slate-900/95 border shadow-xl backdrop-blur-xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-right duration-200 {pt.tone === 'rose'
+            ? 'border-rose-500/50 shadow-rose-500/15'
+            : pt.tone === 'amber'
+              ? 'border-amber-500/50 shadow-amber-500/15'
+              : pt.tone === 'cyan'
+                ? 'border-cyan-500/50 shadow-cyan-500/15'
+                : pt.tone === 'slate' || !pt.isOnline
+                  ? 'border-slate-700/80 shadow-black/40'
+                  : 'border-emerald-500/50 shadow-emerald-500/15'}"
+        >
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span
+              class="w-2.5 h-2.5 rounded-full shrink-0 {pt.tone === 'rose'
+                ? 'bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.7)]'
+                : pt.tone === 'amber'
+                  ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.7)]'
+                  : pt.tone === 'cyan'
+                    ? 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.7)]'
+                    : pt.tone === 'slate' || !pt.isOnline
+                      ? 'bg-slate-500'
+                      : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]'}"
+            ></span>
+            <div class="min-w-0">
+              <div class="text-xs font-bold text-white truncate">{pt.displayName}</div>
+              <div
+                class="text-[11px] font-medium truncate {pt.tone === 'rose'
+                  ? 'text-rose-300'
+                  : pt.tone === 'amber'
+                    ? 'text-amber-300'
+                    : pt.tone === 'cyan'
+                      ? 'text-cyan-300'
+                      : pt.tone === 'slate' || !pt.isOnline
+                        ? 'text-slate-400'
+                        : 'text-emerald-300'}"
+              >
+                {pt.subtitle || (pt.isOnline ? "Sekarang Online" : "Baru saja Offline")}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            on:click={() => removePresenceToast(pt.id)}
+            class="p-1 text-slate-400 hover:text-white rounded-lg cursor-pointer"
+          >
+            <X class="w-3.5 h-3.5" />
+          </button>
+        </div>
+      {/each}
     </div>
   {/if}
 

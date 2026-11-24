@@ -1,7 +1,15 @@
 import { writable, derived } from 'svelte/store';
-import type { Contact } from '../utils/tauri-ipc';
+import { raydropApi, type Contact, type LanStatusInfo } from '../utils/tauri-ipc';
 
 export const contacts = writable<Contact[]>([]);
+export const lanStatusMap = writable<Record<string, LanStatusInfo>>({});
+
+export async function refreshLanStatuses() {
+  try {
+    const map = await raydropApi.getLanConnectionStatuses();
+    lanStatusMap.set(map || {});
+  } catch (_) {}
+}
 
 export const lanContacts = derived(contacts, ($contacts) =>
   $contacts.filter((c) => c.network_type === 'lan')

@@ -24,6 +24,7 @@
   } from "../stores/update";
   import { checkForUpdates } from "../utils/updater";
   import { myAvatar } from "../stores/avatars";
+  import { presenceSoundEnabled, togglePresenceSound } from "../stores/presence";
   import { RAYDROP_THEMES, currentTheme, applyTheme } from "../stores/theme";
   import {
     Copy,
@@ -51,6 +52,8 @@
     Video,
     Monitor,
     Palette,
+    Volume2,
+    VolumeX,
   } from "lucide-svelte";
   import { onMount } from "svelte";
   import { getVersion } from "@tauri-apps/api/app";
@@ -424,6 +427,25 @@
           >
             <Camera class="w-4 h-4 text-cyan-400 shrink-0" />
             <span>Change Avatar</span>
+          </button>
+
+          <button
+            type="button"
+            on:click={() => togglePresenceSound()}
+            class="w-full flex items-center justify-between gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+          >
+            <div class="flex items-center gap-2.5">
+              {#if $presenceSoundEnabled}
+                <Volume2 class="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Notification Sounds</span>
+              {:else}
+                <VolumeX class="w-4 h-4 text-slate-500 shrink-0" />
+                <span>Notification Sounds</span>
+              {/if}
+            </div>
+            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {$presenceSoundEnabled ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-800 text-slate-500'}">
+              {$presenceSoundEnabled ? "ON" : "MUTED"}
+            </span>
           </button>
 
           <button

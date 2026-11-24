@@ -4,6 +4,7 @@ import {
   type TorrentTaskInfo,
   type HttpDownloadTaskInfo,
 } from '../utils/tauri-ipc';
+import { playAppSound, playTransferSound } from './presence';
 
 export const torrentTasks = writable<TorrentTaskInfo[]>([]);
 export const httpTasks = writable<HttpDownloadTaskInfo[]>([]);
@@ -46,9 +47,21 @@ export async function initDownloadStore() {
   } catch (_) {}
 
   // 4. Listen for real-time background BitTorrent stats broadcast
+  const prevTorrentStatuses = new Map<string, string>();
   try {
     await raydropApi.listenEvent<TorrentTaskInfo[]>('torrent_stats_update', (tasks) => {
       if (tasks && Array.isArray(tasks)) {
+        for (const t of tasks) {
+          const prev = prevTorrentStatuses.get(t.id);
+          if (prev && prev !== t.status) {
+            if ((t.status === 'seeding' || t.status === 'completed') && prev === 'downloading') {
+              playAppSound('torrent_done');
+            } else if (t.status === 'error') {
+              playTransferSound('failed');
+            }
+          }
+          prevTorrentStatuses.set(t.id, t.status);
+        }
         torrentTasks.set(tasks);
       }
     });

@@ -1,5 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { raydropApi, type ChatMessage, type ChatGroup } from '../utils/tauri-ipc';
+import { playAppSound } from './presence';
 
 export const chatStore = writable<Record<string, ChatMessage[]>>({});
 export const chatGroups = writable<ChatGroup[]>([]);
@@ -145,6 +146,7 @@ export async function clearChatHistory(peerDeviceId: string) {
 }
 
 export function addChatToast(msg: ChatMessage, peerName: string) {
+  playAppSound('chat');
   const toast: ChatToast = {
     id: msg.id,
     peerDeviceId: msg.peer_device_id,

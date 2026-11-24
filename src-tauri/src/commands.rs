@@ -3744,6 +3744,296 @@ fn send_mesh_control(state: &Arc<AppState>, peer_device_id: &str, control_type: 
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct LanStatusInfo {
+    pub active: bool,
+    pub kind: String, // "local" | "tailscale" | "raydrop_mesh" | "none"
+    pub label: String,
+    pub detail: String,
+    pub ip: Option<String>,
+    pub local_active: bool,
+    pub tailscale_active: bool,
+    pub mesh_active: bool,
+}
+
+fn is_tailscale_ipv4(ip_str: &str) -> bool {
+    if let Ok(std::net::IpAddr::V4(v4)) = ip_str.trim().parse::<std::net::IpAddr>() {
+        let o = v4.octets();
+        return o[0] == 100 && (64..=127).contains(&o[1]);
+    }
+    false
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VirtualDisplayStatus {
+    pub supported: bool,
+    pub installed: bool,
+    pub enabled: bool,
+    pub status_text: String,
+}
+
+#[tauri::command]
+pub async fn get_virtual_display_status() -> Result<VirtualDisplayStatus, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let ps_script = r#"
+            $dev = Get-PnpDevice -ErrorAction SilentlyContinue | Where-Object {
+                $_.InstanceId -match 'MttVDD' -or ($_.HardwareID -and ($_.HardwareID -match 'MttVDD'))
+            } | Select-Object -First 1 Status, InstanceId
+            if ($null -eq $dev) {
+                Write-Output "NONE"
+            } else {
+                Write-Output "$($dev.Status)|$($dev.InstanceId)"
+            }
+        "#;
+        let out = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| format!("Failed to query PnP device: {e}"))?;
+        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if text.is_empty() || text == "NONE" {
+            return Ok(VirtualDisplayStatus {
+                supported: true,
+                installed: false,
+                enabled: false,
+                status_text: "Not Installed".to_string(),
+            });
+        }
+        let status_part = text.split('|').next().unwrap_or("Unknown").trim();
+        let enabled = status_part.eq_ignore_ascii_case("OK");
+        return Ok(VirtualDisplayStatus {
+            supported: true,
+            installed: true,
+            enabled,
+            status_text: if enabled {
+                "Active".to_string()
+            } else {
+                format!("Disabled ({status_part})")
+            },
+        });
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let info = crate::remote_input::get_extend_platform_info();
+        return Ok(VirtualDisplayStatus {
+            supported: info.has_xrandr && info.session_type == "x11",
+            installed: info.has_xrandr,
+            enabled: info.virtual_active,
+            status_text: if info.virtual_active {
+                "Active".to_string()
+            } else {
+                "Off".to_string()
+            },
+        });
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        Ok(VirtualDisplayStatus {
+            supported: false,
+            installed: false,
+            enabled: false,
+            status_text: "Unsupported".to_string(),
+        })
+    }
+}
+
+#[tauri::command]
+pub async fn set_virtual_display_enabled(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<VirtualDisplayStatus, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        use tauri::Manager;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let mut install_ps_path = String::new();
+        if let Ok(res_dir) = app.path().resource_dir() {
+            let candidates = [
+                res_dir.join("_up_").join("assets").join("VirtualDisplayDriver").join("install-vdd.ps1"),
+                res_dir.join("assets").join("VirtualDisplayDriver").join("install-vdd.ps1"),
+            ];
+            for c in candidates {
+                if c.exists() {
+                    install_ps_path = c.to_string_lossy().to_string();
+                    break;
+                }
+            }
+        }
+
+        let action_script = if enabled {
+            format!(
+                r#"
+                $devs = Get-PnpDevice -ErrorAction SilentlyContinue | Where-Object {{
+                    $_.InstanceId -match 'MttVDD' -or ($_.HardwareID -and ($_.HardwareID -match 'MttVDD'))
+                }}
+                if ($devs) {{
+                    foreach ($d in $devs) {{
+                        Enable-PnpDevice -InstanceId $d.InstanceId -Confirm:$false -ErrorAction SilentlyContinue
+                    }}
+                }} elseif ('{install_path}' -ne '' -and (Test-Path '{install_path}')) {{
+                    & '{install_path}'
+                }}
+                "#,
+                install_path = install_ps_path.replace('\'', "''")
+            )
+        } else {
+            r#"
+                $devs = Get-PnpDevice -ErrorAction SilentlyContinue | Where-Object {
+                    $_.InstanceId -match 'MttVDD' -or ($_.HardwareID -and ($_.HardwareID -match 'MttVDD'))
+                }
+                if ($devs) {
+                    foreach ($d in $devs) {
+                        Disable-PnpDevice -InstanceId $d.InstanceId -Confirm:$false -ErrorAction SilentlyContinue
+                    }
+                }
+            "#
+            .to_string()
+        };
+
+        let encoded = {
+            use base64::Engine as _;
+            let utf16: Vec<u8> = action_script
+                .encode_utf16()
+                .flat_map(|u| u.to_le_bytes())
+                .collect();
+            base64::engine::general_purpose::STANDARD.encode(utf16)
+        };
+
+        let launcher = format!(
+            "Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand {}' -Verb RunAs -Wait",
+            encoded
+        );
+
+        let status = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &launcher])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .map_err(|e| format!("Failed to toggle Virtual Display Driver: {e}"))?;
+
+        if !status.success() {
+            return Err("Perubahan Virtual Display Driver dibatalkan atau membutuhkan izin Administrator.".to_string());
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        return get_virtual_display_status().await;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = app;
+        if enabled {
+            crate::remote_input::enable_linux_virtual_display(1366, 768)?;
+        } else {
+            crate::remote_input::disable_linux_virtual_display()?;
+        }
+        return get_virtual_display_status().await;
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        let _ = (app, enabled);
+        Err("Virtual Display toggle is not supported on this OS".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn get_lan_connection_statuses(
+    state: State<'_, Arc<AppState>>,
+) -> Result<std::collections::HashMap<String, LanStatusInfo>, String> {
+    let mut my_tailscale_on = false;
+    if let Ok(ifaces) = local_ip_address::list_afinet_netifas() {
+        for (_, ip) in ifaces {
+            if let std::net::IpAddr::V4(v4) = ip {
+                let o = v4.octets();
+                if o[0] == 100 && (64..=127).contains(&o[1]) {
+                    my_tailscale_on = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    let contacts = state.db.list_contacts().unwrap_or_default();
+    let mesh_guard = state.mesh_connections.lock().unwrap();
+    let mut map = std::collections::HashMap::new();
+
+    for c in contacts {
+        let mesh_active = mesh_guard
+            .get(&c.device_id)
+            .map(|conn| conn.close_reason().is_none())
+            .unwrap_or(false);
+
+        let ip_is_tailscale = c
+            .last_known_ip
+            .as_deref()
+            .map(is_tailscale_ipv4)
+            .unwrap_or(false);
+
+        let tailscale_active = c.is_online && ip_is_tailscale && my_tailscale_on;
+        let local_active =
+            c.is_online && c.network_type == "lan" && !ip_is_tailscale && c.last_known_ip.is_some();
+
+        let (active, kind, label) = if local_active {
+            (true, "local".to_string(), "Local LAN".to_string())
+        } else if tailscale_active {
+            (true, "tailscale".to_string(), "Tailscale".to_string())
+        } else if mesh_active {
+            (true, "raydrop_mesh".to_string(), "Raydrop Mesh".to_string())
+        } else {
+            (false, "none".to_string(), "WAN".to_string())
+        };
+
+        let mut parts = Vec::new();
+        if local_active {
+            parts.push(format!(
+                "Local LAN ({})",
+                c.last_known_ip.as_deref().unwrap_or("mDNS")
+            ));
+        }
+        if tailscale_active {
+            parts.push(format!(
+                "Tailscale ({})",
+                c.last_known_ip.as_deref().unwrap_or("100.x")
+            ));
+        }
+        if mesh_active {
+            parts.push("Raydrop Direct Mesh (QUIC P2P aktif)".to_string());
+        }
+        let detail = if parts.is_empty() {
+            if ip_is_tailscale && !my_tailscale_on {
+                "Tailscale di perangkat ini sedang OFF dan Direct Mesh belum terhubung".to_string()
+            } else {
+                "Tidak ada jalur LAN aktif (menggunakan WAN / Relay)".to_string()
+            }
+        } else {
+            format!("Terhubung via {}", parts.join(" • "))
+        };
+
+        map.insert(
+            c.device_id,
+            LanStatusInfo {
+                active,
+                kind,
+                label,
+                detail,
+                ip: c.last_known_ip,
+                local_active,
+                tailscale_active,
+                mesh_active,
+            },
+        );
+    }
+
+    Ok(map)
+}
+
 #[tauri::command]
 pub async fn request_direct_mesh(
     app: AppHandle,

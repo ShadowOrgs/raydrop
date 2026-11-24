@@ -153,6 +153,17 @@ export interface DocumentConvertResult {
   engine_used: string;
 }
 
+export interface LanStatusInfo {
+  active: boolean;
+  kind: 'local' | 'tailscale' | 'raydrop_mesh' | 'none';
+  label: string;
+  detail: string;
+  ip: string | null;
+  local_active: boolean;
+  tailscale_active: boolean;
+  mesh_active: boolean;
+}
+
 export interface Contact {
   device_id: string;
   alias_name: string;
@@ -721,6 +732,22 @@ export const raydropApi = {
     invoke<void>('respond_direct_mesh', { deviceId, accept }),
   revokeDirectMesh: (deviceId: string) =>
     invoke<void>('revoke_direct_mesh', { deviceId }),
+  getLanConnectionStatuses: () =>
+    invoke<Record<string, LanStatusInfo>>('get_lan_connection_statuses'),
+  getVirtualDisplayStatus: () =>
+    invoke<{
+      supported: boolean;
+      installed: boolean;
+      enabled: boolean;
+      status_text: string;
+    }>('get_virtual_display_status'),
+  setVirtualDisplayEnabled: (enabled: boolean) =>
+    invoke<{
+      supported: boolean;
+      installed: boolean;
+      enabled: boolean;
+      status_text: string;
+    }>('set_virtual_display_enabled', { enabled }),
   simulateRemoteMouseClick: (
     button: string,
     action: string,

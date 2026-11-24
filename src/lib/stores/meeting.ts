@@ -3,6 +3,7 @@ import { raydropApi } from '../utils/tauri-ipc';
 import { appSettings, activeMainTab } from './state';
 import { myAvatar } from './avatars';
 import { contacts } from './contacts';
+import { playAppSound } from './presence';
 
 export interface MeetingParticipant {
   deviceId: string;
@@ -199,7 +200,7 @@ export function leaveMeetingRoom() {
   peerConnections.forEach((pc) => {
     try {
       pc.close();
-    } catch (_) {}
+    } catch (_) { }
   });
   peerConnections.clear();
   remoteStreams.clear();
@@ -221,7 +222,7 @@ export function leaveMeetingRoom() {
 
   if (audioCheckInterval) clearInterval(audioCheckInterval);
   if (audioCtx) {
-    audioCtx.close().catch(() => {});
+    audioCtx.close().catch(() => { });
     audioCtx = null;
   }
 
@@ -260,7 +261,7 @@ export async function inviteContactToMeeting(target: string | string[]) {
         fromAlias: me.alias,
         fromAvatar: me.avatar,
       }
-    ).catch(() => {});
+    ).catch(() => { });
   }
 }
 
@@ -323,15 +324,24 @@ export async function toggleScreenShare() {
     // Start screen share (allow choosing any monitor, app window, or browser surface)
     try {
       const displayStream = await (navigator.mediaDevices as any).getDisplayMedia({
-        video: true,
+        video: {
+          width: { ideal: 2560, max: 3840 },
+          height: { ideal: 1440, max: 2160 },
+          frameRate: { ideal: 30, max: 30 },
+        },
         audio: false,
         surfaceSwitching: 'include',
         selfBrowserSurface: 'include',
         monitorTypeSurfaces: 'include',
       });
 
+      const shareTrack = displayStream.getVideoTracks()[0];
+      if (shareTrack && 'contentHint' in shareTrack) {
+        (shareTrack as any).contentHint = 'text';
+      }
+
       // Handle user clicking native browser "Stop sharing" bar
-      displayStream.getVideoTracks()[0].onended = () => {
+      shareTrack.onended = () => {
         isScreenSharing.set(false);
         removeTrackFromPeers('video');
         broadcastState({ isScreenSharing: false });
@@ -351,19 +361,28 @@ export async function toggleScreenShare() {
 export async function switchMeetingScreenShare() {
   try {
     const displayStream = await (navigator.mediaDevices as any).getDisplayMedia({
-      video: true,
+      video: {
+        width: { ideal: 2560, max: 3840 },
+        height: { ideal: 1440, max: 2160 },
+        frameRate: { ideal: 30, max: 30 },
+      },
       audio: false,
       surfaceSwitching: 'include',
       selfBrowserSurface: 'include',
       monitorTypeSurfaces: 'include',
     });
 
+    const shareTrack = displayStream.getVideoTracks()[0];
+    if (shareTrack && 'contentHint' in shareTrack) {
+      (shareTrack as any).contentHint = 'text';
+    }
+
     const oldStream = get(localVideoStream);
     if (oldStream) {
       oldStream.getVideoTracks().forEach((t) => t.stop());
     }
 
-    displayStream.getVideoTracks()[0].onended = () => {
+    shareTrack.onended = () => {
       isScreenSharing.set(false);
       removeTrackFromPeers('video');
       broadcastState({ isScreenSharing: false });
@@ -497,7 +516,35 @@ async function addTrackToPeers(track: MediaStreamTrack) {
           await existingSender.replaceTrack(track);
         } else {
           const stream = get(localVideoStream) || new MediaStream([track]);
-          pc.addTrack(track, stream);
+          const addedSender = pc.addTrack(track, stream);
+          transceiver = pc.getTransceivers().find((t) => t.sender === addedSender);
+        }
+      }
+      if (track.kind === 'video') {
+        const activeSender =
+          transceiver?.sender || pc.getSenders().find((s) => s.track === track);
+        if (activeSender) {
+          try {
+            const caps = RTCRtpSender.getCapabilities?.('video');
+            if (caps?.codecs && transceiver?.setCodecPreferences) {
+              const preferredOrder = ['video/VP9', 'video/H264', 'video/AV1', 'video/VP8'];
+              const sorted = [...caps.codecs].sort((a, b) => {
+                const ia = preferredOrder.indexOf(a.mimeType);
+                const ib = preferredOrder.indexOf(b.mimeType);
+                return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+              });
+              transceiver.setCodecPreferences(sorted);
+            }
+          } catch (_) { }
+          try {
+            const p = activeSender.getParameters();
+            (p as any).degradationPreference = 'maintain-resolution';
+            if (p.encodings && p.encodings.length > 0) {
+              p.encodings[0].maxBitrate = 15_000_000;
+              p.encodings[0].minBitrate = 2_500_000;
+            }
+            await activeSender.setParameters(p);
+          } catch (_) { }
         }
       }
       await createAndSendOffer(peerId);
@@ -557,7 +604,7 @@ function getOrCreatePeerConnection(peerDeviceId: string): RTCPeerConnection {
         (t.receiver.track && t.receiver.track.kind === 'audio')
     );
     if (aTransceiver) {
-      aTransceiver.sender.replaceTrack(aStream.getAudioTracks()[0]).catch(() => {});
+      aTransceiver.sender.replaceTrack(aStream.getAudioTracks()[0]).catch(() => { });
     } else {
       pc.addTrack(aStream.getAudioTracks()[0], aStream);
     }
@@ -572,7 +619,7 @@ function getOrCreatePeerConnection(peerDeviceId: string): RTCPeerConnection {
         (t.receiver.track && t.receiver.track.kind === 'video')
     );
     if (vTransceiver) {
-      vTransceiver.sender.replaceTrack(vStream.getVideoTracks()[0]).catch(() => {});
+      vTransceiver.sender.replaceTrack(vStream.getVideoTracks()[0]).catch(() => { });
     } else {
       pc.addTrack(vStream.getVideoTracks()[0], vStream);
     }
@@ -642,6 +689,59 @@ function getOrCreatePeerConnection(peerDeviceId: string): RTCPeerConnection {
   return pc;
 }
 
+function boostMeetingSdpBitrate(sdp: string, kbps: number = 15000): string {
+  if (!sdp) return sdp;
+  const bitrateParams = `x-google-min-bitrate=2500;x-google-max-bitrate=${kbps};x-google-start-bitrate=8000`;
+  const lines = sdp.split(/\r\n|\n/);
+  const videoPts = new Set<string>();
+  const existingFmtpPts = new Set<string>();
+  let scanning = false;
+  for (const l of lines) {
+    if (l.startsWith('m=video')) { scanning = true; continue; }
+    if (l.startsWith('m=')) { scanning = false; continue; }
+    if (!scanning) continue;
+    const rm = /^a=rtpmap:(\d+)\s+([A-Za-z0-9_-]+)/.exec(l);
+    if (rm) {
+      const codec = rm[2].toUpperCase();
+      if (codec !== 'RTX' && codec !== 'RED' && codec !== 'ULPFEC' && codec !== 'FLEXFEC') {
+        videoPts.add(rm[1]);
+      }
+    }
+    const fm = /^a=fmtp:(\d+)\s+/.exec(l);
+    if (fm) existingFmtpPts.add(fm[1]);
+  }
+  const out: string[] = [];
+  let inVideo = false;
+  let bwAdded = false;
+  for (const line of lines) {
+    if (line.startsWith('m=video')) { inVideo = true; bwAdded = false; }
+    else if (line.startsWith('m=')) { inVideo = false; }
+    if (inVideo && (line.startsWith('b=AS:') || line.startsWith('b=TIAS:'))) continue;
+    if (inVideo && !bwAdded && line.startsWith('c=IN ')) {
+      out.push(line);
+      out.push(`b=AS:${kbps}`);
+      out.push(`b=TIAS:${kbps * 1000}`);
+      bwAdded = true;
+      continue;
+    }
+    if (inVideo && line.startsWith('a=fmtp:')) {
+      const m = /^a=fmtp:(\d+)\s+/.exec(line);
+      if (m && videoPts.has(m[1]) && !line.includes('x-google-min-bitrate')) {
+        out.push(`${line};${bitrateParams}`);
+        continue;
+      }
+    }
+    out.push(line);
+    if (inVideo && line.startsWith('a=rtpmap:')) {
+      const m = /^a=rtpmap:(\d+)\s+/.exec(line);
+      if (m && videoPts.has(m[1]) && !existingFmtpPts.has(m[1])) {
+        out.push(`a=fmtp:${m[1]} ${bitrateParams}`);
+      }
+    }
+  }
+  return out.join('\r\n');
+}
+
 async function createAndSendOffer(peerDeviceId: string) {
   const pc = getOrCreatePeerConnection(peerDeviceId);
   if (pc.signalingState !== 'stable') {
@@ -649,7 +749,8 @@ async function createAndSendOffer(peerDeviceId: string) {
     if (pc.signalingState !== 'stable') return;
   }
   try {
-    const offer = await pc.createOffer();
+    const rawOffer = await pc.createOffer();
+    const offer = { type: rawOffer.type, sdp: boostMeetingSdpBitrate(rawOffer.sdp || '', 15000) };
     await pc.setLocalDescription(offer);
     sendDirectSignal(peerDeviceId, {
       type: 'webrtc_offer',
@@ -687,7 +788,8 @@ async function handleReceivedOffer(peerDeviceId: string, sdp: RTCSessionDescript
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
     }
     await flushPendingCandidates(peerDeviceId, pc);
-    const answer = await pc.createAnswer();
+    const rawAnswer = await pc.createAnswer();
+    const answer = { type: rawAnswer.type, sdp: boostMeetingSdpBitrate(rawAnswer.sdp || '', 15000) };
     await pc.setLocalDescription(answer);
     sendDirectSignal(peerDeviceId, {
       type: 'webrtc_answer',
@@ -777,6 +879,7 @@ export function setupMeetingSignalListener() {
 
     // 1. Meeting Invite
     if (data.type === 'meeting_invite') {
+      playAppSound('meeting_invite');
       incomingInvite.set({
         roomId: data.roomId,
         roomTitle: data.roomTitle || 'Online Meeting',
@@ -795,7 +898,11 @@ export function setupMeetingSignalListener() {
       if (data.roomId && data.roomId !== myRoomId) return;
 
       const u = data.user;
+      const isNewJoiner = !knownRoomPeers.has(fromId);
       knownRoomPeers.add(fromId);
+      if (isNewJoiner) {
+        playAppSound('meeting_join');
+      }
 
       participants.update((map) => {
         map[fromId] = {
@@ -845,7 +952,11 @@ export function setupMeetingSignalListener() {
       if (data.roomId && data.roomId !== myRoomId) return;
 
       const u = data.user;
+      const isNewJoiner = !knownRoomPeers.has(fromId);
       knownRoomPeers.add(fromId);
+      if (isNewJoiner) {
+        playAppSound('meeting_join');
+      }
 
       participants.update((map) => {
         map[fromId] = {
@@ -917,7 +1028,12 @@ export function setupMeetingSignalListener() {
           if (typeof data.isCameraOn === 'boolean') map[fromId].isCameraOn = data.isCameraOn;
           if (typeof data.isScreenSharing === 'boolean') map[fromId].isScreenSharing = data.isScreenSharing;
           if (typeof data.isSpeaking === 'boolean') map[fromId].isSpeaking = data.isSpeaking;
-          if (typeof data.isHandRaised === 'boolean') map[fromId].isHandRaised = data.isHandRaised;
+          if (typeof data.isHandRaised === 'boolean') {
+            if (data.isHandRaised && !map[fromId].isHandRaised) {
+              playAppSound('hand_raise');
+            }
+            map[fromId].isHandRaised = data.isHandRaised;
+          }
           if (!map[fromId].stream && remoteStreams.has(fromId)) {
             map[fromId].stream = remoteStreams.get(fromId)!;
           }

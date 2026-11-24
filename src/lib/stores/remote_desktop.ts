@@ -3,6 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { raydropApi, type RemoteDesktopSettings } from '../utils/tauri-ipc';
 import { appSettings } from './state';
 import { contacts } from './contacts';
+import { playAppSound } from './presence';
 
 // ICE Servers for WebRTC peer connection (lean pool for fast startup)
 const ICE_SERVERS: RTCConfiguration = {
@@ -263,7 +264,7 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
       try {
         const [sw, sh] = await raydropApi.getHostScreenSize();
         if (sw > 0 && sh > 0) {
-          const scale = sw > 1920 ? 1920 / sw : 1;
+          const scale = sw > 2560 ? 2560 / sw : 1;
           initW = Math.max(2, Math.round(sw * scale) & ~1);
           initH = Math.max(2, Math.round(sh * scale) & ~1);
         }
@@ -296,6 +297,9 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
               nativeCanvasEl.width = img.width;
               nativeCanvasEl.height = img.height;
               nativeCanvasCtx = nativeCanvasEl.getContext('2d', { alpha: false });
+              if (nativeCanvasCtx) {
+                nativeCanvasCtx.imageSmoothingEnabled = false;
+              }
             }
             if (nativeCanvasCtx) {
               nativeCanvasCtx.drawImage(img, 0, 0);
@@ -314,7 +318,7 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
           pendingFrameDraw = false;
           raydropApi.ackNativeScreenFrame().catch(() => { });
         };
-        img.src = 'data:image/jpeg;base64,' + b64;
+        img.src = (b64.startsWith('iVBOR') ? 'data:image/png;base64,' : 'data:image/jpeg;base64,') + b64;
       });
     }
 
@@ -347,7 +351,7 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
     if (nativeStream && nativeStream.getVideoTracks().length > 0) {
       const track = nativeStream.getVideoTracks()[0];
       if ('contentHint' in track) {
-        (track as any).contentHint = 'detail';
+        (track as any).contentHint = 'text';
       }
       hostScreenStream.set(nativeStream);
       isHostSharingScreen.set(true);
@@ -363,8 +367,8 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
         cursor: 'never', // Completely removes host OS cursor from video capture frames
         displaySurface: 'monitor',
         frameRate: mode === 'game' ? { ideal: 60, max: 60 } : { ideal: 30, max: 30 },
-        width: { ideal: 1920, max: 1920 },
-        height: { ideal: 1080, max: 1080 },
+        width: { ideal: 2560, max: 3840 },
+        height: { ideal: 1440, max: 2160 },
       },
       audio: false, // Audio is streamed cleanly via native WASAPI loopback (prevents duplicate/clicking WebRTC audio)
       selfBrowserSurface: 'exclude',
@@ -394,7 +398,7 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
     if (nativeStream && nativeStream.getVideoTracks().length > 0) {
       const track = nativeStream.getVideoTracks()[0];
       if ('contentHint' in track) {
-        (track as any).contentHint = 'detail';
+        (track as any).contentHint = 'text';
       }
       hostScreenStream.set(nativeStream);
       isHostSharingScreen.set(true);
@@ -424,8 +428,8 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
   };
 
   if ('contentHint' in track) {
-    // 'motion' preserves 60fps fluidity in Game Mode; 'detail' keeps crisp text in Desktop Mode
-    (track as any).contentHint = mode === 'game' ? 'motion' : 'detail';
+    // 'detail' keeps HUD/text sharp at 60fps in Game Mode; 'text' keeps crisp subpixel text in Desktop Mode
+    (track as any).contentHint = mode === 'game' ? 'detail' : 'text';
   }
 
   track.onended = () => {
@@ -482,6 +486,7 @@ async function handleIncomingAuthRequest(
 
   // 2. No PIN provided -> Requires manual approval by the host user
   if (!enteredPin) {
+    playAppSound('remote_request');
     pendingRemoteAuthRequest.set({
       clientDeviceId,
       sessionId,
@@ -575,11 +580,11 @@ async function proceedHostAcceptRemote(
 
 // Utility to tune SDP bitrate across ALL video codecs (VP8, VP9, H264, AV1)
 // so WebRTC never starts at Chromium's blurry 300kbps default
-function boostSdpBitrate(sdp: string, kbps: number = 20000): string {
+function boostSdpBitrate(sdp: string, kbps: number = 35000): string {
   if (!sdp) return sdp;
   const bps = kbps * 1000;
-  const minKbps = kbps >= 30000 ? 6000 : 4000;
-  const startKbps = kbps >= 30000 ? 15000 : 10000;
+  const minKbps = kbps >= 40000 ? 10000 : 8000;
+  const startKbps = kbps >= 40000 ? 25000 : 18000;
   const bitrateParams = `x-google-min-bitrate=${minKbps};x-google-max-bitrate=${kbps};x-google-start-bitrate=${startKbps}`;
 
   const lines = sdp.split(/\r\n|\n/);
@@ -674,9 +679,10 @@ async function setupHostPeerConnection(
   setupHostDataChannel(dc);
 
   // Add Screen Share Video & System Audio Tracks
+  const isGame = get(remoteSessionMode) === 'game';
   const videoTrack = stream.getVideoTracks()[0];
   if (videoTrack && 'contentHint' in videoTrack) {
-    (videoTrack as any).contentHint = 'detail';
+    (videoTrack as any).contentHint = isGame ? 'detail' : 'text';
   }
   const sender = pc.addTrack(videoTrack, stream);
   activeVideoSender = sender;
@@ -685,15 +691,29 @@ async function setupHostPeerConnection(
     pc.addTrack(audioTrack, stream);
   }
 
-  // Set degradationPreference: maintain-framerate for Game Mode, maintain-resolution for Desktop Mode
-  const isGame = get(remoteSessionMode) === 'game';
-  const targetMaxKbps = isGame ? 35_000 : 20_000;
+  // Prefer sharper modern codecs (VP9 / H264 / AV1) over legacy VP8 so text and game edges stay crisp
+  try {
+    const caps = RTCRtpSender.getCapabilities?.('video');
+    if (caps?.codecs) {
+      const preferredOrder = ['video/VP9', 'video/H264', 'video/AV1', 'video/VP8'];
+      const sortedCodecs = [...caps.codecs].sort((a, b) => {
+        const ia = preferredOrder.indexOf(a.mimeType);
+        const ib = preferredOrder.indexOf(b.mimeType);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      });
+      const videoTransceiver = pc.getTransceivers().find((t) => t.sender === sender);
+      videoTransceiver?.setCodecPreferences?.(sortedCodecs);
+    }
+  } catch (_) {}
+
+  // Always maintain native resolution (never downscale to 720p/540p) with high bitrate headroom
+  const targetMaxKbps = isGame ? 50_000 : 35_000;
   try {
     const params = sender.getParameters();
-    (params as any).degradationPreference = isGame ? 'maintain-framerate' : 'maintain-resolution';
+    (params as any).degradationPreference = 'maintain-resolution';
     if (params.encodings && params.encodings.length > 0) {
       params.encodings[0].maxBitrate = targetMaxKbps * 1000;
-      params.encodings[0].minBitrate = isGame ? 5_000_000 : 4_000_000;
+      params.encodings[0].minBitrate = isGame ? 10_000_000 : 8_000_000;
       params.encodings[0].maxFramerate = 60;
     }
     await sender.setParameters(params);
@@ -959,10 +979,10 @@ function setupHostDataChannel(dc: RTCDataChannel) {
         if (activeVideoSender) {
           try {
             const p = activeVideoSender.getParameters();
-            (p as any).degradationPreference = isGameNow ? 'maintain-framerate' : 'maintain-resolution';
+            (p as any).degradationPreference = 'maintain-resolution';
             if (p.encodings && p.encodings.length > 0) {
-              p.encodings[0].maxBitrate = isGameNow ? 35_000_000 : 20_000_000;
-              p.encodings[0].minBitrate = isGameNow ? 5_000_000 : 4_000_000;
+              p.encodings[0].maxBitrate = isGameNow ? 50_000_000 : 35_000_000;
+              p.encodings[0].minBitrate = isGameNow ? 10_000_000 : 8_000_000;
             }
             await activeVideoSender.setParameters(p);
           } catch (_) { }
@@ -1212,7 +1232,7 @@ async function handleIncomingOffer(
   const answer = await pc.createAnswer();
   const boostedAnswer = {
     type: answer.type,
-    sdp: boostSdpBitrate(answer.sdp || '', 15000),
+    sdp: boostSdpBitrate(answer.sdp || '', 50000),
   };
   await pc.setLocalDescription(boostedAnswer);
 
@@ -1603,6 +1623,9 @@ export function disconnectRemoteSession() {
   clearAuthTimer();
   const session = get(activeRemoteSession);
   if (session) {
+    if (get(remoteConnectionStatus) === 'connected') {
+      playAppSound('remote_disconnect');
+    }
     if (session.isHost) {
       stopHostScreenCapture();
     }

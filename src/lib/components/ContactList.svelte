@@ -9,7 +9,9 @@
     activeMainTab,
     activeChatPeerId,
   } from "../stores/state";
-  import { contacts, lanContacts } from "../stores/contacts";
+  import { contacts, lanContacts, lanStatusMap, refreshLanStatuses } from "../stores/contacts";
+  import LanInfoModal from "./LanInfoModal.svelte";
+  import type { LanStatusInfo } from "../utils/tauri-ipc";
   import { peerAvatars, peerAvatarHashes, myAvatar, loadPeerAvatar } from "../stores/avatars";
   import {
     raydropApi,
@@ -111,6 +113,22 @@
   }
 
   let activeTab: "devices" | "contacts" | "lan" = "devices";
+  let selectedLanBadge: { deviceId: string; deviceName: string; info: LanStatusInfo } | null = null;
+
+  function openLanBadgeModal(deviceId: string, deviceName: string) {
+    const info: LanStatusInfo = $lanStatusMap[deviceId] || {
+      active: false,
+      kind: "none",
+      label: "WAN",
+      detail: "Tidak ada jalur LAN aktif (menggunakan WAN / Relay)",
+      ip: null,
+      local_active: false,
+      tailscale_active: false,
+      mesh_active: false,
+    };
+    selectedLanBadge = { deviceId, deviceName, info };
+    refreshLanStatuses();
+  }
 
   $: if (
     $activeMainTab === "lan" ||
@@ -534,6 +552,22 @@
                     >
                       {dev.os_type}
                     </span>
+                    {#if !isThisDevice && $lanStatusMap[dev.device_id]?.active}
+                      {@const lanInfo = $lanStatusMap[dev.device_id]}
+                      <button
+                        type="button"
+                        on:click|stopPropagation={() => openLanBadgeModal(dev.device_id, dev.device_name)}
+                        class="text-[10px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 cursor-pointer transition {lanInfo.kind === 'tailscale'
+                          ? 'bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border-indigo-500/30'
+                          : lanInfo.kind === 'raydrop_mesh'
+                            ? 'bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border-sky-500/30'
+                            : 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'}"
+                        title="Klik untuk melihat detail koneksi LAN"
+                      >
+                        <Wifi class="w-3 h-3" />
+                        <span>LAN • {lanInfo.kind === 'tailscale' ? 'Tailscale' : lanInfo.kind === 'raydrop_mesh' ? 'Mesh' : 'Local'}</span>
+                      </button>
+                    {/if}
                   </div>
                 {/if}
                 <div class="flex items-center gap-1.5 text-xs font-mono text-slate-400 truncate mt-0.5 flex-wrap">
@@ -851,6 +885,22 @@
                                 >
                                   <Pencil class="w-2.5 h-2.5" />
                                 </button>
+                                {#if $lanStatusMap[cdev.device_id]?.active}
+                                  {@const lanInfo = $lanStatusMap[cdev.device_id]}
+                                  <button
+                                    type="button"
+                                    on:click|stopPropagation={() => openLanBadgeModal(cdev.device_id, cdev.device_name)}
+                                    class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full border flex items-center gap-1 cursor-pointer shrink-0 transition {lanInfo.kind === 'tailscale'
+                                      ? 'bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border-indigo-500/30'
+                                      : lanInfo.kind === 'raydrop_mesh'
+                                        ? 'bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border-sky-500/30'
+                                        : 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'}"
+                                    title="Klik untuk melihat detail koneksi LAN"
+                                  >
+                                    <Wifi class="w-2.5 h-2.5" />
+                                    <span>LAN</span>
+                                  </button>
+                                {/if}
                               </div>
                             {/if}
                             <p
@@ -1537,5 +1587,14 @@
     peerDeviceId={remoteBrowserTarget.deviceId}
     peerAlias={remoteBrowserTarget.alias}
     onClose={() => (remoteBrowserTarget = null)}
+  />
+{/if}
+
+{#if selectedLanBadge}
+  <LanInfoModal
+    deviceId={selectedLanBadge.deviceId}
+    deviceName={selectedLanBadge.deviceName}
+    info={$lanStatusMap[selectedLanBadge.deviceId] || selectedLanBadge.info}
+    onClose={() => (selectedLanBadge = null)}
   />
 {/if}

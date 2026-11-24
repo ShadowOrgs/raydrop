@@ -73,7 +73,9 @@
     acceptPendingRemoteRequest,
     rejectPendingRemoteRequest,
   } from "../stores/remote_desktop";
-  import { contacts, lanContacts } from "../stores/contacts";
+  import { contacts, lanContacts, lanStatusMap, refreshLanStatuses } from "../stores/contacts";
+  import LanInfoModal from "./LanInfoModal.svelte";
+  import type { LanStatusInfo } from "../utils/tauri-ipc";
   import { cloudMyDevices, appSettings } from "../stores/state";
   import { peerAvatars, loadPeerAvatar } from "../stores/avatars";
   import { formatLastOnline, formatLastOnlineCompact } from "../utils/time";
@@ -167,8 +169,26 @@
   let isInstallingBootService = false;
   let windowsServiceStatus = "not_installed";
   let isManagingWinService = false;
+  let vddStatus: { supported: boolean; installed: boolean; enabled: boolean; status_text: string } | null = null;
+  let isTogglingVdd = false;
   let pendingPowerAction: "lock" | "sleep" | "restart" | "shutdown" | null = null;
   let lastMouseMoveTime = 0;
+  let selectedLanBadge: { deviceId: string; deviceName: string; info: LanStatusInfo } | null = null;
+
+  function openLanBadgeModal(deviceId: string, deviceName: string) {
+    const info: LanStatusInfo = $lanStatusMap[deviceId] || {
+      active: false,
+      kind: "none",
+      label: "WAN",
+      detail: "Tidak ada jalur LAN aktif (menggunakan WAN / Relay)",
+      ip: null,
+      local_active: false,
+      tailscale_active: false,
+      mesh_active: false,
+    };
+    selectedLanBadge = { deviceId, deviceName, info };
+    refreshLanStatuses();
+  }
 
   $: isClientConnected =
     $remoteConnectionStatus === "connected" &&
@@ -373,6 +393,8 @@
     raydropApi.checkWindowsServiceStatus().then((st) => {
       windowsServiceStatus = st;
     }).catch(() => {});
+
+    refreshVddStatus();
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
   });
@@ -611,6 +633,26 @@
       secondScreenError = err?.message || String(err);
     } finally {
       isChangingResolution = false;
+    }
+  }
+
+  async function refreshVddStatus() {
+    try {
+      vddStatus = await raydropApi.getVirtualDisplayStatus();
+    } catch (_) {}
+  }
+
+  async function handleToggleVirtualDisplay() {
+    if (!vddStatus || isTogglingVdd) return;
+    isTogglingVdd = true;
+    try {
+      const next = !vddStatus.enabled;
+      vddStatus = await raydropApi.setVirtualDisplayEnabled(next);
+      await checkExtendSupport();
+    } catch (err: any) {
+      alert(typeof err === "string" ? err : err?.message || "Gagal mengubah status Virtual Display Driver.");
+    } finally {
+      isTogglingVdd = false;
     }
   }
 
@@ -1106,8 +1148,8 @@
       }}
       on:drop|preventDefault
     >
-      <!-- Sleek Multi-Monitor Top Tab Bar (shown when host has multiple displays) -->
-      {#if $remoteHostMonitors.length > 1}
+      <!-- Sleek Multi-Monitor Top Tab Bar (hidden in Game Mode; shown in Desktop Mode when host has multiple displays) -->
+      {#if $remoteHostMonitors.length > 1 && $remoteSessionMode !== "game"}
         <div
           class="w-full bg-[#090d16] border-b border-slate-800/90 px-2 pt-1.5 flex items-end gap-1 overflow-x-auto shrink-0 z-40 select-none"
         >
@@ -1602,6 +1644,30 @@
                   </button>
                 {/if}
               {/if}
+
+              <!-- Virtual Display Driver ON/OFF Toggle -->
+              {#if vddStatus?.supported}
+                <button
+                  type="button"
+                  disabled={isTogglingVdd}
+                  on:click={handleToggleVirtualDisplay}
+                  class="px-2 py-0.5 rounded-full text-[10px] font-semibold border transition cursor-pointer flex items-center gap-1 disabled:opacity-60 {vddStatus.enabled
+                    ? 'bg-emerald-500/15 hover:bg-rose-500/20 text-emerald-300 hover:text-rose-300 border-emerald-500/35 hover:border-rose-500/35'
+                    : 'bg-slate-800 hover:bg-cyan-500/20 text-slate-400 hover:text-cyan-300 border-slate-700 hover:border-cyan-500/40'}"
+                  title={vddStatus.enabled
+                    ? "Virtual Display Driver aktif (Klik untuk mematikan / OFF)"
+                    : "Virtual Display Driver mati (Klik untuk mengaktifkan / ON)"}
+                >
+                  <Tv class="w-3 h-3" />
+                  <span>
+                    {#if isTogglingVdd}
+                      Updating VDD...
+                    {:else}
+                      Virtual Display: {vddStatus.enabled ? "ON" : "OFF"}
+                    {/if}
+                  </span>
+                </button>
+              {/if}
             </h2>
             <p class="text-xs text-slate-400 mt-0.5">
               Click any device below to connect with PIN or request access.
@@ -1887,14 +1953,40 @@
 
                 <!-- Device Type Pill & Status -->
                 <div class="flex flex-col items-end gap-1">
-                  <span
-                    class="px-2 py-0.5 rounded-md text-[10px] font-semibold border {peer.isOnline
-                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                      : 'bg-slate-800 text-slate-300 border-slate-700'}"
-                    title={peer.isOnline ? "Online now" : formatLastOnline(peer.lastSeenAt, false)}
-                  >
-                    {peer.isOnline ? "Online" : formatLastOnlineCompact(peer.lastSeenAt, false)}
-                  </span>
+                  <div class="flex items-center gap-1 flex-wrap justify-end">
+                    {#if $lanStatusMap[peer.id]?.active}
+                      {@const lanInfo = $lanStatusMap[peer.id]}
+                      <button
+                        type="button"
+                        on:click|stopPropagation={() => openLanBadgeModal(peer.id, peer.name)}
+                        class="px-2 py-0.5 rounded-md text-[10px] font-semibold border flex items-center gap-1 cursor-pointer transition {lanInfo.kind === 'tailscale'
+                          ? 'bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border-indigo-500/30'
+                          : lanInfo.kind === 'raydrop_mesh'
+                            ? 'bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border-sky-500/30'
+                            : 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'}"
+                        title="Klik untuk melihat detail jalur LAN"
+                      >
+                        <span>LAN • {lanInfo.kind === 'tailscale' ? 'Tailscale' : lanInfo.kind === 'raydrop_mesh' ? 'Mesh' : 'Local'}</span>
+                      </button>
+                    {:else if peer.isOnline}
+                      <button
+                        type="button"
+                        on:click|stopPropagation={() => openLanBadgeModal(peer.id, peer.name)}
+                        class="px-2 py-0.5 rounded-md text-[10px] font-semibold border bg-slate-800/80 hover:bg-slate-700 text-slate-400 border-slate-700 cursor-pointer transition"
+                        title="Klik untuk cek status LAN"
+                      >
+                        WAN
+                      </button>
+                    {/if}
+                    <span
+                      class="px-2 py-0.5 rounded-md text-[10px] font-semibold border {peer.isOnline
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : 'bg-slate-800 text-slate-300 border-slate-700'}"
+                      title={peer.isOnline ? "Online now" : formatLastOnline(peer.lastSeenAt, false)}
+                    >
+                      {peer.isOnline ? "Online" : formatLastOnlineCompact(peer.lastSeenAt, false)}
+                    </span>
+                  </div>
                   <span
                     class="text-[10px] text-slate-400 flex items-center gap-1"
                   >
@@ -2960,5 +3052,14 @@
         </div>
       </div>
     </div>
+  {/if}
+
+  {#if selectedLanBadge}
+    <LanInfoModal
+      deviceId={selectedLanBadge.deviceId}
+      deviceName={selectedLanBadge.deviceName}
+      info={$lanStatusMap[selectedLanBadge.deviceId] || selectedLanBadge.info}
+      onClose={() => (selectedLanBadge = null)}
+    />
   {/if}
 </div>
