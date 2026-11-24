@@ -223,16 +223,20 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
-            let my_wan = state.wan_reflexive_addr.lock().unwrap().clone();
+            let mut my_wan = state.wan_reflexive_addr.lock().unwrap().clone();
             if my_wan.is_none() {
-                let state_c = state.clone();
                 let port = state.listen_port;
                 let s_addr = state.settings.lock().unwrap().stun_addr.clone();
-                tokio::spawn(async move {
-                    if let Some(refl) = discover_wan_reflexive_address(port, &s_addr).await {
-                        *state_c.wan_reflexive_addr.lock().unwrap() = Some(refl);
-                    }
-                });
+                if let Some(refl) = discover_wan_reflexive_address(port, &s_addr).await {
+                    *state.wan_reflexive_addr.lock().unwrap() = Some(refl.clone());
+                    my_wan = Some(refl);
+                }
+            }
+
+            if let Some(ref peer_wan_addr) = peer_wan {
+                let port = state.listen_port;
+                let sid = session_id.clone();
+                execute_udp_hole_punch(port, peer_wan_addr, &sid).await;
             }
 
             let my_lan = crate::network::transport::collect_all_lan_addresses(state.listen_port);
@@ -249,14 +253,6 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 })
                 .to_string();
                 let _ = tx.send(answer);
-            }
-
-            if let Some(peer_wan_addr) = peer_wan {
-                let port = state.listen_port;
-                let sid = session_id.clone();
-                tokio::spawn(async move {
-                    execute_udp_hole_punch(port, &peer_wan_addr, &sid).await;
-                });
             }
         }
         "CANDIDATE_ANSWER" => {

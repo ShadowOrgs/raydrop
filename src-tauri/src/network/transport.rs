@@ -27,7 +27,7 @@ const HEADER_LEN: usize = 36;
 const MAGIC_BYTES: &[u8; 4] = b"RAYD";
 const PARALLEL_WORKERS: usize = 6; // IDM-style 6 parallel chunk workers for large files
 const PARALLEL_THRESHOLD_BYTES: u64 = 4 * 1024 * 1024; // 4 MB threshold for parallel multi-segment streaming
-pub const MAX_RELAY_TRANSFER_BYTES: u64 = 100 * 1024 * 1024; // 100 MB safety guard for VPS bandwidth
+pub const MAX_RELAY_TRANSFER_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GB safety guard for VPS bandwidth
 
 pub fn notify_os(app: &AppHandle, title: &str, body: &str) {
     let _ = app.notification().builder()
@@ -1972,7 +1972,7 @@ async fn start_or_resume_transfer(
                         return;
                     }
 
-                    let is_permanent_error = e.contains("100 MB relay guard")
+                    let is_permanent_error = e.contains("relay guard")
                         || e.contains("Insufficient Disk Space")
                         || e.contains("DISK_FULL")
                         || e.contains("Signaling Server is not connected")
@@ -2079,16 +2079,12 @@ async fn run_outgoing_session(
     };
 
     let stun_addr = state.settings.lock().unwrap().stun_addr.clone();
-    let my_wan = state.wan_reflexive_addr.lock().unwrap().clone();
+    let mut my_wan = state.wan_reflexive_addr.lock().unwrap().clone();
     if my_wan.is_none() {
-        let state_c = state.clone();
-        let port = state.listen_port;
-        let s_addr = stun_addr.clone();
-        tokio::spawn(async move {
-            if let Some(refl) = discover_wan_reflexive_address(port, &s_addr).await {
-                *state_c.wan_reflexive_addr.lock().unwrap() = Some(refl);
-            }
-        });
+        if let Some(refl) = discover_wan_reflexive_address(state.listen_port, &stun_addr).await {
+            *state.wan_reflexive_addr.lock().unwrap() = Some(refl.clone());
+            my_wan = Some(refl);
+        }
     }
     let my_lan = collect_all_lan_addresses(state.listen_port);
     let my_alias = state.settings.lock().unwrap().alias_name.clone();
@@ -2157,13 +2153,13 @@ async fn run_outgoing_session(
 
         // 2b. Try Direct WAN QUIC over hole-punched UDP using the shared QUIC endpoint
         if let Some(target_wan_str) = answer.wan_candidate {
-            tokio::time::sleep(Duration::from_millis(250)).await;
+            tokio::time::sleep(Duration::from_millis(150)).await;
             if let Ok(target_addr) = target_wan_str.parse::<SocketAddr>() {
                 let endpoint_opt = state.quic_endpoint.lock().unwrap().clone();
                 if let Some(endpoint) = endpoint_opt {
                     if let Ok(connecting) = endpoint.connect(target_addr, "raydrop.local") {
                         if let Ok(Ok(quic_conn)) =
-                            tokio::time::timeout(Duration::from_millis(2000), connecting).await
+                            tokio::time::timeout(Duration::from_millis(3500), connecting).await
                         {
                             if let Ok((send_stream, recv_stream)) = quic_conn.open_bi().await {
                                 return stream_outgoing_files(
@@ -2199,7 +2195,7 @@ async fn run_outgoing_session(
     // frames over the active WSS Signaling tunnel (`RELAY_CONTROL`) when direct sockets are blocked by NAT/Firewall
     if total_bytes > MAX_RELAY_TRANSFER_BYTES {
         let err_msg = format!(
-            "Direct P2P socket was blocked by symmetric NAT/firewall. Transfer size ({}) exceeds the 100 MB relay guard to preserve server bandwidth. Connect both devices to the same Wi-Fi/LAN or use Tailscale for unlimited file sizes.",
+            "Direct P2P socket was blocked by symmetric NAT/firewall. Transfer size ({}) exceeds the 2 GB relay guard to preserve server bandwidth. Connect both devices to the same Wi-Fi/LAN or use Tailscale for unlimited file sizes.",
             format_bytes_human(total_bytes)
         );
         warn!("{err_msg}");

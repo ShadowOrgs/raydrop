@@ -81,9 +81,12 @@ pub async fn execute_udp_hole_punch(
 
     let packet = format!("RAYD_PUNCH:{session_id}");
     info!("Executing simultaneous UDP hole-punch to {target} for session {session_id}");
-    for _ in 0..6 {
+    for i in 0..3 {
         let _ = sock.send_to(packet.as_bytes(), target).await;
-        tokio::time::sleep(Duration::from_millis(90)).await;
+        if i < 2 {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
     }
+    drop(sock);
 }
 
