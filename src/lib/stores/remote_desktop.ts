@@ -144,9 +144,10 @@ export function initRemoteDesktopListener() {
     // 2. Client receives authentication rejection
     if (payload.type === 'remote_auth_rejected') {
       clearAuthTimer();
+      cleanupPeerConnection();
+      activeRemoteSession.set(null);
       remoteConnectionStatus.set('error');
       remoteErrorMessage.set(payload.reason || 'Remote connection rejected by host.');
-      disconnectRemoteSession();
       return;
     }
 
@@ -525,7 +526,19 @@ async function proceedHostAcceptRemote(
   } catch (_) { }
 
   // Setup WebRTC Host Peer Connection
-  await setupHostPeerConnection(clientDeviceId, sessionId, stream);
+  try {
+    await setupHostPeerConnection(clientDeviceId, sessionId, stream);
+  } catch (err: any) {
+    console.error('Failed to setup host peer connection:', err);
+    stopHostScreenCapture();
+    cleanupPeerConnection();
+    activeRemoteSession.set(null);
+    remoteConnectionStatus.set('idle');
+    sendRemoteSignal(clientDeviceId, sessionId, {
+      type: 'remote_auth_rejected',
+      reason: `Host WebRTC setup failed: ${err?.message || err}`,
+    });
+  }
 }
 
 // Utility to tune SDP bitrate: smooth 500kbps-8Mbps adaptive bandwidth for WAN & LAN without bufferbloat
@@ -630,6 +643,11 @@ async function setupHostPeerConnection(
       // Restore host cursor immediately on connection drop so host isn't stuck with hidden cursor
       raydropApi.setHostCursorHidden(false).catch(() => { });
       raydropApi.releaseRemoteModifiers().catch(() => { });
+      setTimeout(() => {
+        if (activePeerConnection === pc && pc.connectionState === 'disconnected') {
+          disconnectRemoteSession();
+        }
+      }, 5000);
     }
   };
 
@@ -1030,13 +1048,21 @@ async function handleIncomingOffer(
   pc.onconnectionstatechange = () => {
     if (activePeerConnection !== pc) return;
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-      remoteConnectionStatus.set('disconnected');
+      const wasConnected = get(remoteConnectionStatus) === 'connected';
       cleanupPeerConnection();
+      activeRemoteSession.set(null);
+      if (wasConnected) {
+        remoteConnectionStatus.set('disconnected');
+      } else {
+        remoteConnectionStatus.set('error');
+        remoteErrorMessage.set('WebRTC peer connection failed. Please try reconnecting.');
+      }
     } else if (pc.connectionState === 'disconnected') {
       setTimeout(() => {
         if (activePeerConnection === pc && pc.connectionState === 'disconnected') {
-          remoteConnectionStatus.set('disconnected');
           cleanupPeerConnection();
+          activeRemoteSession.set(null);
+          remoteConnectionStatus.set('disconnected');
         }
       }, 4000);
     }

@@ -317,6 +317,88 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 return;
             }
 
+            // Transfer Control WAN Relay Handler (2-way Cancel, Pause, Resume sync)
+            if session_id.starts_with("transfer_ctl:") {
+                if let Ok(bytes) = hex::decode(payload_json) {
+                    if let Ok(ctl_val) = serde_json::from_slice::<Value>(&bytes) {
+                        let ctl_type = ctl_val.get("control_type").and_then(|v| v.as_str()).unwrap_or("");
+                        let sid = ctl_val.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let reason = ctl_val.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        if !sid.is_empty() {
+                            match ctl_type {
+                                "TRANSFER_CANCEL" => {
+                                    if let Some(flag) = state.active_cancellations.lock().unwrap().get(sid) {
+                                        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                                    }
+                                    if let Ok(Some(mut rec)) = state.db.get_transfer(sid) {
+                                        if rec.status != "completed" && rec.status != "cancelled" {
+                                            rec.status = "cancelled".to_string();
+                                            rec.error_reason = Some(reason.unwrap_or_else(|| {
+                                                if rec.direction == "incoming" {
+                                                    "Cancelled by sender".to_string()
+                                                } else {
+                                                    "Cancelled by receiver".to_string()
+                                                }
+                                            }));
+                                            let _ = state.db.upsert_transfer(&rec);
+                                            let _ = app.emit("transfer_state_changed", &rec);
+                                        }
+                                    }
+                                }
+                                "TRANSFER_FAILED" => {
+                                    if let Some(flag) = state.active_cancellations.lock().unwrap().get(sid) {
+                                        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                                    }
+                                    if let Ok(Some(mut rec)) = state.db.get_transfer(sid) {
+                                        if rec.status != "completed" && rec.status != "cancelled" {
+                                            rec.status = "failed".to_string();
+                                            rec.error_reason = Some(
+                                                reason.unwrap_or_else(|| "Transfer failed on remote peer".to_string()),
+                                            );
+                                            let _ = state.db.upsert_transfer(&rec);
+                                            let _ = app.emit("transfer_state_changed", &rec);
+                                        }
+                                    }
+                                }
+                                "TRANSFER_PAUSE" => {
+                                    if let Some(flag) = state.active_cancellations.lock().unwrap().get(sid) {
+                                        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                                    }
+                                    if let Ok(Some(mut rec)) = state.db.get_transfer(sid) {
+                                        if rec.status == "in_progress" {
+                                            rec.status = "paused".to_string();
+                                            let _ = state.db.upsert_transfer(&rec);
+                                            let _ = app.emit("transfer_state_changed", &rec);
+                                        }
+                                    }
+                                }
+                                "TRANSFER_RESUME" => {
+                                    if let Ok(Some(rec)) = state.db.get_transfer(sid) {
+                                        if rec.direction == "outgoing"
+                                            && (rec.status == "paused" || rec.status == "failed")
+                                        {
+                                            let app_c = app.clone();
+                                            let state_c = state.clone();
+                                            let sid_owned = sid.to_string();
+                                            tauri::async_runtime::spawn(async move {
+                                                let _ = crate::network::transport::resume_peer_transfer(
+                                                    app_c,
+                                                    state_c,
+                                                    sid_owned,
+                                                )
+                                                .await;
+                                            });
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+
             // Group Control WAN Relay Handler (Invite, update, remove, leave)
             if session_id.starts_with("grp_ctl:") {
                 if let Ok(bytes) = hex::decode(payload_json) {

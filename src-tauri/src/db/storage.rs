@@ -43,6 +43,8 @@ pub struct TransferRecord {
     pub status: String, // "in_progress", "paused", "completed", "cancelled", "failed", "rejected"
     pub target_path: Option<String>,
     pub source_paths: Option<String>,
+    #[serde(default)]
+    pub error_reason: Option<String>,
     pub created_at: u64,
 }
 
@@ -284,6 +286,7 @@ fn open_and_migrate_db(db_path: &std::path::Path) -> Result<Connection, String> 
     let _ = conn.execute("ALTER TABLE contacts ADD COLUMN rank_exp INTEGER DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE contacts ADD COLUMN mac_address TEXT", []);
     let _ = conn.execute("ALTER TABLE transfer_history ADD COLUMN source_paths TEXT", []);
+    let _ = conn.execute("ALTER TABLE transfer_history ADD COLUMN error_reason TEXT", []);
     let _ = conn.execute("ALTER TABLE chat_messages ADD COLUMN sender_device_id TEXT", []);
     let _ = conn.execute("ALTER TABLE chat_messages ADD COLUMN sender_alias TEXT", []);
     let _ = conn.execute(
@@ -970,14 +973,18 @@ impl Database {
         conn.execute(
             "INSERT INTO transfer_history (
                 id, peer_device_id, peer_alias, direction, network_route,
-                total_files, total_bytes, transferred_bytes, status, target_path, source_paths, created_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                total_files, total_bytes, transferred_bytes, status, target_path, source_paths, error_reason, created_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
             ON CONFLICT(id) DO UPDATE SET
                 transferred_bytes = MAX(excluded.transferred_bytes, transfer_history.transferred_bytes),
                 status = excluded.status,
                 network_route = excluded.network_route,
                 target_path = COALESCE(excluded.target_path, transfer_history.target_path),
-                source_paths = COALESCE(excluded.source_paths, transfer_history.source_paths)",
+                source_paths = COALESCE(excluded.source_paths, transfer_history.source_paths),
+                error_reason = CASE
+                    WHEN excluded.status IN ('in_progress', 'completed') THEN NULL
+                    ELSE COALESCE(excluded.error_reason, transfer_history.error_reason)
+                END",
             params![
                 t.id,
                 t.peer_device_id,
@@ -990,6 +997,7 @@ impl Database {
                 t.status,
                 t.target_path,
                 t.source_paths,
+                t.error_reason,
                 t.created_at as i64,
             ],
         )
@@ -1001,7 +1009,7 @@ impl Database {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.query_row(
             "SELECT id, peer_device_id, peer_alias, direction, network_route,
-                    total_files, total_bytes, transferred_bytes, status, target_path, source_paths, created_at
+                    total_files, total_bytes, transferred_bytes, status, target_path, source_paths, error_reason, created_at
              FROM transfer_history WHERE id = ?1",
             params![id],
             |row| {
@@ -1017,7 +1025,8 @@ impl Database {
                     status: row.get(8)?,
                     target_path: row.get(9)?,
                     source_paths: row.get(10)?,
-                    created_at: row.get::<_, i64>(11)? as u64,
+                    error_reason: row.get(11)?,
+                    created_at: row.get::<_, i64>(12)? as u64,
                 })
             },
         )
@@ -1047,7 +1056,7 @@ impl Database {
         let mut stmt = conn
             .prepare(
                 "SELECT id, peer_device_id, peer_alias, direction, network_route,
-                        total_files, total_bytes, transferred_bytes, status, target_path, source_paths, created_at
+                        total_files, total_bytes, transferred_bytes, status, target_path, source_paths, error_reason, created_at
                  FROM transfer_history ORDER BY created_at DESC LIMIT 100",
             )
             .map_err(|e| e.to_string())?;
@@ -1066,7 +1075,8 @@ impl Database {
                     status: row.get(8)?,
                     target_path: row.get(9)?,
                     source_paths: row.get(10)?,
-                    created_at: row.get::<_, i64>(11)? as u64,
+                    error_reason: row.get(11)?,
+                    created_at: row.get::<_, i64>(12)? as u64,
                 })
             })
             .map_err(|e| e.to_string())?;

@@ -56,6 +56,7 @@
 
   let resumingId = '';
   let actionError = '';
+  let selectedStatusDetail: TransferRecord | null = null;
   let showRefreshModal = false;
   let refreshTask: HttpDownloadTaskInfo | null = null;
   let refreshNewUrl = '';
@@ -1308,22 +1309,16 @@
                       <span>Pause</span>
                     </button>
                   {:else if t.status === 'paused'}
-                    {#if t.direction === 'outgoing'}
-                      <button
-                        type="button"
-                        on:click={() => handleResume(t.id)}
-                        disabled={resumingId === t.id}
-                        class="text-xs text-emerald-300 hover:text-emerald-200 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 px-3 py-1 rounded-xl flex items-center gap-1 transition disabled:opacity-50"
-                        title="Resume transfer from the last byte"
-                      >
-                        <Play class="w-3.5 h-3.5" />
-                        <span>{resumingId === t.id ? 'Reconnecting...' : 'Resume'}</span>
-                      </button>
-                    {:else}
-                      <span class="text-[10px] text-amber-300/90 font-mono bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
-                        Waiting for sender...
-                      </span>
-                    {/if}
+                    <button
+                      type="button"
+                      on:click={() => handleResume(t.id)}
+                      disabled={resumingId === t.id}
+                      class="text-xs text-emerald-300 hover:text-emerald-200 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 px-3 py-1 rounded-xl flex items-center gap-1 transition disabled:opacity-50"
+                      title="Resume transfer from the last byte"
+                    >
+                      <Play class="w-3.5 h-3.5" />
+                      <span>{resumingId === t.id ? 'Reconnecting...' : 'Resume'}</span>
+                    </button>
                   {/if}
 
                   <button
@@ -1590,18 +1585,35 @@
                       </button>
                     {/if}
                   {:else if h.status === 'failed'}
-                    <span class="flex items-center gap-1 text-[11px] text-rose-400 font-semibold bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">
+                    <button
+                      type="button"
+                      on:click={() => (selectedStatusDetail = h)}
+                      class="flex items-center gap-1 text-[11px] text-rose-400 hover:text-rose-300 font-semibold bg-rose-500/10 hover:bg-rose-500/20 px-2.5 py-0.5 rounded-full border border-rose-500/25 hover:border-rose-400/50 transition cursor-pointer"
+                      title="Click to view failure reason"
+                    >
                       <XCircle class="w-3.5 h-3.5" />
-                      Failed
-                    </span>
+                      <span>Failed</span>
+                    </button>
                   {:else if h.status === 'cancelled'}
-                    <span class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
-                      Cancelled
-                    </span>
+                    <button
+                      type="button"
+                      on:click={() => (selectedStatusDetail = h)}
+                      class="flex items-center gap-1 text-[11px] text-slate-300 hover:text-white font-semibold bg-slate-800 hover:bg-slate-700 px-2.5 py-0.5 rounded-full border border-slate-700 hover:border-slate-500 transition cursor-pointer"
+                      title="Click to view cancellation reason"
+                    >
+                      <AlertTriangle class="w-3 h-3 text-slate-400" />
+                      <span>Cancelled</span>
+                    </button>
                   {:else if h.status === 'rejected'}
-                    <span class="flex items-center gap-1 text-[11px] text-amber-300 font-semibold bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
-                      Rejected
-                    </span>
+                    <button
+                      type="button"
+                      on:click={() => (selectedStatusDetail = h)}
+                      class="flex items-center gap-1 text-[11px] text-amber-300 hover:text-amber-200 font-semibold bg-amber-500/10 hover:bg-amber-500/20 px-2.5 py-0.5 rounded-full border border-amber-500/30 hover:border-amber-400/50 transition cursor-pointer"
+                      title="Click to view rejection reason"
+                    >
+                      <AlertTriangle class="w-3 h-3" />
+                      <span>Rejected</span>
+                    </button>
                   {:else if h.status === 'paused'}
                     <span class="flex items-center gap-1 text-[11px] text-sky-300 font-semibold bg-sky-500/10 px-2 py-0.5 rounded-full border border-sky-500/30">
                       Paused
@@ -2082,6 +2094,107 @@
             type="button"
             on:click={closeHashModal}
             class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Transfer Failure / Cancellation Reason Detail Modal -->
+  {#if selectedStatusDetail}
+    {@const detailFiles = parseFilePaths(selectedStatusDetail.source_paths)}
+    {@const detailName = detailFiles[0] ? getBaseName(detailFiles[0]) : (selectedStatusDetail.target_path ? getBaseName(selectedStatusDetail.target_path) : 'File Package')}
+    {@const detailPct = selectedStatusDetail.total_bytes > 0
+      ? Math.min(100, Math.round((selectedStatusDetail.transferred_bytes / selectedStatusDetail.total_bytes) * 100))
+      : 0}
+    {@const isFailed = selectedStatusDetail.status === 'failed'}
+    {@const isRejected = selectedStatusDetail.status === 'rejected'}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div
+      class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+      on:click|self={() => (selectedStatusDetail = null)}
+    >
+      <div
+        class="w-full max-w-md bg-slate-900 border {isFailed
+          ? 'border-rose-500/40'
+          : isRejected
+            ? 'border-amber-500/40'
+            : 'border-slate-700'} rounded-2xl p-5 shadow-2xl space-y-4"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div
+              class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 {isFailed
+                ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                : isRejected
+                  ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                  : 'bg-slate-800 text-slate-300 border border-slate-700'}"
+            >
+              {#if isFailed}
+                <XCircle class="w-5 h-5" />
+              {:else}
+                <AlertTriangle class="w-5 h-5" />
+              {/if}
+            </div>
+            <div>
+              <h3 class="text-sm font-bold text-white">
+                {isFailed
+                  ? 'Transfer Failed'
+                  : isRejected
+                    ? 'Transfer Rejected'
+                    : 'Transfer Cancelled'}
+              </h3>
+              <p class="text-[11px] text-slate-400">
+                {selectedStatusDetail.direction === 'outgoing' ? 'Sent to' : 'Received from'}
+                <span class="text-slate-200 font-semibold">{selectedStatusDetail.peer_alias}</span>
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            on:click={() => (selectedStatusDetail = null)}
+            class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+
+        <div class="p-3 rounded-xl bg-slate-950/90 border border-slate-800 space-y-1.5 text-xs">
+          <div class="font-semibold text-white truncate" title={detailName}>{detailName}</div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400">
+            <span>Progress: {formatBytes(selectedStatusDetail.transferred_bytes)} / {formatBytes(selectedStatusDetail.total_bytes)} ({detailPct}%)</span>
+            <span class="uppercase font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
+              {selectedStatusDetail.network_route === 'lan_direct' ? 'LAN' : 'WAN P2P'}
+            </span>
+          </div>
+        </div>
+
+        <div
+          class="p-3.5 rounded-xl border text-xs leading-relaxed {isFailed
+            ? 'bg-rose-500/10 border-rose-500/25 text-rose-200'
+            : isRejected
+              ? 'bg-amber-500/10 border-amber-500/25 text-amber-200'
+              : 'bg-slate-800/70 border-slate-700 text-slate-200'}"
+        >
+          <div class="text-[10px] uppercase tracking-wider font-bold mb-1 opacity-75">Reason</div>
+          <p class="break-words">
+            {selectedStatusDetail.error_reason ||
+              (isFailed
+                ? 'Transfer failed due to a connection interruption, timeout, or relay/size limit.'
+                : isRejected
+                  ? 'The transfer request was declined by the receiver.'
+                  : 'Transfer was cancelled before completion.')}
+          </p>
+        </div>
+
+        <div class="flex justify-end">
+          <button
+            type="button"
+            on:click={() => (selectedStatusDetail = null)}
+            class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white border border-slate-700 transition cursor-pointer"
           >
             Close
           </button>

@@ -566,6 +566,35 @@ pub fn list_monitor_resolutions(monitor_index: i32) -> Vec<(u32, u32)> {
     }
 }
 
+/// Upgrades legacy 800x600 virtual display defaults to 1366x768 once per session on Windows
+pub fn ensure_default_secondary_resolution() {
+    #[cfg(target_os = "windows")]
+    {
+        static APPLIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if APPLIED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        let monitors = list_monitors();
+        if monitors.len() <= 1 {
+            return;
+        }
+        for mon in &monitors {
+            if !mon.is_primary && mon.width <= 800 && mon.height <= 600 {
+                let idx = mon.index as i32;
+                let modes = list_monitor_resolutions(idx);
+                let target = modes
+                    .iter()
+                    .find(|&&(w, h)| w == 1366 && h == 768)
+                    .or_else(|| modes.iter().find(|&&(w, h)| w == 1360 && h == 768))
+                    .copied();
+                if let Some((tw, th)) = target {
+                    let _ = set_monitor_resolution(idx, tw, th);
+                }
+            }
+        }
+    }
+}
+
 /// Changes resolution `(width, height)` for a given monitor index
 pub fn set_monitor_resolution(monitor_index: i32, width: u32, height: u32) -> Result<(), String> {
     #[cfg(target_os = "windows")]

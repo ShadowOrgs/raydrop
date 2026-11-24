@@ -486,6 +486,32 @@ pub async fn resume_transfer(
     resume_peer_transfer(app, state.inner().clone(), session_id).await
 }
 
+pub(crate) fn send_transfer_control(
+    state: &Arc<AppState>,
+    session_id: &str,
+    peer_device_id: &str,
+    control_type: &str,
+    reason: Option<&str>,
+) {
+    if let Some(tx) = state.signaling_tx.lock().unwrap().as_ref() {
+        let payload = serde_json::json!({
+            "control_type": control_type,
+            "session_id": session_id,
+            "reason": reason,
+        })
+        .to_string();
+        let msg = serde_json::json!({
+            "type": "RELAY_CONTROL",
+            "session_id": format!("transfer_ctl:{}", session_id),
+            "from_device_id": state.identity.device_id,
+            "target_device_id": peer_device_id,
+            "payload_json": hex::encode(payload.as_bytes())
+        })
+        .to_string();
+        let _ = tx.send(msg);
+    }
+}
+
 #[tauri::command]
 pub fn pause_transfer(
     app: AppHandle,
@@ -501,9 +527,11 @@ pub fn pause_transfer(
         flag.store(true, Ordering::Relaxed);
     }
     if let Ok(Some(mut rec)) = state.db.get_transfer(&session_id) {
+        let peer_id = rec.peer_device_id.clone();
         rec.status = "paused".to_string();
         let _ = state.db.upsert_transfer(&rec);
         let _ = app.emit("transfer_state_changed", &rec);
+        send_transfer_control(state.inner(), &session_id, &peer_id, "TRANSFER_PAUSE", None);
     }
     Ok(())
 }
@@ -544,9 +572,23 @@ pub fn cancel_transfer(
         flag.store(true, Ordering::Relaxed);
     }
     if let Ok(Some(mut rec)) = state.db.get_transfer(&session_id) {
+        let peer_id = rec.peer_device_id.clone();
+        let peer_reason = if rec.direction == "outgoing" {
+            "Cancelled by sender"
+        } else {
+            "Cancelled by receiver"
+        };
         rec.status = "cancelled".to_string();
+        rec.error_reason = Some("Cancelled by you on this device".to_string());
         let _ = state.db.upsert_transfer(&rec);
         let _ = app.emit("transfer_state_changed", &rec);
+        send_transfer_control(
+            state.inner(),
+            &session_id,
+            &peer_id,
+            "TRANSFER_CANCEL",
+            Some(peer_reason),
+        );
     }
     Ok(())
 }
@@ -3675,6 +3717,7 @@ pub async fn set_host_cursor_hidden(hidden: bool) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn get_host_monitors() -> Result<Vec<crate::remote_input::MonitorInfo>, String> {
+    crate::remote_input::ensure_default_secondary_resolution();
     Ok(crate::remote_input::list_monitors())
 }
 

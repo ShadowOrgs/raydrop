@@ -496,6 +496,7 @@ pub fn run() {
                                         serde_json::to_string(&vec![&task.save_path])
                                             .unwrap_or_default(),
                                     ),
+                                    error_reason: None,
                                     created_at: crate::db::storage::now_unix_secs(),
                                 };
                                 let _ = state_for_http.db.upsert_transfer(&rec);

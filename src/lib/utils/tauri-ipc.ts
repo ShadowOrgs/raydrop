@@ -237,6 +237,7 @@ export interface TransferRecord {
   status: 'in_progress' | 'paused' | 'completed' | 'cancelled' | 'failed' | 'rejected';
   target_path: string | null;
   source_paths?: string | null;
+  error_reason?: string | null;
   created_at: number;
   speed_mbps?: number;
   eta_seconds?: number;

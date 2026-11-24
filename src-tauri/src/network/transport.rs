@@ -27,7 +27,7 @@ const HEADER_LEN: usize = 36;
 const MAGIC_BYTES: &[u8; 4] = b"RAYD";
 const PARALLEL_WORKERS: usize = 6; // IDM-style 6 parallel chunk workers for large files
 const PARALLEL_THRESHOLD_BYTES: u64 = 4 * 1024 * 1024; // 4 MB threshold for parallel multi-segment streaming
-pub const MAX_RELAY_TRANSFER_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GB safety guard for VPS bandwidth
+pub const MAX_RELAY_TRANSFER_BYTES: u64 = 10 * 1024 * 1024 * 1024; // 10 GB safety guard for VPS bandwidth
 
 pub fn notify_os(app: &AppHandle, title: &str, body: &str) {
     let _ = app.notification().builder()
@@ -1134,6 +1134,7 @@ where
             status: "rejected".to_string(),
             target_path: None,
             source_paths: None,
+            error_reason: Some("Transfer request declined by you on this device".to_string()),
             created_at: now_unix_secs(),
         };
         let _ = state.db.upsert_transfer(&record);
@@ -1263,6 +1264,7 @@ where
                     status: "failed".to_string(),
                     target_path: None,
                     source_paths: None,
+                    error_reason: Some(err_msg.clone()),
                     created_at: now_unix_secs(),
                 };
                 let _ = state.db.upsert_transfer(&record);
@@ -1307,6 +1309,7 @@ where
             status: "completed".to_string(),
             target_path: Some(target_root.to_string_lossy().to_string()),
             source_paths: serde_json::to_string(&downloaded_file_paths).ok(),
+            error_reason: None,
             created_at: now_unix_secs(),
         };
         let _ = state.db.upsert_transfer(&record);
@@ -1359,6 +1362,7 @@ where
         status: "in_progress".to_string(),
         target_path: Some(target_root.to_string_lossy().to_string()),
         source_paths: serde_json::to_string(&downloaded_file_paths).ok(),
+        error_reason: None,
         created_at: now_unix_secs(),
     };
     let _ = state.db.upsert_transfer(&record);
@@ -1399,7 +1403,21 @@ where
             for (_, mut h) in open_handles.drain() {
                 let _ = h.flush().await;
             }
-            record.status = "paused".to_string();
+            let db_status = state
+                .db
+                .get_transfer(&record.id)
+                .ok()
+                .flatten()
+                .map(|r| r.status)
+                .unwrap_or_else(|| "paused".to_string());
+            if db_status == "cancelled" {
+                for (_, (part_path, _, _)) in file_map.drain() {
+                    let _ = tokio::fs::remove_file(&part_path).await;
+                }
+                record.status = "cancelled".to_string();
+            } else {
+                record.status = "paused".to_string();
+            }
             let _ = state.db.upsert_transfer(&record);
             let _ = app.emit("transfer_state_changed", &record);
             return Err(format!("Stream disconnected (saved .raypart for resume): {e}"));
@@ -1425,7 +1443,21 @@ where
             for (_, mut h) in open_handles.drain() {
                 let _ = h.flush().await;
             }
-            record.status = "paused".to_string();
+            let db_status = state
+                .db
+                .get_transfer(&record.id)
+                .ok()
+                .flatten()
+                .map(|r| r.status)
+                .unwrap_or_else(|| "paused".to_string());
+            if db_status == "cancelled" {
+                for (_, (part_path, _, _)) in file_map.drain() {
+                    let _ = tokio::fs::remove_file(&part_path).await;
+                }
+                record.status = "cancelled".to_string();
+            } else {
+                record.status = "paused".to_string();
+            }
             let _ = state.db.upsert_transfer(&record);
             let _ = app.emit("transfer_state_changed", &record);
             return Err(format!("Stream disconnected mid-chunk (saved .raypart for resume): {e}"));
@@ -1434,9 +1466,28 @@ where
         let plaintext = decrypt_chunk(&session_key, file_id, offset, &header, &ciphertext)?;
 
         if file_id == 0 {
-            // Control Frame: FILE_COMPLETE
-            let complete: FileCompleteFrame =
+            // Control Frame: FILE_COMPLETE or TRANSFER_CANCEL
+            let ctrl_val: serde_json::Value =
                 serde_json::from_slice(&plaintext).map_err(|e| e.to_string())?;
+            let frame_type = ctrl_val
+                .get("frame_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if frame_type == "TRANSFER_CANCEL" {
+                for (_, mut h) in open_handles.drain() {
+                    let _ = h.flush().await;
+                }
+                for (_, (part_path, _, _)) in file_map.drain() {
+                    let _ = tokio::fs::remove_file(&part_path).await;
+                }
+                record.status = "cancelled".to_string();
+                record.error_reason = Some("Cancelled by sender".to_string());
+                let _ = state.db.upsert_transfer(&record);
+                let _ = app.emit("transfer_state_changed", &record);
+                return Err("Transfer cancelled by sender".to_string());
+            }
+            let complete: FileCompleteFrame =
+                serde_json::from_value(ctrl_val).map_err(|e| e.to_string())?;
             if complete.frame_type == "FILE_COMPLETE" {
                 if let Some(mut handle) = open_handles.remove(&complete.file_id) {
                     let _ = handle.flush().await;
@@ -1446,13 +1497,15 @@ where
                 if let Some((part_path, final_path, _)) = file_map.remove(&complete.file_id) {
                     let computed_hash = compute_file_blake3(&part_path).await?;
                     if computed_hash != complete.blake3_hash {
-                        record.status = "failed".to_string();
-                        let _ = state.db.upsert_transfer(&record);
-                        let _ = app.emit("transfer_state_changed", &record);
-                        return Err(format!(
+                        let mismatch_err = format!(
                             "BLAKE3 integrity mismatch on file_id {}: expected {}, got {}",
                             complete.file_id, complete.blake3_hash, computed_hash
-                        ));
+                        );
+                        record.status = "failed".to_string();
+                        record.error_reason = Some(mismatch_err.clone());
+                        let _ = state.db.upsert_transfer(&record);
+                        let _ = app.emit("transfer_state_changed", &record);
+                        return Err(mismatch_err);
                     }
                     if final_path.exists() {
                         let _ = tokio::fs::remove_file(&final_path).await;
@@ -1836,6 +1889,16 @@ pub async fn resume_peer_transfer(
         .db
         .get_transfer(&session_id)?
         .ok_or_else(|| format!("Transfer session {session_id} not found"))?;
+    if existing.direction == "incoming" {
+        crate::commands::send_transfer_control(
+            &state,
+            &session_id,
+            &existing.peer_device_id,
+            "TRANSFER_RESUME",
+            None,
+        );
+        return Ok(session_id);
+    }
     let source_json = existing
         .source_paths
         .ok_or_else(|| "This transfer does not have local source paths to resume".to_string())?;
@@ -1921,6 +1984,7 @@ async fn start_or_resume_transfer(
         status: "in_progress".to_string(),
         target_path: None,
         source_paths: source_paths_json.clone(),
+        error_reason: None,
         created_at: now_unix_secs(),
     };
     let _ = state.db.upsert_transfer(&initial_record);
@@ -1987,11 +2051,26 @@ async fn start_or_resume_transfer(
                         "Outgoing transfer {sid_c} interrupted (attempt {attempt}/{max_attempts}): {e}"
                     );
 
+                    if let Ok(Some(rec)) = state_c.db.get_transfer(&sid_c) {
+                        if rec.status == "cancelled" {
+                            return;
+                        }
+                    }
+
                     if is_permanent_error || attempt >= max_attempts {
                         if let Ok(Some(mut rec)) = state_c.db.get_transfer(&sid_c) {
+                            let peer_id = rec.peer_device_id.clone();
                             rec.status = "failed".to_string();
+                            rec.error_reason = Some(e.clone());
                             let _ = state_c.db.upsert_transfer(&rec);
                             let _ = app_c.emit("transfer_state_changed", &rec);
+                            crate::commands::send_transfer_control(
+                                &state_c,
+                                &sid_c,
+                                &peer_id,
+                                "TRANSFER_FAILED",
+                                Some(&e),
+                            );
                         }
                         break;
                     }
@@ -2200,7 +2279,7 @@ async fn run_outgoing_session(
     // frames over the active WSS Signaling tunnel (`RELAY_CONTROL`) when direct sockets are blocked by NAT/Firewall
     if total_bytes > MAX_RELAY_TRANSFER_BYTES {
         let err_msg = format!(
-            "Direct P2P socket was blocked by symmetric NAT/firewall. Transfer size ({}) exceeds the 2 GB relay guard to preserve server bandwidth. Connect both devices to the same Wi-Fi/LAN or use Tailscale for unlimited file sizes.",
+            "Direct P2P socket was blocked by symmetric NAT/firewall. Transfer size ({}) exceeds the 10 GB relay guard to preserve server bandwidth. Connect both devices to the same Wi-Fi/LAN or use Tailscale for unlimited file sizes.",
             format_bytes_human(total_bytes)
         );
         warn!("{err_msg}");
@@ -2314,6 +2393,7 @@ where
             status: "rejected".to_string(),
             target_path: None,
             source_paths: source_paths_json,
+            error_reason: Some(format!("{} declined the incoming transfer request.", contact.alias_name)),
             created_at: now_unix_secs(),
         };
         let _ = state.db.upsert_transfer(&rejected_record);
@@ -2344,6 +2424,7 @@ where
         status: "in_progress".to_string(),
         target_path: None,
         source_paths: source_paths_json,
+        error_reason: None,
         created_at: now_unix_secs(),
     };
     let _ = state.db.upsert_transfer(&record);
@@ -2546,6 +2627,34 @@ where
 
                 while let Some(frame_res) = frame_rx.recv().await {
                     if cancel_s.load(Ordering::Relaxed) {
+                        let is_cancelled = state_s
+                            .db
+                            .get_transfer(&base_rec_s.id)
+                            .ok()
+                            .flatten()
+                            .map(|r| r.status == "cancelled")
+                            .unwrap_or(false);
+                        if is_cancelled {
+                            let cancel_bytes = serde_json::json!({
+                                "frame_type": "TRANSFER_CANCEL",
+                                "session_id": base_rec_s.id
+                            })
+                            .to_string()
+                            .into_bytes();
+                            let ctrl_cipher_len = (cancel_bytes.len() + 16) as u32;
+                            let ctrl_offset = u64::MAX;
+                            let mut ctrl_header = [0u8; HEADER_LEN];
+                            ctrl_header[0..4].copy_from_slice(MAGIC_BYTES);
+                            ctrl_header[4..20].copy_from_slice(&session_id_bytes);
+                            ctrl_header[20..24].copy_from_slice(&0u32.to_be_bytes());
+                            ctrl_header[24..32].copy_from_slice(&ctrl_offset.to_be_bytes());
+                            ctrl_header[32..36].copy_from_slice(&ctrl_cipher_len.to_be_bytes());
+                            if let Ok(ct) = encrypt_chunk(&session_key, 0, ctrl_offset, &ctrl_header, &cancel_bytes) {
+                                let _ = writer.write_all(&ctrl_header).await;
+                                let _ = writer.write_all(&ct).await;
+                                let _ = writer.flush().await;
+                            }
+                        }
                         let _ = stop_tx.try_send(());
                         return Err("Outgoing transfer paused/cancelled".to_string());
                     }

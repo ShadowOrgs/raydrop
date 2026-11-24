@@ -1892,6 +1892,9 @@
               inputmode="numeric"
               autofocus
               bind:value={inputPin}
+              on:input={() => {
+                if ($remoteErrorMessage) remoteErrorMessage.set(null);
+              }}
               on:keydown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -1918,6 +1921,13 @@
                   ? "Verifying PIN & authenticating..."
                   : "Connecting WebRTC stream..."}
               </span>
+            </div>
+          {:else if $remoteErrorMessage}
+            <div
+              class="p-2.5 rounded-xl bg-rose-950/70 border border-rose-500/40 flex items-start gap-2 text-rose-200 text-xs"
+            >
+              <AlertCircle class="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <span class="leading-relaxed">{$remoteErrorMessage}</span>
             </div>
           {/if}
 
