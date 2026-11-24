@@ -135,6 +135,7 @@
   let secondScreenResolutions: [number, number][] = [];
   let selectedResolutionKey = "";
   let isChangingResolution = false;
+  let autoAppliedSecondaryRes = false;
   let extendPlatformInfo: {
     platform: string;
     session_type: string;
@@ -531,7 +532,32 @@
         if (secondary) {
           selectedSecondScreenMonitorIdx = secondary.index;
           await raydropApi.setHostTargetMonitor(secondary.index).catch(() => {});
+          await loadResolutionsForMonitor(secondary.index);
+
+          // Automatically upgrade tiny default virtual display resolutions (e.g. 800x600 / 1024x768) to 1366x768
+          if (!autoAppliedSecondaryRes && secondary.width < 1366) {
+            autoAppliedSecondaryRes = true;
+            const preferred =
+              secondScreenResolutions.find(([w, h]) => w === 1366 && h === 768) ||
+              secondScreenResolutions.find(([w, h]) => w === 1360 && h === 768) ||
+              (secondary.width < 1280
+                ? secondScreenResolutions.find(([w, h]) => w === 1280 && h === 720)
+                : undefined);
+            if (preferred) {
+              const [pw, ph] = preferred;
+              await raydropApi
+                .setMonitorResolution(secondary.index, pw, ph)
+                .then(async () => {
+                  secondScreenMonitors = await raydropApi.getHostMonitors();
+                  selectedResolutionKey = `${pw}x${ph}`;
+                })
+                .catch(() => {});
+            }
+          }
+          return;
         }
+      } else {
+        autoAppliedSecondaryRes = false;
       }
       await loadResolutionsForMonitor(selectedSecondScreenMonitorIdx);
     } catch (_) {}
@@ -575,7 +601,7 @@
     isEnablingLinuxVdd = true;
     linuxVddNote = "";
     try {
-      await raydropApi.enableLinuxVirtualDisplay(1280, 720);
+      await raydropApi.enableLinuxVirtualDisplay(1366, 768);
       await refreshSecondScreenMonitors();
     } catch (err: any) {
       linuxVddNote = err?.message || String(err);
@@ -618,7 +644,7 @@
         secondScreenMonitors.length <= 1
       ) {
         try {
-          await raydropApi.enableLinuxVirtualDisplay(1280, 720);
+          await raydropApi.enableLinuxVirtualDisplay(1366, 768);
           await refreshSecondScreenMonitors();
         } catch (err: any) {
           linuxVddNote = err?.message || String(err);
@@ -992,6 +1018,71 @@
       }}
       on:drop|preventDefault
     >
+      <!-- Sleek Multi-Monitor Top Tab Bar (shown when host has multiple displays) -->
+      {#if $remoteHostMonitors.length > 1}
+        <div
+          class="w-full bg-[#090d16] border-b border-slate-800/90 px-2 pt-1.5 flex items-end gap-1 overflow-x-auto shrink-0 z-40 select-none"
+        >
+          <!-- All Displays (Combined Virtual) Tab -->
+          <button
+            type="button"
+            on:click={() => switchRemoteMonitor(-1)}
+            class="group relative flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg text-xs font-medium transition-all cursor-pointer shrink-0 border border-b-0 {$activeMonitorIndex === -1
+              ? 'bg-[#171e2e] text-sky-400 border-slate-700/80 shadow-[0_-2px_10px_rgba(56,189,248,0.12)]'
+              : 'bg-transparent text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'}"
+            title="All Displays (Combined)"
+          >
+            <!-- Overlapping dual monitor icon -->
+            <svg
+              class="w-3.5 h-3.5 shrink-0 {$activeMonitorIndex === -1 ? 'text-sky-400' : 'text-slate-400 group-hover:text-slate-200'}"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="2" y="4" width="13" height="9" rx="1.5" />
+              <path d="M6 17h5" />
+              <path d="M8.5 13v4" />
+              <path d="M18 8h2.5A1.5 1.5 0 0 1 22 9.5v7A1.5 1.5 0 0 1 20.5 18h-9A1.5 1.5 0 0 1 10 16.5V16" />
+            </svg>
+            <span class="hidden sm:inline">All</span>
+          </button>
+
+          <!-- Individual Host Monitor Tabs -->
+          {#each $remoteHostMonitors as mon}
+            {@const isActive = $activeMonitorIndex === mon.index}
+            <button
+              type="button"
+              on:click={() => switchRemoteMonitor(mon.index)}
+              class="group relative flex items-center gap-2 px-3.5 py-1.5 rounded-t-lg text-xs font-semibold transition-all cursor-pointer shrink-0 border border-b-0 {isActive
+                ? 'bg-[#171e2e] text-sky-400 border-slate-700/80 shadow-[0_-2px_12px_rgba(56,189,248,0.14)]'
+                : 'bg-transparent text-slate-300 border-transparent hover:text-white hover:bg-slate-800/50'}"
+              title="{mon.name} ({mon.width}×{mon.height}){mon.is_primary ? ' • Primary' : ''}"
+            >
+              {#if isActive}
+                <span class="absolute top-0 left-3 right-3 h-[2px] rounded-full bg-sky-400/90"></span>
+              {/if}
+              <Monitor
+                class="w-3.5 h-3.5 shrink-0 {isActive
+                  ? 'text-sky-400'
+                  : 'text-slate-400 group-hover:text-slate-200'}"
+              />
+              <span class="max-w-[140px] truncate">{mon.name}</span>
+              <span
+                class="text-[10px] font-mono px-1.5 py-0.2 rounded {isActive
+                  ? 'bg-sky-500/15 text-sky-300'
+                  : 'bg-slate-800/80 text-slate-400'}"
+              >
+                {mon.width}×{mon.height}
+              </span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+
+      <div class="flex-1 w-full relative flex flex-col bg-black overflow-hidden">
       <!-- Tiny Top Arrow Trigger Handle (Click-to-expand, tiny footprint so it never blocks apps) -->
       <button
         type="button"
@@ -1264,6 +1355,7 @@
           class="{isSecondDisplayFill ? 'w-full h-full object-fill' : 'max-w-full max-h-full object-contain'} pointer-events-none select-none shadow-2xl"
         ></video>
         <AnnotationOverlay active={showAnnotation} on:close={() => (showAnnotation = false)} />
+      </div>
       </div>
 
       {#if isFullscreen && $isDraggingFiles}

@@ -1502,8 +1502,13 @@ where
                     (record.transferred_bytes + plaintext.len() as u64).min(record.total_bytes);
             }
 
-            // Send real-time RECEIVER_PROGRESS ACK at reasonable interval (every 120ms) to avoid flooding socket
-            if last_ack_sent.elapsed() >= Duration::from_millis(120) {
+            // Send real-time RECEIVER_PROGRESS ACK every 120ms or every 1 MB (and on first chunk)
+            // so the sender's sliding window never stalls even on fast bursts under 120ms
+            let unacked_chunk_bytes = record.transferred_bytes.saturating_sub(already_received_bytes);
+            if last_ack_sent.elapsed() >= Duration::from_millis(120)
+                || unacked_chunk_bytes <= plaintext.len() as u64
+                || unacked_chunk_bytes % (1024 * 1024) < plaintext.len() as u64
+            {
                 let _ = write_json_packet(
                     &mut writer,
                     &ReceiverProgressFrame {
@@ -2554,8 +2559,7 @@ where
                         8 * 1024 * 1024 // 8 MB sliding window for direct LAN
                     };
 
-                    while has_ack_s.load(Ordering::Relaxed)
-                        && local_sent_bytes > acked_s.load(Ordering::Relaxed) + max_in_flight
+                    while local_sent_bytes > acked_s.load(Ordering::Relaxed) + max_in_flight
                         && !closed_s.load(Ordering::Relaxed)
                         && !cancel_s.load(Ordering::Relaxed)
                     {

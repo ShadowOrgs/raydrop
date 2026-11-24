@@ -1707,10 +1707,16 @@ async fn handle_socket(socket: WebSocket, client_ip: String, state: ServerState)
                                 "payload_json": payload_json
                             })
                             .to_string();
-                            let target_tx = target.tx.clone();
-                            tokio::spawn(async move {
-                                let _ = tokio::time::timeout(std::time::Duration::from_secs(5), target_tx.send(msg_str)).await;
-                            });
+                            if let Err(tokio::sync::mpsc::error::TrySendError::Full(msg)) =
+                                target.tx.try_send(msg_str)
+                            {
+                                let target_tx = target.tx.clone();
+                                let _ = tokio::time::timeout(
+                                    std::time::Duration::from_secs(5),
+                                    target_tx.send(msg),
+                                )
+                                .await;
+                            }
                         }
                     }
                     SignalMessage::RegisterWebShare {

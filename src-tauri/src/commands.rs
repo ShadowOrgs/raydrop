@@ -3707,7 +3707,7 @@ pub async fn enable_linux_virtual_display(
     width: Option<u32>,
     height: Option<u32>,
 ) -> Result<crate::remote_input::MonitorInfo, String> {
-    crate::remote_input::enable_linux_virtual_display(width.unwrap_or(1280), height.unwrap_or(720))
+    crate::remote_input::enable_linux_virtual_display(width.unwrap_or(1366), height.unwrap_or(768))
 }
 
 #[tauri::command]
