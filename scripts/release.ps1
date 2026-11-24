@@ -91,9 +91,11 @@ if (Test-Path $readmePath) {
 $landingHtmlPath = "$repoRoot/landing/index.html"
 if (Test-Path $landingHtmlPath) {
     $landingContent = Read-Utf8 $landingHtmlPath
+    $landingContent = $landingContent -replace '"softwareVersion":\s*"[^"]+"', "`"softwareVersion`": `"$ver`""
+    $landingContent = $landingContent -replace '(id="(?:heroReleaseVer|msiVersion|dmgVersion|linuxVersion|apkVersion)"[^>]*>)\s*v[\d\.]+', "`${1}v$ver"
+    $landingContent = $landingContent -replace "let currentTag = 'v[\d\.]+';", "let currentTag = '$tag';"
     $landingContent = $landingContent -replace 'Raydrop_[\d\.]+_x64_en-US\.msi', "Raydrop_${ver}_x64_en-US.msi"
     $landingContent = $landingContent -replace 'download/v[\d\.]+/Raydrop', "download/$tag/Raydrop"
-    $landingContent = $landingContent -replace 'Raydrop v[\d\.]+ Released', "Raydrop $tag Released"
     Write-Utf8NoBom $landingHtmlPath $landingContent
 }
 
@@ -124,7 +126,7 @@ $headers = @{
     "User-Agent"    = "Raydrop-Release-Automation"
 }
 
-$repo = "asepindrak/raydrop"
+$repo = "ShadowOrgs/raydrop"
 
 # 5. Git Commit & Push Tag
 Write-Host "Committing project version sync..." -ForegroundColor Yellow
