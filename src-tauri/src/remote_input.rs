@@ -773,11 +773,51 @@ pub fn get_screen_size() -> (u32, u32) {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn move_cursor_in_bounds(ox: i32, oy: i32, screen_w: i32, screen_h: i32, norm_x: f32, norm_y: f32) {
+    crate::win_service::switch_to_active_input_desktop();
+    let target_x = ox + ((norm_x * screen_w as f32).round() as i32).clamp(0, screen_w - 1);
+    let target_y = oy + ((norm_y * screen_h as f32).round() as i32).clamp(0, screen_h - 1);
+    unsafe {
+        win_user32::SetCursorPos(target_x, target_y);
+    }
+}
+
+/// Moves cursor to normalized coordinates [0.0, 1.0] mapped strictly to a specific monitor index
+pub fn simulate_mouse_move_on_monitor(
+    monitor_index: i32,
+    norm_x: f32,
+    norm_y: f32,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let monitors = list_monitors();
+        let target_mon = if monitor_index >= 0 {
+            monitors.get(monitor_index as usize).or_else(|| monitors.first())
+        } else {
+            monitors.first()
+        };
+        let (ox, oy, screen_w, screen_h) = match target_mon {
+            Some(m) if m.width > 0 && m.height > 0 => (m.x, m.y, m.width, m.height),
+            _ => {
+                let (w, h) = get_screen_size();
+                (0, 0, w as i32, h as i32)
+            }
+        };
+        move_cursor_in_bounds(ox, oy, screen_w, screen_h, norm_x, norm_y);
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (monitor_index, norm_x, norm_y);
+        Err("Mouse movement simulation currently supported on Windows host".to_string())
+    }
+}
+
 /// Moves cursor to normalized coordinates [0.0, 1.0] mapped to active monitor bounds
 pub fn simulate_mouse_move(norm_x: f32, norm_y: f32) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        crate::win_service::switch_to_active_input_desktop();
         let active_bounds = TARGET_MONITOR_BOUNDS.lock().ok().and_then(|g| *g);
         let (ox, oy, screen_w, screen_h) = match active_bounds {
             Some((x, y, w, h)) if w > 0 && h > 0 => (x, y, w, h),
@@ -786,11 +826,7 @@ pub fn simulate_mouse_move(norm_x: f32, norm_y: f32) -> Result<(), String> {
                 (0, 0, w as i32, h as i32)
             }
         };
-        let target_x = ox + ((norm_x * screen_w as f32).round() as i32).clamp(0, screen_w - 1);
-        let target_y = oy + ((norm_y * screen_h as f32).round() as i32).clamp(0, screen_h - 1);
-        unsafe {
-            win_user32::SetCursorPos(target_x, target_y);
-        }
+        move_cursor_in_bounds(ox, oy, screen_w, screen_h, norm_x, norm_y);
         Ok(())
     }
     #[cfg(not(target_os = "windows"))]

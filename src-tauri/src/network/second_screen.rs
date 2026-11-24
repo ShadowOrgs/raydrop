@@ -107,6 +107,7 @@ pub async fn start_second_screen_server(
     );
 
     let token_clone = token.clone();
+    let monitor_idx_ref = second_screen.native_monitor_index.clone();
     tokio::spawn(async move {
         loop {
             if !active_flag.load(Ordering::Relaxed) {
@@ -127,6 +128,7 @@ pub async fn start_second_screen_server(
             let tok = token_clone.clone();
             let mut rx = frame_rx.clone();
             let flag = active_flag.clone();
+            let mon_idx_atomic = monitor_idx_ref.clone();
 
             tokio::spawn(async move {
                 let mut buf = [0u8; 8192];
@@ -216,13 +218,24 @@ pub async fn start_second_screen_server(
                     if let Some((_, body)) = req_str.split_once("\r\n\r\n") {
                         if let Ok(val) = serde_json::from_str::<serde_json::Value>(body.trim_matches('\0').trim()) {
                             let t = val.get("t").and_then(|v| v.as_str()).unwrap_or("");
+                            let mon_idx = mon_idx_atomic.load(Ordering::Relaxed);
                             match t {
                                 "mm" => {
                                     let x = val.get("x").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
                                     let y = val.get("y").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
-                                    let _ = crate::remote_input::simulate_mouse_move(x, y);
+                                    let _ = crate::remote_input::simulate_mouse_move_on_monitor(mon_idx, x, y);
                                 }
                                 "mc" => {
+                                    if let (Some(x), Some(y)) = (
+                                        val.get("x").and_then(|v| v.as_f64()),
+                                        val.get("y").and_then(|v| v.as_f64()),
+                                    ) {
+                                        let _ = crate::remote_input::simulate_mouse_move_on_monitor(
+                                            mon_idx,
+                                            x as f32,
+                                            y as f32,
+                                        );
+                                    }
                                     let b = val.get("b").and_then(|v| v.as_str()).unwrap_or("left");
                                     let a = val.get("a").and_then(|v| v.as_str()).unwrap_or("click");
                                     let _ = crate::remote_input::simulate_mouse_click(
@@ -461,8 +474,7 @@ fn build_viewer_html(token: &str) -> String {
     }}
     const c = normCoords(e.touches[0].clientX, e.touches[0].clientY);
     if (!c) return;
-    sendInput({{ t: "mm", x: c.x, y: c.y }});
-    sendInput({{ t: "mc", b: "left", a: "down" }});
+    sendInput({{ t: "mc", b: "left", a: "down", x: c.x, y: c.y }});
   }}, {{ passive: false }});
 
   wrap.addEventListener("touchmove", (e) => {{
@@ -497,8 +509,7 @@ fn build_viewer_html(token: &str) -> String {
     isMouseDown = true;
     const c = normCoords(e.clientX, e.clientY);
     if (!c) return;
-    sendInput({{ t: "mm", x: c.x, y: c.y }});
-    sendInput({{ t: "mc", b: mouseBtnName(e.button), a: "down" }});
+    sendInput({{ t: "mc", b: mouseBtnName(e.button), a: "down", x: c.x, y: c.y }});
   }});
 
   wrap.addEventListener("mousemove", (e) => {{
