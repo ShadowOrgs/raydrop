@@ -206,9 +206,9 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
             },
         };
 
-        // Scale to max 1280px width for crisp, zero-freeze WebView2 streaming
-        let scale = if src_w > 1280 {
-            1280.0 / src_w as f32
+        // Scale to max 1920px width for crisp 1080p/1366p text & UI clarity
+        let scale = if src_w > 1920 {
+            1920.0 / src_w as f32
         } else {
             1.0
         };
@@ -296,7 +296,7 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
                                 }
 
                                 jpeg_buf.clear();
-                                let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buf, 68);
+                                let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buf, 86);
                                 if encoder
                                     .encode(&rgb, dst_w as u32, dst_h as u32, ExtendedColorType::Rgb8)
                                     .is_ok()

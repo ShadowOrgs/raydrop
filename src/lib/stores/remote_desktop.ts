@@ -578,7 +578,7 @@ function boostSdpBitrate(sdp: string, kbps: number = 8000): string {
 
     if (inVideo && line.startsWith('a=fmtp:')) {
       if (!line.includes('x-google-min-bitrate')) {
-        result.push(`${line};x-google-min-bitrate=500;x-google-max-bitrate=${kbps};x-google-start-bitrate=2500`);
+        result.push(`${line};x-google-min-bitrate=2000;x-google-max-bitrate=${kbps};x-google-start-bitrate=6000`);
         continue;
       }
     }
@@ -621,8 +621,8 @@ async function setupHostPeerConnection(
     const params = sender.getParameters();
     (params as any).degradationPreference = 'maintain-resolution';
     if (params.encodings && params.encodings.length > 0) {
-      params.encodings[0].maxBitrate = 8_000_000;
-      params.encodings[0].minBitrate = 500_000;
+      params.encodings[0].maxBitrate = 15_000_000;
+      params.encodings[0].minBitrate = 2_000_000;
       params.encodings[0].maxFramerate = 60;
     }
     await sender.setParameters(params);
@@ -659,7 +659,7 @@ async function setupHostPeerConnection(
   const offer = await pc.createOffer();
   const boostedOffer = {
     type: offer.type,
-    sdp: boostSdpBitrate(offer.sdp || '', 8000),
+    sdp: boostSdpBitrate(offer.sdp || '', 15000),
   };
   await pc.setLocalDescription(boostedOffer);
 
