@@ -27,7 +27,7 @@ const HEADER_LEN: usize = 36;
 const MAGIC_BYTES: &[u8; 4] = b"RAYD";
 const PARALLEL_WORKERS: usize = 6; // IDM-style 6 parallel chunk workers for large files
 const PARALLEL_THRESHOLD_BYTES: u64 = 4 * 1024 * 1024; // 4 MB threshold for parallel multi-segment streaming
-pub const MAX_RELAY_TRANSFER_BYTES: u64 = 10 * 1024 * 1024 * 1024; // 10 GB safety guard for VPS bandwidth
+pub const MAX_RELAY_TRANSFER_BYTES: u64 = 100 * 1024 * 1024 * 1024; // 100 GB safety guard for VPS bandwidth
 
 pub fn notify_os(app: &AppHandle, title: &str, body: &str) {
     let _ = app.notification().builder()
@@ -2279,7 +2279,7 @@ async fn run_outgoing_session(
     // frames over the active WSS Signaling tunnel (`RELAY_CONTROL`) when direct sockets are blocked by NAT/Firewall
     if total_bytes > MAX_RELAY_TRANSFER_BYTES {
         let err_msg = format!(
-            "Direct P2P socket was blocked by symmetric NAT/firewall. Transfer size ({}) exceeds the 10 GB relay guard to preserve server bandwidth. Connect both devices to the same Wi-Fi/LAN or use Tailscale for unlimited file sizes.",
+            "Direct P2P socket was blocked by symmetric NAT/firewall. Transfer size ({}) exceeds the 100 GB relay guard to preserve server bandwidth. Connect both devices to the same Wi-Fi/LAN or use Tailscale for unlimited file sizes.",
             format_bytes_human(total_bytes)
         );
         warn!("{err_msg}");

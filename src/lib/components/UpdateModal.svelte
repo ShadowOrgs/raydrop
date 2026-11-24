@@ -53,6 +53,7 @@
         $updateInfo.asset_name,
       );
       updateStatusMessage.set(result);
+      updateDownloading.set(false);
     } catch (err: any) {
       console.error("Update failed:", err);
       updateErrorMessage.set(

@@ -51,6 +51,8 @@ export const remoteHostMonitors = writable<
 export const activeMonitorIndex = writable<number>(0);
 export const remoteAudioEnabled = writable<boolean>(true);
 export const remoteCursorShape = writable<string>('default');
+export const remoteSessionMode = writable<'desktop' | 'game'>('desktop');
+export const activeGamepadCount = writable<number>(0);
 
 let activePeerConnection: RTCPeerConnection | null = null;
 let activeDataChannel: RTCDataChannel | null = null;
@@ -261,6 +263,7 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
       nativeCanvasEl.height = 720;
       nativeCanvasCtx = nativeCanvasEl.getContext('2d', { alpha: false });
       if (nativeCanvasCtx) {
+        nativeCanvasCtx.imageSmoothingEnabled = false;
         nativeCanvasCtx.fillStyle = '#000000';
         nativeCanvasCtx.fillRect(0, 0, 1280, 720);
       }
@@ -325,10 +328,11 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
     return stream;
   }
 
+  const mode = get(remoteSessionMode);
   const requireNativeWinlogonCapture = await raydropApi.isSecureDesktopActive().catch(() => false);
   const isWindowsHost =
     typeof navigator !== 'undefined' && /Win/i.test(navigator.platform || navigator.userAgent);
-  if (requireNativeWinlogonCapture || isWindowsHost) {
+  if (requireNativeWinlogonCapture || (mode === 'desktop' && isWindowsHost)) {
     const nativeStream = await startNativeCanvasStream();
     if (nativeStream && nativeStream.getVideoTracks().length > 0) {
       const track = nativeStream.getVideoTracks()[0];
@@ -342,13 +346,13 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
     }
   }
 
-  // Try GPU-accelerated Browser displayMedia (zero-prompt on Windows via WebView2 flags)
+  // Try GPU-accelerated Browser displayMedia (60fps DXGI/WGC for Game Mode, or fallback)
   try {
     stream = await (navigator.mediaDevices as any).getDisplayMedia({
       video: {
         cursor: 'never', // Completely removes host OS cursor from video capture frames
         displaySurface: 'monitor',
-        frameRate: { ideal: 30, max: 30 },
+        frameRate: mode === 'game' ? { ideal: 60, max: 60 } : { ideal: 30, max: 30 },
         width: { ideal: 1920, max: 1920 },
         height: { ideal: 1080, max: 1080 },
       },
@@ -410,8 +414,8 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
   };
 
   if ('contentHint' in track) {
-    // Treat stream as detail/text to avoid video macroblocking & compression blur on app switches
-    (track as any).contentHint = 'detail';
+    // 'motion' preserves 60fps fluidity in Game Mode; 'detail' keeps crisp text in Desktop Mode
+    (track as any).contentHint = mode === 'game' ? 'motion' : 'detail';
   }
 
   track.onended = () => {
@@ -437,6 +441,9 @@ async function handleIncomingAuthRequest(
 ) {
   if (!isSettingsLoaded) {
     await loadRemoteDesktopSettings();
+  }
+  if (payload.mode === 'game' || payload.mode === 'desktop') {
+    remoteSessionMode.set(payload.mode);
   }
   const settings = get(remoteHostSettings);
   const myAlias = get(appSettings).alias_name || 'Raydrop Host';
@@ -589,7 +596,7 @@ function boostSdpBitrate(sdp: string, kbps: number = 8000): string {
 
     if (inVideo && line.startsWith('a=fmtp:')) {
       if (!line.includes('x-google-min-bitrate')) {
-        result.push(`${line};x-google-min-bitrate=2000;x-google-max-bitrate=${kbps};x-google-start-bitrate=6000`);
+        result.push(`${line};x-google-min-bitrate=4000;x-google-max-bitrate=${kbps};x-google-start-bitrate=10000`);
         continue;
       }
     }
@@ -627,13 +634,15 @@ async function setupHostPeerConnection(
     pc.addTrack(audioTrack, stream);
   }
 
-  // Set degradationPreference to maintain resolution with adaptive 500k-8M bitrate
+  // Set degradationPreference: maintain-framerate for Game Mode, maintain-resolution for Desktop Mode
+  const isGame = get(remoteSessionMode) === 'game';
+  const targetMaxKbps = isGame ? 35_000 : 20_000;
   try {
     const params = sender.getParameters();
-    (params as any).degradationPreference = 'maintain-resolution';
+    (params as any).degradationPreference = isGame ? 'maintain-framerate' : 'maintain-resolution';
     if (params.encodings && params.encodings.length > 0) {
-      params.encodings[0].maxBitrate = 15_000_000;
-      params.encodings[0].minBitrate = 2_000_000;
+      params.encodings[0].maxBitrate = targetMaxKbps * 1000;
+      params.encodings[0].minBitrate = isGame ? 5_000_000 : 4_000_000;
       params.encodings[0].maxFramerate = 60;
     }
     await sender.setParameters(params);
@@ -670,7 +679,7 @@ async function setupHostPeerConnection(
   const offer = await pc.createOffer();
   const boostedOffer = {
     type: offer.type,
-    sdp: boostSdpBitrate(offer.sdp || '', 15000),
+    sdp: boostSdpBitrate(offer.sdp || '', targetMaxKbps),
   };
   await pc.setLocalDescription(boostedOffer);
 
@@ -864,9 +873,56 @@ function setupHostDataChannel(dc: RTCDataChannel) {
       const data = JSON.parse(event.data);
       if (!data || !data.t) return;
 
-      // Mouse Move
+      // Mouse Move (Absolute)
       if (data.t === 'mm') {
         raydropApi.simulateRemoteMouseMove(data.x, data.y).catch(() => { });
+        return;
+      }
+
+      // Mouse Move (Relative delta for Game Mode FPS/3D Pointer Lock)
+      if (data.t === 'mm_rel') {
+        raydropApi.simulateRemoteMouseMoveRelative(Math.round(data.dx || 0), Math.round(data.dy || 0)).catch(() => { });
+        return;
+      }
+
+      // Gamepad / Joystick input (Game Mode)
+      if (data.t === 'gp') {
+        raydropApi
+          .simulateRemoteGamepad(
+            data.b || 0,
+            data.lx || 0,
+            data.ly || 0,
+            data.rx || 0,
+            data.ry || 0,
+            data.lt || 0,
+            data.rt || 0
+          )
+          .catch(() => { });
+        return;
+      }
+
+      // Dynamic Mode Switch (Desktop <-> Game)
+      if (data.t === 'set_mode' && (data.mode === 'desktop' || data.mode === 'game')) {
+        remoteSessionMode.set(data.mode);
+        const isGameNow = data.mode === 'game';
+        if (activeVideoSender) {
+          try {
+            const p = activeVideoSender.getParameters();
+            (p as any).degradationPreference = isGameNow ? 'maintain-framerate' : 'maintain-resolution';
+            if (p.encodings && p.encodings.length > 0) {
+              p.encodings[0].maxBitrate = isGameNow ? 35_000_000 : 20_000_000;
+              p.encodings[0].minBitrate = isGameNow ? 5_000_000 : 4_000_000;
+            }
+            await activeVideoSender.setParameters(p);
+          } catch (_) { }
+          // Re-acquire stream for the new mode (e.g. DXGI 60fps for Game Mode, Native GDI for Desktop Mode)
+          stopHostScreenCapture();
+          const newStream = await acquireHostScreenStream();
+          const newTrack = newStream?.getVideoTracks()[0];
+          if (newTrack && activeVideoSender) {
+            await activeVideoSender.replaceTrack(newTrack).catch(() => { });
+          }
+        }
         return;
       }
 
@@ -1006,13 +1062,14 @@ export async function connectToRemoteHost(targetDeviceId: string, pin: string) {
     }
   }, timeoutMs);
 
-  // Send authentication request with PIN
+  // Send authentication request with PIN & preferred session mode
   const authPayload = {
     type: 'remote_request_auth',
     sessionId,
     fromDeviceId: myDeviceId,
     fromAlias: myAlias,
     pin: pin.trim(),
+    mode: get(remoteSessionMode),
   };
   sendRemoteSignal(targetDeviceId, sessionId, authPayload);
 
@@ -1237,6 +1294,10 @@ function setupClientDataChannel(dc: RTCDataChannel) {
     stopClientClipboardSync = clientClipSync.stop;
     triggerClientClipboardCheck = clientClipSync.checkNow;
     (dc as any)._clientClipSync = clientClipSync;
+
+    if (get(remoteSessionMode) === 'game') {
+      startClientGamepadPolling();
+    }
   };
 
   dc.onmessage = async (event) => {
@@ -1348,6 +1409,70 @@ export function sendShortcutToHost(shortcut: string) {
   });
 }
 
+let gamepadRafId: number | null = null;
+let lastGamepadSig = '';
+
+function stopClientGamepadPolling() {
+  if (gamepadRafId !== null) {
+    cancelAnimationFrame(gamepadRafId);
+    gamepadRafId = null;
+  }
+  lastGamepadSig = '';
+  activeGamepadCount.set(0);
+}
+
+function startClientGamepadPolling() {
+  stopClientGamepadPolling();
+  const poll = () => {
+    const sess = get(activeRemoteSession);
+    if (!sess?.isClient || get(remoteSessionMode) !== 'game') {
+      stopClientGamepadPolling();
+      return;
+    }
+    const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) as Gamepad[] : [];
+    activeGamepadCount.set(pads.length);
+    if (pads.length > 0 && activeDataChannel && activeDataChannel.readyState === 'open') {
+      const pad = pads[0];
+      let b = 0;
+      for (let i = 0; i < Math.min(pad.buttons.length, 18); i++) {
+        if (pad.buttons[i]?.pressed) b |= 1 << i;
+      }
+      const lx = Number((pad.axes[0] || 0).toFixed(2));
+      const ly = Number((pad.axes[1] || 0).toFixed(2));
+      const rx = Number((pad.axes[2] || 0).toFixed(2));
+      const ry = Number((pad.axes[3] || 0).toFixed(2));
+      const lt = Number((pad.buttons[6]?.value || 0).toFixed(2));
+      const rt = Number((pad.buttons[7]?.value || 0).toFixed(2));
+      const sig = `${b}:${lx}:${ly}:${rx}:${ry}:${lt}:${rt}`;
+      const stickMoving = Math.abs(rx) > 0.16 || Math.abs(ry) > 0.16;
+      if (sig !== lastGamepadSig || stickMoving) {
+        lastGamepadSig = sig;
+        try {
+          activeDataChannel.send(JSON.stringify({ t: 'gp', b, lx, ly, rx, ry, lt, rt }));
+        } catch (_) { }
+      }
+    }
+    gamepadRafId = requestAnimationFrame(poll);
+  };
+  gamepadRafId = requestAnimationFrame(poll);
+}
+
+export function setRemoteSessionMode(mode: 'desktop' | 'game') {
+  remoteSessionMode.set(mode);
+  const sess = get(activeRemoteSession);
+  if (sess?.isClient) {
+    sendInputToHost({ t: 'set_mode', mode });
+    if (mode === 'game') {
+      startClientGamepadPolling();
+    } else {
+      stopClientGamepadPolling();
+      if (document.pointerLockElement) {
+        document.exitPointerLock();
+      }
+    }
+  }
+}
+
 // Switch target monitor bounds on Host
 export function switchRemoteMonitor(monitorIndex: number) {
   activeMonitorIndex.set(monitorIndex);
@@ -1384,6 +1509,7 @@ export function stopHostScreenCapture() {
 
 function cleanupPeerConnection() {
   clearAuthTimer();
+  stopClientGamepadPolling();
   raydropApi.setHostCursorHidden(false).catch(() => { });
   raydropApi.releaseRemoteModifiers().catch(() => { });
   raydropApi.stopHostAudioLoopback().catch(() => { });

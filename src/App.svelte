@@ -116,6 +116,71 @@
   let isAppReady = false;
   let initStatusText = "Menyiapkan komponen & layanan Raydrop...";
 
+  const BOTTOM_TABS_STORAGE_KEY = "raydrop_bottom_bar_tabs_v1";
+  const ALL_BOTTOM_MENUS = [
+    { id: "dashboard", label: "Dashboard" },
+    { id: "transfers", label: "Transfers" },
+    { id: "chat", label: "Messages" },
+    { id: "meeting", label: "Meeting" },
+    { id: "remote", label: "Remote" },
+    { id: "lan", label: "LAN Radar" },
+    { id: "devices", label: "My Devices" },
+    { id: "contacts", label: "Contacts" },
+    { id: "clipboard", label: "Copy History" },
+    { id: "notes", label: "Notes" },
+    { id: "converter", label: "Converter" },
+  ] as const;
+  type BottomMenuId = (typeof ALL_BOTTOM_MENUS)[number]["id"];
+  const DEFAULT_BOTTOM_TAB_IDS: BottomMenuId[] = [
+    "dashboard",
+    "transfers",
+    "chat",
+    "meeting",
+    "remote",
+  ];
+
+  function loadBottomBarTabIds(): BottomMenuId[] {
+    try {
+      const raw = localStorage.getItem(BOTTOM_TABS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const valid = parsed.filter((id): id is BottomMenuId =>
+            ALL_BOTTOM_MENUS.some((m) => m.id === id),
+          );
+          if (valid.length > 0) return valid;
+        }
+      }
+    } catch (_) {}
+    return [...DEFAULT_BOTTOM_TAB_IDS];
+  }
+
+  let bottomBarTabIds: BottomMenuId[] = loadBottomBarTabIds();
+  let isBottomMenuPickerOpen = false;
+
+  function saveBottomBarTabIds(ids: BottomMenuId[]) {
+    bottomBarTabIds = ids;
+    try {
+      localStorage.setItem(BOTTOM_TABS_STORAGE_KEY, JSON.stringify(ids));
+    } catch (_) {}
+  }
+
+  function toggleBottomBarTab(id: BottomMenuId) {
+    if (bottomBarTabIds.includes(id)) {
+      if (bottomBarTabIds.length <= 1) return; // Keep at least 1 tab on the bar
+      saveBottomBarTabIds(bottomBarTabIds.filter((t) => t !== id));
+    } else {
+      const next = ALL_BOTTOM_MENUS.map((m) => m.id).filter(
+        (mId) => bottomBarTabIds.includes(mId) || mId === id,
+      );
+      saveBottomBarTabIds(next);
+    }
+  }
+
+  function resetBottomBarTabs() {
+    saveBottomBarTabIds([...DEFAULT_BOTTOM_TAB_IDS]);
+  }
+
   onDestroy(() => {
     if (statusSyncTimer) {
       clearInterval(statusSyncTimer);
@@ -856,32 +921,94 @@
     </div>
   </main>
 
-      <!-- Bottom Spatial Pill Bar + visionOS Grabber -->
-      <div class="hidden md:flex flex-col items-center gap-1.5 pt-2 shrink-0 select-none">
-        <div class="spatial-glass-pill inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/[0.08] backdrop-blur-2xl border border-white/15 shadow-xl">
-          {#each [
-            { id: "dashboard", label: "Dashboard" },
-            { id: "transfers", label: "Transfers" },
-            { id: "chat", label: "Messages" },
-            { id: "meeting", label: "Meeting" },
-            { id: "remote", label: "Remote" },
-          ] as tab}
+      <!-- Bottom Spatial Pill Bar + Customizable Menu Picker -->
+      <div class="hidden md:flex flex-col items-center gap-1.5 pt-2 shrink-0 select-none relative">
+        {#if isBottomMenuPickerOpen}
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div
+            class="fixed inset-0 z-30"
+            on:click={() => (isBottomMenuPickerOpen = false)}
+          ></div>
+          <div
+            class="absolute bottom-full mb-2.5 z-40 w-72 rounded-2xl bg-slate-900/95 backdrop-blur-2xl border border-white/15 shadow-2xl p-3 space-y-2.5"
+          >
+            <div class="flex items-center justify-between px-1">
+              <div>
+                <div class="text-xs font-bold text-white">Customize Bottom Menu</div>
+                <div class="text-[10px] text-slate-400">
+                  Click a menu to open, or pin/unpin it below
+                </div>
+              </div>
+              <button
+                type="button"
+                on:click={resetBottomBarTabs}
+                class="text-[10px] font-semibold text-sky-400 hover:text-sky-300 px-2 py-0.5 rounded-md hover:bg-white/5 transition cursor-pointer"
+                title="Reset to default tabs"
+              >
+                Reset
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 gap-1 max-h-64 overflow-y-auto pr-0.5">
+              {#each ALL_BOTTOM_MENUS as menu}
+                {@const isPinned = bottomBarTabIds.includes(menu.id)}
+                {@const isCurrent = $activeMainTab === menu.id}
+                <div
+                  class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl border transition {isCurrent
+                    ? 'bg-sky-500/15 border-sky-500/35 text-white'
+                    : 'bg-white/[0.03] border-white/5 hover:bg-white/[0.08] text-slate-200'}"
+                >
+                  <button
+                    type="button"
+                    on:click={() => {
+                      activeMainTab.set(menu.id);
+                      isBottomMenuPickerOpen = false;
+                    }}
+                    class="flex-1 text-left text-xs font-medium truncate cursor-pointer"
+                  >
+                    {menu.label}
+                  </button>
+                  <button
+                    type="button"
+                    on:click={() => toggleBottomBarTab(menu.id)}
+                    disabled={isPinned && bottomBarTabIds.length <= 1}
+                    class="px-2 py-0.5 rounded-full text-[10px] font-semibold border transition cursor-pointer disabled:opacity-40 {isPinned
+                      ? 'bg-sky-400/20 text-sky-300 border-sky-400/40 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-400/40'
+                      : 'bg-white/5 text-slate-400 border-white/10 hover:bg-sky-400/20 hover:text-sky-300 hover:border-sky-400/40'}"
+                    title={isPinned ? "Remove from bottom bar" : "Pin to bottom bar"}
+                  >
+                    {isPinned ? "Pinned" : "+ Pin"}
+                  </button>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <div class="spatial-glass-pill relative z-40 inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/[0.08] backdrop-blur-2xl border border-white/15 shadow-xl max-w-[92vw] overflow-x-auto">
+          {#each ALL_BOTTOM_MENUS.filter((m) => bottomBarTabIds.includes(m.id)) as tab (tab.id)}
             <button
               type="button"
-              on:click={() => activeMainTab.set(tab.id)}
-              class="px-3.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer {$activeMainTab === tab.id
+              on:click={() => {
+                activeMainTab.set(tab.id);
+                isBottomMenuPickerOpen = false;
+              }}
+              class="px-3.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer shrink-0 {$activeMainTab === tab.id
                 ? 'bg-white/20 text-white shadow-sm'
                 : 'text-white/65 hover:text-white hover:bg-white/10'}"
             >
               {tab.label}
             </button>
           {/each}
-          <div class="w-px h-4 bg-white/15 mx-0.5"></div>
+          <div class="w-px h-4 bg-white/15 mx-0.5 shrink-0"></div>
           <button
             type="button"
-            on:click={() => activeMainTab.set("converter")}
-            class="w-7 h-7 rounded-full bg-sky-400 hover:bg-sky-300 text-slate-950 font-bold flex items-center justify-center transition cursor-pointer"
-            title="Tools & Converter"
+            on:click={() => (isBottomMenuPickerOpen = !isBottomMenuPickerOpen)}
+            class="w-7 h-7 rounded-full bg-sky-400 hover:bg-sky-300 text-slate-950 font-bold flex items-center justify-center transition-transform duration-200 cursor-pointer shrink-0 {isBottomMenuPickerOpen
+              ? 'rotate-45'
+              : ''}"
+            title="Quick Switch & Customize Bottom Menu"
           >
             +
           </button>

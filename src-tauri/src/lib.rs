@@ -643,6 +643,8 @@ pub fn run() {
             commands::save_remote_desktop_settings,
             commands::verify_remote_desktop_pin,
             commands::simulate_remote_mouse_move,
+            commands::simulate_remote_mouse_move_relative,
+            commands::simulate_remote_gamepad,
             commands::simulate_remote_mouse_click,
             commands::simulate_remote_mouse_wheel,
             commands::simulate_remote_keyboard_key,

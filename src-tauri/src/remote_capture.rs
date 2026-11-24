@@ -341,7 +341,7 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
                                 }
 
                                 jpeg_buf.clear();
-                                let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buf, 86);
+                                let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buf, 92);
                                 if encoder
                                     .encode(&rgb, dst_w as u32, dst_h as u32, ExtendedColorType::Rgb8)
                                     .is_ok()

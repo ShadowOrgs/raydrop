@@ -33,6 +33,7 @@
     PenTool,
     Zap,
     QrCode,
+    Gamepad2,
   } from "lucide-svelte";
   import QRCode from "qrcode";
   import AnnotationOverlay from "./AnnotationOverlay.svelte";
@@ -50,6 +51,9 @@
     remoteHostMonitors,
     activeMonitorIndex,
     remoteCursorShape,
+    remoteSessionMode,
+    activeGamepadCount,
+    setRemoteSessionMode,
     loadRemoteDesktopSettings,
     saveRemoteDesktopSettings,
     connectToRemoteHost,
@@ -109,6 +113,8 @@
   // Viewer state
   let videoEl: HTMLVideoElement | null = null;
   let viewerContainerEl: HTMLDivElement | null = null;
+  let videoCanvasWrapEl: HTMLDivElement | null = null;
+  let isPointerLocked = false;
   let isFullscreen = false;
   let showToolbar = false;
   let hideLocalCursor = false;
@@ -824,6 +830,17 @@
   function handleMouseMove(e: MouseEvent) {
     if (!videoEl || !isClientConnected) return;
 
+    if ($remoteSessionMode === "game" && document.pointerLockElement === videoCanvasWrapEl) {
+      if (e.movementX !== 0 || e.movementY !== 0) {
+        sendInputToHost({
+          t: "mm_rel",
+          dx: e.movementX,
+          dy: e.movementY,
+        });
+      }
+      return;
+    }
+
     const now = performance.now();
     // Throttle to ~60 updates per second
     if (now - lastMouseMoveTime < 16) return;
@@ -843,6 +860,9 @@
   function handleMouseDown(e: MouseEvent) {
     if (!isClientConnected) return;
     resumeClientAudio();
+    if ($remoteSessionMode === "game" && videoCanvasWrapEl && document.pointerLockElement !== videoCanvasWrapEl) {
+      videoCanvasWrapEl.requestPointerLock?.();
+    }
     const button =
       e.button === 0 ? "left" : e.button === 2 ? "right" : "middle";
     sendInputToHost({
@@ -1001,7 +1021,16 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeyDown} on:keyup={handleKeyUp} on:blur={handleWindowBlur} />
+<svelte:window
+  on:keydown={handleKeyDown}
+  on:keyup={handleKeyUp}
+  on:blur={handleWindowBlur}
+/>
+<svelte:document
+  on:pointerlockchange={() => {
+    isPointerLocked = !!videoCanvasWrapEl && document.pointerLockElement === videoCanvasWrapEl;
+  }}
+/>
 
 <div
   class="h-full w-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden relative select-none"
@@ -1122,6 +1151,35 @@
             >
               ⚡ {$remoteLatencyMs} ms
             </span>
+          </div>
+
+          <!-- Desktop vs Game Mode Switcher -->
+          <div class="flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-950/90 border border-slate-700/80 sm:mr-1 shrink-0">
+            <button
+              type="button"
+              on:click={() => setRemoteSessionMode("desktop")}
+              class="px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer {$remoteSessionMode === 'desktop'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                : 'text-slate-400 hover:text-white border border-transparent'}"
+              title="Desktop Mode: Sharp text, Lock Screen/UAC support, dynamic cursor"
+            >
+              <Monitor class="w-3 h-3" />
+              <span>Desktop</span>
+            </button>
+            <button
+              type="button"
+              on:click={() => setRemoteSessionMode("game")}
+              class="px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer {$remoteSessionMode === 'game'
+                ? 'bg-purple-500/25 text-purple-300 border border-purple-500/40'
+                : 'text-slate-400 hover:text-white border border-transparent'}"
+              title="Game Mode: 60 FPS DXGI, 35 Mbps, Pointer Lock & Gamepad/Joystick"
+            >
+              <Gamepad2 class="w-3 h-3" />
+              <span>Game</span>
+              {#if $activeGamepadCount > 0}
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              {/if}
+            </button>
           </div>
 
           <!-- Shortcuts Dropdown / Quick Buttons -->
@@ -1335,8 +1393,9 @@
       <!-- Main Video Display Canvas -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
+        bind:this={videoCanvasWrapEl}
         class="flex-1 w-full h-full flex items-center justify-center bg-black overflow-hidden relative"
-        style="cursor: {hideLocalCursor ? 'none' : $remoteCursorShape};"
+        style="cursor: {hideLocalCursor || isPointerLocked ? 'none' : $remoteCursorShape};"
         on:mousemove={handleMouseMove}
         on:mousedown={handleMouseDown}
         on:mouseup={handleMouseUp}
@@ -1418,14 +1477,36 @@
               </button>
               <!-- Pre-Login Service Active Badge -->
               {#if windowsServiceStatus === "running"}
-                <span
-                  class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold flex items-center gap-1"
-                  title="Raydrop Windows Service is running: pre-login PIN screen remote access is active"
-                >
+                <span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold flex items-center gap-1">
                   <Shield class="w-3 h-3 text-emerald-400" />
                   <span>Pre-Login Active</span>
                 </span>
               {/if}
+              <!-- Desktop vs Game Mode Selector -->
+              <div class="inline-flex items-center gap-0.5 p-0.5 rounded-full bg-slate-900 border border-slate-700/80">
+                <button
+                  type="button"
+                  on:click={() => setRemoteSessionMode("desktop")}
+                  class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold flex items-center gap-1 transition cursor-pointer {$remoteSessionMode === 'desktop'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                    : 'text-slate-400 hover:text-white border border-transparent'}"
+                  title="Desktop Mode: Sharp UI/text, Lock Screen & UAC support"
+                >
+                  <Monitor class="w-3 h-3" />
+                  <span>Desktop Mode</span>
+                </button>
+                <button
+                  type="button"
+                  on:click={() => setRemoteSessionMode("game")}
+                  class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold flex items-center gap-1 transition cursor-pointer {$remoteSessionMode === 'game'
+                    ? 'bg-purple-500/25 text-purple-300 border border-purple-500/40'
+                    : 'text-slate-400 hover:text-white border border-transparent'}"
+                  title="Game Mode: 60 FPS GPU capture, 35 Mbps, Pointer Lock & Gamepad/Joystick"
+                >
+                  <Gamepad2 class="w-3 h-3" />
+                  <span>Game Mode (60 FPS)</span>
+                </button>
+              </div>
               <!-- Admin / UIPI Elevated Control Badge -->
               {#if windowsServiceStatus !== "unsupported"}
                 {#if isBootServiceInstalled}

@@ -836,6 +836,124 @@ pub fn simulate_mouse_move(norm_x: f32, norm_y: f32) -> Result<(), String> {
     }
 }
 
+/// Moves cursor relatively by `(dx, dy)` pixels (for Game Mode FPS/3D camera look)
+pub fn simulate_mouse_move_relative(dx: i32, dy: i32) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        if dx == 0 && dy == 0 {
+            return Ok(());
+        }
+        crate::win_service::switch_to_active_input_desktop();
+        unsafe {
+            win_user32::mouse_event(0x0001, dx as u32, dy as u32, 0, 0);
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (dx, dy);
+        Err("Relative mouse movement currently supported on Windows host".to_string())
+    }
+}
+
+/// Maps Gamepad state (from Web Gamepad API) to native WASD + Mouse + Gaming keys on Windows host
+pub fn simulate_gamepad_input(
+    buttons: u32,
+    lx: f32,
+    ly: f32,
+    rx: f32,
+    ry: f32,
+    lt: f32,
+    rt: f32,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static PREV_MASK: AtomicU32 = AtomicU32::new(0);
+
+        crate::win_service::switch_to_active_input_desktop();
+
+        // Build virtual bitmask combining digital buttons + analog stick directions + triggers
+        let mut cur_mask: u32 = 0;
+        let dz = 0.32f32;
+        if lx < -dz { cur_mask |= 1 << 0; }  // A
+        if lx > dz { cur_mask |= 1 << 1; }   // D
+        if ly < -dz { cur_mask |= 1 << 2; }  // W
+        if ly > dz { cur_mask |= 1 << 3; }   // S
+        if (buttons & (1 << 0)) != 0 { cur_mask |= 1 << 4; }   // A -> Space
+        if (buttons & (1 << 1)) != 0 { cur_mask |= 1 << 5; }   // B -> LCtrl
+        if (buttons & (1 << 2)) != 0 { cur_mask |= 1 << 6; }   // X -> R
+        if (buttons & (1 << 3)) != 0 { cur_mask |= 1 << 7; }   // Y -> E
+        if (buttons & (1 << 4)) != 0 { cur_mask |= 1 << 8; }   // LB -> Q
+        if (buttons & (1 << 5)) != 0 { cur_mask |= 1 << 9; }   // RB -> F
+        if (buttons & (1 << 8)) != 0 { cur_mask |= 1 << 10; }  // Select -> Tab
+        if (buttons & (1 << 9)) != 0 { cur_mask |= 1 << 11; }  // Start -> Esc
+        if (buttons & (1 << 10)) != 0 { cur_mask |= 1 << 12; } // L3 -> LShift
+        if (buttons & (1 << 12)) != 0 { cur_mask |= 1 << 13; } // DPad Up
+        if (buttons & (1 << 13)) != 0 { cur_mask |= 1 << 14; } // DPad Down
+        if (buttons & (1 << 14)) != 0 { cur_mask |= 1 << 15; } // DPad Left
+        if (buttons & (1 << 15)) != 0 { cur_mask |= 1 << 16; } // DPad Right
+        if rt > 0.35 || (buttons & (1 << 7)) != 0 { cur_mask |= 1 << 17; } // RT -> LMB
+        if lt > 0.35 || (buttons & (1 << 6)) != 0 { cur_mask |= 1 << 18; } // LT -> RMB
+
+        let prev_mask = PREV_MASK.swap(cur_mask, Ordering::Relaxed);
+        let changed = cur_mask ^ prev_mask;
+
+        const KEY_MAP: &[(u32, u8)] = &[
+            (1 << 0, 0x41),  // A
+            (1 << 1, 0x44),  // D
+            (1 << 2, 0x57),  // W
+            (1 << 3, 0x53),  // S
+            (1 << 4, 0x20),  // Space
+            (1 << 5, 0xA2),  // LCtrl
+            (1 << 6, 0x52),  // R
+            (1 << 7, 0x45),  // E
+            (1 << 8, 0x51),  // Q
+            (1 << 9, 0x46),  // F
+            (1 << 10, 0x09), // Tab
+            (1 << 11, 0x1B), // Esc
+            (1 << 12, 0xA0), // LShift
+            (1 << 13, 0x26), // Up
+            (1 << 14, 0x28), // Down
+            (1 << 15, 0x25), // Left
+            (1 << 16, 0x27), // Right
+        ];
+
+        unsafe {
+            for &(bit, vk) in KEY_MAP {
+                if (changed & bit) != 0 {
+                    let is_down = (cur_mask & bit) != 0;
+                    let flags = if is_down { 0 } else { 0x0002 };
+                    let scan = win_user32::MapVirtualKeyA(vk as u32, 0) as u8;
+                    win_user32::keybd_event(vk, scan, flags, 0);
+                }
+            }
+            if (changed & (1 << 17)) != 0 {
+                let flags = if (cur_mask & (1 << 17)) != 0 { 0x0002 } else { 0x0004 }; // LMB down/up
+                win_user32::mouse_event(flags, 0, 0, 0, 0);
+            }
+            if (changed & (1 << 18)) != 0 {
+                let flags = if (cur_mask & (1 << 18)) != 0 { 0x0008 } else { 0x0010 }; // RMB down/up
+                win_user32::mouse_event(flags, 0, 0, 0, 0);
+            }
+
+            // Right stick smooth camera look
+            let r_dz = 0.16f32;
+            let mdx = if rx.abs() > r_dz { (rx * 18.0).round() as i32 } else { 0 };
+            let mdy = if ry.abs() > r_dz { (ry * 18.0).round() as i32 } else { 0 };
+            if mdx != 0 || mdy != 0 {
+                win_user32::mouse_event(0x0001, mdx as u32, mdy as u32, 0, 0);
+            }
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (buttons, lx, ly, rx, ry, lt, rt);
+        Ok(())
+    }
+}
+
 /// Releases all modifier keys (Alt, Ctrl, Shift, Windows) to prevent stuck keys
 pub fn release_all_modifiers() {
     #[cfg(target_os = "windows")]

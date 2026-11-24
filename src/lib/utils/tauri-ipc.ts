@@ -702,6 +702,18 @@ export const raydropApi = {
     invoke<boolean>('verify_remote_desktop_pin', { pin }),
   simulateRemoteMouseMove: (normX: number, normY: number) =>
     invoke<void>('simulate_remote_mouse_move', { normX, normY }),
+  simulateRemoteMouseMoveRelative: (dx: number, dy: number) =>
+    invoke<void>('simulate_remote_mouse_move_relative', { dx, dy }),
+  simulateRemoteGamepad: (
+    buttons: number,
+    lx: number,
+    ly: number,
+    rx: number,
+    ry: number,
+    lt: number,
+    rt: number
+  ) =>
+    invoke<void>('simulate_remote_gamepad', { buttons, lx, ly, rx, ry, lt, rt }),
   simulateRemoteMouseClick: (
     button: string,
     action: string,

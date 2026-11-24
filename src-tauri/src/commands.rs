@@ -1273,23 +1273,55 @@ pub async fn download_and_install_update(
             .arg(&path_str)
             .spawn()
             .map_err(|e| format!("Failed to open DMG installer: {e}"))?;
-        return Ok(format!("DMG installer opened from {}", path_str));
+        return Ok(format!(
+            "DMG installer opened from {}. Drag Raydrop to Applications and relaunch.",
+            path_str
+        ));
     }
 
     #[cfg(target_os = "linux")]
     {
+        use std::os::unix::fs::PermissionsExt;
         let path_str = temp_file_path.to_string_lossy().to_string();
         if path_str.to_lowercase().ends_with(".appimage") {
-            let _ = std::process::Command::new("chmod")
-                .arg("+x")
-                .arg(&path_str)
-                .status();
+            let _ = std::fs::set_permissions(&temp_file_path, std::fs::Permissions::from_mode(0o755));
+
+            // If running from an existing AppImage, replace it in-place when writable
+            let launch_path = if let Ok(current_appimage) = std::env::var("APPIMAGE") {
+                let current_pb = std::path::PathBuf::from(&current_appimage);
+                if std::fs::copy(&temp_file_path, &current_pb).is_ok() {
+                    let _ = std::fs::set_permissions(&current_pb, std::fs::Permissions::from_mode(0o755));
+                    current_appimage
+                } else {
+                    path_str.clone()
+                }
+            } else {
+                path_str.clone()
+            };
+
+            // Delay launch slightly so current single-instance exits before the new AppImage starts
+            std::process::Command::new("sh")
+                .arg("-c")
+                .arg("sleep 1.2 && nohup \"$1\" >/dev/null 2>&1 &")
+                .arg("sh")
+                .arg(&launch_path)
+                .spawn()
+                .map_err(|e| format!("Failed to launch updated AppImage: {e}"))?;
+
+            let app_exit = app.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
+                app_exit.exit(0);
+            });
+
+            return Ok(format!("Relaunching updated AppImage from {}...", launch_path));
         }
+
         std::process::Command::new("xdg-open")
             .arg(&path_str)
             .spawn()
             .map_err(|e| format!("Failed to open package: {e}"))?;
-        return Ok(format!("Package saved to {}", path_str));
+        return Ok(format!("Package saved to {}. Follow the installer prompt to complete the update.", path_str));
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "android", target_os = "macos", target_os = "linux")))]
@@ -3663,6 +3695,24 @@ pub async fn simulate_remote_mouse_move(
     norm_y: f32,
 ) -> Result<(), String> {
     crate::remote_input::simulate_mouse_move(norm_x, norm_y)
+}
+
+#[tauri::command]
+pub async fn simulate_remote_mouse_move_relative(dx: i32, dy: i32) -> Result<(), String> {
+    crate::remote_input::simulate_mouse_move_relative(dx, dy)
+}
+
+#[tauri::command]
+pub async fn simulate_remote_gamepad(
+    buttons: u32,
+    lx: f32,
+    ly: f32,
+    rx: f32,
+    ry: f32,
+    lt: f32,
+    rt: f32,
+) -> Result<(), String> {
+    crate::remote_input::simulate_gamepad_input(buttons, lx, ly, rx, ry, lt, rt)
 }
 
 #[tauri::command]
