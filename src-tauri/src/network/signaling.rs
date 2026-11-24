@@ -158,8 +158,8 @@ pub fn start_signaling_daemon(app: AppHandle, state: Arc<AppState>) {
                                 break;
                             }
                             Err(_) => {
-                                if last_rx_at.elapsed() >= Duration::from_secs(45) {
-                                    warn!("Signaling WebSocket idle heartbeat timeout (45s) — forcing reconnect");
+                                if last_rx_at.elapsed() >= Duration::from_secs(25) {
+                                    warn!("Signaling WebSocket idle heartbeat timeout (25s) — forcing reconnect");
                                     break;
                                 }
                             }

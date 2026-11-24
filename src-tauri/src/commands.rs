@@ -3191,8 +3191,10 @@ pub async fn send_meeting_signal(
     };
 
     // 2. Also send directly via LAN TCP if contact has known local IP/port
+    let mut has_lan_target = false;
     if let Ok(Some(contact)) = state.db.get_contact(&target_device_id) {
         if let (Some(ip), Some(port)) = (contact.last_known_ip, contact.last_known_port) {
+            has_lan_target = true;
             let target_addr = format!("{}:{}", ip, port);
             let my_dev_id = state.identity.device_id.clone();
             let sid = session_id.clone();
@@ -3221,10 +3223,10 @@ pub async fn send_meeting_signal(
         }
     }
 
-    if sent_via_relay {
+    if sent_via_relay || has_lan_target {
         Ok(())
     } else {
-        Ok(())
+        Err("Signaling server is not connected yet. Retrying...".to_string())
     }
 }
 

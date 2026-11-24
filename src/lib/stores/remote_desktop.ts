@@ -4,14 +4,13 @@ import { raydropApi, type RemoteDesktopSettings } from '../utils/tauri-ipc';
 import { appSettings } from './state';
 import { contacts } from './contacts';
 
-// ICE Servers for WebRTC peer connection
+// ICE Servers for WebRTC peer connection (lean pool for fast startup)
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
   ],
-  iceCandidatePoolSize: 10,
+  iceCandidatePoolSize: 2,
 };
 
 export interface RemoteSessionInfo {
@@ -82,12 +81,14 @@ function clearAuthTimer() {
   }
 }
 
+let isSettingsLoaded = false;
 // Load persisted settings from SQLite backend
 export async function loadRemoteDesktopSettings() {
   try {
     const settings = await raydropApi.getRemoteDesktopSettings();
     if (settings) {
       remoteHostSettings.set(settings);
+      isSettingsLoaded = true;
     }
   } catch (err) {
     console.warn('Failed to load remote desktop settings:', err);
@@ -423,6 +424,9 @@ async function handleIncomingAuthRequest(
   sessionId: string,
   payload: any
 ) {
+  if (!isSettingsLoaded) {
+    await loadRemoteDesktopSettings();
+  }
   const settings = get(remoteHostSettings);
   const myAlias = get(appSettings).alias_name || 'Raydrop Host';
 
@@ -975,18 +979,19 @@ export async function connectToRemoteHost(targetDeviceId: string, pin: string) {
     sessionId,
   });
 
-  // Timeout guard (45 seconds for manual approval, 35 seconds for PIN): If host is unreachable or not responding, abort cleanly
-  const timeoutMs = pin.trim() ? 35000 : 45000;
+  // Timeout guard (45 seconds): Covers worst-case 25s signaling reconnect + retry + WebRTC handshake
+  const timeoutMs = 45000;
   authTimeoutTimer = setTimeout(() => {
     const status = get(remoteConnectionStatus);
     if (status === 'verifying_pin' || status === 'connecting') {
+      cleanupPeerConnection();
+      activeRemoteSession.set(null);
       remoteConnectionStatus.set('error');
       remoteErrorMessage.set(
         pin.trim()
           ? 'Connection timed out. Host did not respond. Please ensure Raydrop is running on the host device and Allow Remote Access is enabled.'
           : 'Request timed out. Host did not accept the remote control request.'
       );
-      cleanupPeerConnection();
     }
   }, timeoutMs);
 
@@ -1000,13 +1005,19 @@ export async function connectToRemoteHost(targetDeviceId: string, pin: string) {
   };
   sendRemoteSignal(targetDeviceId, sessionId, authPayload);
 
-  // Retry once after 4s if still waiting on verifying_pin (guards against transient signaling drop)
+  // Retry at 3s and 8s if still waiting on verifying_pin (guards against transient signaling reconnect)
   authRetryTimer = setTimeout(() => {
     const sess = get(activeRemoteSession);
     if (sess?.sessionId === sessionId && get(remoteConnectionStatus) === 'verifying_pin') {
       sendRemoteSignal(targetDeviceId, sessionId, authPayload);
+      setTimeout(() => {
+        const sess2 = get(activeRemoteSession);
+        if (sess2?.sessionId === sessionId && get(remoteConnectionStatus) === 'verifying_pin') {
+          sendRemoteSignal(targetDeviceId, sessionId, authPayload);
+        }
+      }, 5000);
     }
-  }, 4000);
+  }, 3000);
 }
 
 async function handleIncomingOffer(
@@ -1031,6 +1042,7 @@ async function handleIncomingOffer(
       stream = new MediaStream([event.track]);
     }
     if (stream) {
+      remoteErrorMessage.set(null);
       clientRemoteStream.set(stream);
       remoteConnectionStatus.set('connected');
     }
