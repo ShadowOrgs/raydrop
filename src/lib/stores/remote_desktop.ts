@@ -50,6 +50,7 @@ export const remoteHostMonitors = writable<
 >([]);
 export const activeMonitorIndex = writable<number>(0);
 export const remoteAudioEnabled = writable<boolean>(true);
+export const remoteCursorShape = writable<string>('default');
 
 let activePeerConnection: RTCPeerConnection | null = null;
 let activeDataChannel: RTCDataChannel | null = null;
@@ -201,6 +202,16 @@ export function initRemoteDesktopListener() {
       if (activeDataChannel.bufferedAmount > 256 * 1024) return;
       try {
         activeDataChannel.send(JSON.stringify({ t: 'aud', d: b64 }));
+      } catch (_) { }
+    }
+  });
+
+  // Forward host OS cursor shape changes (text I-beam, hand pointer, resize arrows, move, etc.)
+  raydropApi.listenEvent<string>('host_cursor_shape', (shape) => {
+    const sess = get(activeRemoteSession);
+    if (sess?.isHost && activeDataChannel && activeDataChannel.readyState === 'open' && shape) {
+      try {
+        activeDataChannel.send(JSON.stringify({ t: 'cur', s: shape }));
       } catch (_) { }
     }
   });
@@ -1233,6 +1244,12 @@ function setupClientDataChannel(dc: RTCDataChannel) {
       const data = JSON.parse(event.data);
       if (!data) return;
 
+      // Dynamic host cursor shape sync
+      if (data.t === 'cur' && data.s) {
+        remoteCursorShape.set(data.s);
+        return;
+      }
+
       // Pong latency measurement
       if (data.t === 'pong' && data.time) {
         const rtt = Math.max(1, Date.now() - data.time);
@@ -1399,6 +1416,7 @@ function cleanupPeerConnection() {
   }
   activeVideoSender = null;
   clientRemoteStream.set(null);
+  remoteCursorShape.set('default');
   pendingIceCandidates = [];
 }
 

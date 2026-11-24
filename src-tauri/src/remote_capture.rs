@@ -114,6 +114,7 @@ mod win_gdi {
         pub fn ReleaseDC(hwnd: isize, hdc: isize) -> i32;
         pub fn GetSystemMetrics(n_index: i32) -> i32;
         pub fn GetCursorInfo(pci: *mut CURSORINFO) -> i32;
+        pub fn LoadCursorW(h_instance: isize, lp_cursor_name: usize) -> isize;
         pub fn GetIconInfo(h_icon: isize, piconinfo: *mut ICONINFO) -> i32;
         pub fn DrawIconEx(
             hdc: isize,
@@ -162,6 +163,43 @@ mod win_gdi {
 }
 
 #[cfg(target_os = "windows")]
+fn detect_cursor_css_shape() -> &'static str {
+    const CURSOR_SHOWING: u32 = 0x0000_0001;
+    let mut ci = win_gdi::CURSORINFO {
+        cb_size: std::mem::size_of::<win_gdi::CURSORINFO>() as u32,
+        flags: 0,
+        h_cursor: 0,
+        pt_screen_pos: win_gdi::POINT { x: 0, y: 0 },
+    };
+    unsafe {
+        if win_gdi::GetCursorInfo(&mut ci) == 0 || (ci.flags & CURSOR_SHOWING) == 0 || ci.h_cursor == 0 {
+            return "default";
+        }
+        let h = ci.h_cursor;
+        let table: &[(usize, &str)] = &[
+            (32513, "text"),        // IDC_IBEAM
+            (32649, "pointer"),     // IDC_HAND
+            (32644, "ew-resize"),   // IDC_SIZEWE
+            (32645, "ns-resize"),   // IDC_SIZENS
+            (32642, "nwse-resize"), // IDC_SIZENWSE
+            (32643, "nesw-resize"), // IDC_SIZENESW
+            (32646, "move"),        // IDC_SIZEALL
+            (32514, "wait"),        // IDC_WAIT
+            (32650, "progress"),    // IDC_APPSTARTING
+            (32515, "crosshair"),   // IDC_CROSS
+            (32648, "not-allowed"), // IDC_NO
+            (32651, "help"),        // IDC_HELP
+        ];
+        for &(idc, css) in table {
+            if win_gdi::LoadCursorW(0, idc) == h {
+                return css;
+            }
+        }
+    }
+    "default"
+}
+
+#[cfg(target_os = "windows")]
 fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
     use base64::Engine;
     use image::codecs::jpeg::JpegEncoder;
@@ -176,9 +214,16 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
     let mut last_frame_hash: u64 = 0;
     let mut last_force_emit = std::time::Instant::now() - std::time::Duration::from_secs(2);
     let mut last_desktop_switch = std::time::Instant::now() - std::time::Duration::from_secs(2);
+    let mut last_cursor_shape = "";
 
     while CAPTURE_ACTIVE.load(Ordering::Relaxed) {
         let loop_start = std::time::Instant::now();
+
+        let cursor_shape = detect_cursor_css_shape();
+        if cursor_shape != last_cursor_shape {
+            last_cursor_shape = cursor_shape;
+            let _ = app.emit("host_cursor_shape", cursor_shape);
+        }
 
         // Backpressure: do not flood WebView2 IPC if the previous frame is still decoding
         if FRAME_IN_FLIGHT.load(Ordering::Acquire) {

@@ -49,6 +49,7 @@
     remoteLatencyMs,
     remoteHostMonitors,
     activeMonitorIndex,
+    remoteCursorShape,
     loadRemoteDesktopSettings,
     saveRemoteDesktopSettings,
     connectToRemoteHost,
@@ -1334,9 +1335,8 @@
       <!-- Main Video Display Canvas -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
-        class="flex-1 w-full h-full flex items-center justify-center bg-black overflow-hidden relative {hideLocalCursor
-          ? 'cursor-none'
-          : 'cursor-default'}"
+        class="flex-1 w-full h-full flex items-center justify-center bg-black overflow-hidden relative"
+        style="cursor: {hideLocalCursor ? 'none' : $remoteCursorShape};"
         on:mousemove={handleMouseMove}
         on:mousedown={handleMouseDown}
         on:mouseup={handleMouseUp}
