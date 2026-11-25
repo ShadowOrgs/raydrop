@@ -28,8 +28,10 @@
   import LatencyCharts from "./charts/LatencyCharts.svelte";
 
   type SubTab = "overview" | "network" | "ui" | "console";
+  type SeverityFilter = "all" | "critical" | "warning" | "info";
+  const SEVERITY_FILTERS: SeverityFilter[] = ["all", "critical", "warning", "info"];
   let activeSubTab: SubTab = "overview";
-  let severityFilter: "all" | "critical" | "warning" | "info" = "all";
+  let severityFilter: SeverityFilter = "all";
 
   let speedtestUrl = "";
   let lastAutoUrl = "";
@@ -285,10 +287,10 @@
               </h3>
             </div>
             <div class="flex items-center gap-1 text-[11px]">
-              {#each ["all", "critical", "warning", "info"] as sev}
+              {#each SEVERITY_FILTERS as sev}
                 <button
                   type="button"
-                  on:click={() => (severityFilter = sev as any)}
+                  on:click={() => (severityFilter = sev)}
                   class="px-2.5 py-1 rounded-md capitalize cursor-pointer {severityFilter === sev
                     ? 'bg-white/15 text-white font-semibold'
                     : 'text-slate-400 hover:text-white'}"
