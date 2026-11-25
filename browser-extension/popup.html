@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Raydrop Downloader</title>
+  <title>Raydrop Companion</title>
   <style>
     :root {
       --bg: #090d16;
       --card-bg: #0f172a;
       --card-border: #1e293b;
       --cyan: #06b6d4;
-      --cyan-hover: #0891b2;
       --indigo: #6366f1;
       --emerald: #10b981;
+      --amber: #f59e0b;
       --rose: #f43f5e;
       --text: #f8fafc;
       --text-muted: #94a3b8;
@@ -26,10 +26,10 @@
     }
 
     body {
-      width: 340px;
+      width: 360px;
       background-color: var(--bg);
       color: var(--text);
-      padding: 16px;
+      padding: 14px;
       font-size: 13px;
     }
 
@@ -37,9 +37,9 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding-bottom: 12px;
+      padding-bottom: 10px;
       border-bottom: 1px solid var(--card-border);
-      margin-bottom: 14px;
+      margin-bottom: 10px;
     }
 
     .brand {
@@ -49,8 +49,8 @@
     }
 
     .brand img {
-      width: 24px;
-      height: 24px;
+      width: 22px;
+      height: 22px;
       border-radius: 6px;
     }
 
@@ -89,11 +89,39 @@
       background-color: currentColor;
     }
 
-    .quick-input-box {
-      margin-bottom: 14px;
+    .tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      padding: 4px;
+      border-radius: 10px;
+      margin-bottom: 12px;
     }
 
-    .quick-input-box label {
+    .tab-btn {
+      padding: 6px 8px;
+      border: none;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .tab-btn.active {
+      background: linear-gradient(135deg, var(--cyan), var(--indigo));
+      color: #fff;
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .quick-input-box { margin-bottom: 12px; }
+    .quick-input-box label, .section-label {
       display: block;
       font-size: 11px;
       font-weight: 600;
@@ -103,11 +131,7 @@
       letter-spacing: 0.5px;
     }
 
-    .input-row {
-      display: flex;
-      gap: 6px;
-    }
-
+    .input-row { display: flex; gap: 6px; }
     .input-row input {
       flex: 1;
       padding: 8px 10px;
@@ -117,12 +141,8 @@
       color: #fff;
       font-size: 12px;
       outline: none;
-      transition: border-color 0.2s;
     }
-
-    .input-row input:focus {
-      border-color: var(--cyan);
-    }
+    .input-row input:focus { border-color: var(--cyan); }
 
     .btn {
       padding: 8px 12px;
@@ -133,27 +153,33 @@
       font-weight: 600;
       font-size: 12px;
       cursor: pointer;
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      gap: 4px;
+      justify-content: center;
+      gap: 5px;
       transition: opacity 0.2s;
       white-space: nowrap;
     }
-
-    .btn:hover {
-      opacity: 0.9;
+    .btn:hover { opacity: 0.9; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-full { width: 100%; padding: 9px 12px; }
+    .btn-live {
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.45);
+      color: #fbbf24;
+    }
+    .btn-stop {
+      background: rgba(244, 63, 94, 0.18);
+      border: 1px solid rgba(244, 63, 94, 0.5);
+      color: #fb7185;
     }
 
-    .btn:active {
-      transform: scale(0.98);
-    }
-
-    .toggle-card {
+    .card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 10px;
-      padding: 12px;
-      margin-bottom: 12px;
+      padding: 11px;
+      margin-bottom: 10px;
     }
 
     .toggle-row {
@@ -161,78 +187,96 @@
       align-items: center;
       justify-content: space-between;
     }
-
     .toggle-row:not(:last-child) {
       margin-bottom: 10px;
       padding-bottom: 10px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     }
+    .toggle-info h3 { font-size: 12px; font-weight: 600; color: var(--text); }
+    .toggle-info p { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
-    .toggle-info h3 {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text);
+    .switch { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #334155; transition: .3s; border-radius: 20px;
+    }
+    .slider:before {
+      position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px;
+      background-color: white; transition: .3s; border-radius: 50%;
+    }
+    input:checked + .slider { background: linear-gradient(135deg, var(--cyan), var(--indigo)); }
+    input:checked + .slider:before { transform: translateX(16px); }
+
+    .extensions-preview {
+      font-size: 10px; font-family: monospace; color: #64748b; line-height: 1.4;
+      background: rgba(0, 0, 0, 0.2); padding: 6px 8px; border-radius: 6px; word-break: break-all;
     }
 
-    .toggle-info p {
+    .target-url {
+      font-size: 11px;
+      color: var(--cyan);
+      font-family: monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 8px;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
       font-size: 11px;
       color: var(--text-muted);
-      margin-top: 2px;
+      margin: 8px 0 10px;
+      cursor: pointer;
     }
 
-    /* Switch styling */
-    .switch {
-      position: relative;
-      display: inline-block;
-      width: 36px;
-      height: 20px;
+    .action-stack { display: flex; flex-direction: column; gap: 7px; }
+
+    .score-summary {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .score-ring {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      font-weight: 800;
+      border: 3px solid var(--cyan);
       flex-shrink: 0;
     }
 
-    .switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
+    .score-bars { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 5px 8px; font-size: 11px; }
+    .mini-metric { display: flex; justify-content: space-between; color: var(--text-muted); }
+    .mini-metric strong { color: var(--text); }
+
+    .fix-preview {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 11px;
+      color: #cbd5e1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
     }
 
-    .slider {
-      position: absolute;
-      cursor: pointer;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background-color: #334155;
-      transition: .3s;
-      border-radius: 20px;
-    }
+    .fix-item { display: flex; gap: 5px; align-items: flex-start; }
+    .sev-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
 
-    .slider:before {
-      position: absolute;
-      content: "";
-      height: 14px;
-      width: 14px;
-      left: 3px;
-      bottom: 3px;
-      background-color: white;
-      transition: .3s;
-      border-radius: 50%;
-    }
-
-    input:checked + .slider {
-      background: linear-gradient(135deg, var(--cyan), var(--indigo));
-    }
-
-    input:checked + .slider:before {
-      transform: translateX(16px);
-    }
-
-    .extensions-preview {
-      font-size: 10px;
-      font-family: monospace;
-      color: #64748b;
-      line-height: 1.4;
-      background: rgba(0, 0, 0, 0.2);
-      padding: 6px 8px;
-      border-radius: 6px;
-      word-break: break-all;
+    .feedback {
+      margin-top: 6px;
+      font-size: 11px;
+      text-align: center;
+      display: none;
     }
 
     .footer {
@@ -244,23 +288,8 @@
       padding-top: 10px;
       border-top: 1px solid var(--card-border);
     }
-
-    .footer a {
-      color: var(--cyan);
-      text-decoration: none;
-      font-weight: 600;
-    }
-
-    .footer a:hover {
-      text-decoration: underline;
-    }
-
-    #msgFeedback {
-      margin-top: 6px;
-      font-size: 11px;
-      text-align: center;
-      display: none;
-    }
+    .footer a { color: var(--cyan); text-decoration: none; font-weight: 600; }
+    .footer a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -275,43 +304,82 @@
     </div>
   </div>
 
-  <div class="quick-input-box">
-    <label>Accelerate Download (IDM Mode)</label>
-    <div class="input-row">
-      <input type="text" id="urlInput" placeholder="Paste HTTP/HTTPS or Magnet link...">
-      <button class="btn" id="startBtn">Catch</button>
-    </div>
-    <div id="msgFeedback"></div>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="downloader">Downloader</button>
+    <button class="tab-btn" data-tab="debugger">Web Debugger</button>
   </div>
 
-  <div class="toggle-card">
-    <div class="toggle-row">
-      <div class="toggle-info">
-        <h3>Auto-Intercept Downloads</h3>
-        <p>Take over browser downloads automatically</p>
+  <!-- TAB 1: DOWNLOADER -->
+  <div id="tab-downloader" class="tab-panel active">
+    <div class="quick-input-box">
+      <label>Accelerate Download (IDM Mode)</label>
+      <div class="input-row">
+        <input type="text" id="urlInput" placeholder="Paste HTTP/HTTPS or Magnet link...">
+        <button class="btn" id="startBtn">Catch</button>
       </div>
-      <label class="switch">
-        <input type="checkbox" id="autoCaptureToggle" checked>
-        <span class="slider"></span>
-      </label>
+      <div id="msgFeedback" class="feedback"></div>
     </div>
 
-    <div class="toggle-row">
-      <div class="toggle-info">
-        <h3>Extension Enabled</h3>
-        <p>Integrate context menu & actions</p>
+    <div class="card">
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <h3>Auto-Intercept Downloads</h3>
+          <p>Take over browser downloads automatically</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="autoCaptureToggle" checked>
+          <span class="slider"></span>
+        </label>
       </div>
-      <label class="switch">
-        <input type="checkbox" id="masterToggle" checked>
-        <span class="slider"></span>
-      </label>
+
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <h3>Extension Enabled</h3>
+          <p>Integrate context menu & actions</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="masterToggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="card" style="padding: 10px;">
+      <div style="font-size: 11px; font-weight: 600; color: #cbd5e1; margin-bottom: 4px;">Captured File Types:</div>
+      <div class="extensions-preview" id="extPreview">
+        ZIP, RAR, 7Z, ISO, EXE, MSI, APK, MP4, MKV, MP3, PDF, DMG, BIN...
+      </div>
     </div>
   </div>
 
-  <div class="toggle-card" style="margin-bottom: 12px; padding: 10px;">
-    <div style="font-size: 11px; font-weight: 600; color: #cbd5e1; margin-bottom: 4px;">Captured File Types:</div>
-    <div class="extensions-preview" id="extPreview">
-      ZIP, RAR, 7Z, ISO, EXE, MSI, APK, MP4, MKV, MP3, PDF, DMG, BIN...
+  <!-- TAB 2: WEB DEBUGGER (ON-DEMAND) -->
+  <div id="tab-debugger" class="tab-panel">
+    <div class="card">
+      <div class="section-label">Active Tab Target</div>
+      <div class="target-url" id="activeTabUrl">Loading active tab...</div>
+      <label class="checkbox-row">
+        <input type="checkbox" id="responsiveScanChk">
+        <span>Multi-Viewport Responsive Scan (Mobile & Tablet)</span>
+      </label>
+      <div class="action-stack">
+        <button class="btn btn-full" id="runAuditBtn">Run Full Audit (UI, Speed, Latency)</button>
+        <button class="btn btn-full btn-live" id="toggleLiveBtn">Start Live Debug (Network & Errors)</button>
+      </div>
+      <div id="debugFeedback" class="feedback"></div>
+    </div>
+
+    <div class="card" id="auditSummaryCard" style="display: none;">
+      <div class="section-label">Latest Audit Score</div>
+      <div class="score-summary">
+        <div class="score-ring" id="overallScoreRing">--</div>
+        <div class="score-bars">
+          <div class="mini-metric"><span>Network</span><strong id="scoreNetwork">--</strong></div>
+          <div class="mini-metric"><span>Speed</span><strong id="scoreSpeed">--</strong></div>
+          <div class="mini-metric"><span>UI/Resp</span><strong id="scoreUi">--</strong></div>
+          <div class="mini-metric"><span>Security</span><strong id="scoreSecurity">--</strong></div>
+        </div>
+      </div>
+      <div class="fix-preview" id="fixPreview"></div>
     </div>
   </div>
 

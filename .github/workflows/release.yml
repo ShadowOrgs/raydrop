@@ -86,6 +86,7 @@ jobs:
             ---
 
             ### 🚀 Features & Highlights
+            - **All-in-One Web Debugger & Analyzer (Chrome Extension + Desktop):** On-demand web debugging (0% overhead when idle) with **Run Full Audit** (UI/Responsive overflow scan, Web Vitals, Security Headers, Endpoint Ping), **Start/Stop Live Flow Debug**, Overall & Category Score Gauges, SVG Latency/Payload Charts, Rust HTTP Speedtest, and actionable fix recommendations.
             - **Universal Web Share Over Internet (Public Relay Tunnel):** Zero-app browser downloads anywhere in the world via dynamic QR code or web link (`https://stun.raydrop.web.id/share/...`).
             - **1-Click Copy QR Code Image & Social Share:** Direct bitmap copying to clipboard ready to paste into WhatsApp, Telegram, Discord, and 1-tap social share buttons.
             - **In-Chat Clipboard Image Formatting:** Interactive visual cards in chat with 1-click native bitmap copy, file download, and full-resolution lightbox preview modal.

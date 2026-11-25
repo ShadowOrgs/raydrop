@@ -539,6 +539,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            browser_bridge::run_web_speedtest,
             commands::get_app_state,
             commands::save_cloud_session,
             commands::logout_cloud_session,

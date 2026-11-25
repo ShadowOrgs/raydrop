@@ -1,14 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "Raydrop Download Manager Integration",
+  "name": "Raydrop Companion — Downloader & Web Debugger",
   "short_name": "Raydrop",
-  "version": "1.0.1",
-  "description": "Accelerate and capture web downloads directly into Raydrop with IDM-style multi-threaded segment acceleration and BitTorrent engine.",
+  "version": "1.1.0",
+  "description": "Accelerate web downloads into Raydrop and run on-demand web debugging (latency, UI/responsive audit, speedtest, and flow analysis).",
   "permissions": [
     "downloads",
     "contextMenus",
     "storage",
-    "notifications"
+    "notifications",
+    "activeTab",
+    "scripting",
+    "webRequest"
   ],
   "host_permissions": [
     "http://127.0.0.1:45321/*",

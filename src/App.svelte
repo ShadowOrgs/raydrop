@@ -21,6 +21,8 @@
   import ClipboardHistoryView from "./lib/components/ClipboardHistoryView.svelte";
   import NotesView from "./lib/components/NotesView.svelte";
   import ConverterView from "./lib/components/ConverterView.svelte";
+  import WebDebuggerView from "./lib/components/WebDebuggerView.svelte";
+  import { initWebDebuggerListeners } from "./lib/stores/webDebugger";
   import WolModal from "./lib/components/WolModal.svelte";
   import { setupMeetingSignalListener, isInMeeting } from "./lib/stores/meeting";
   import {
@@ -209,6 +211,7 @@
       initStatusText = "Menghubungkan listener & sistem P2P...";
       // 0. Initialize WebRTC P2P Voice & Online Meeting Signaling
       setupMeetingSignalListener();
+      initWebDebuggerListeners();
 
     // 1. Immediately subscribe to all real-time backend events FIRST to prevent startup race conditions
     await raydropApi.listenEvent<boolean>(
@@ -937,6 +940,13 @@
         : 'hidden'}"
     >
       <ConverterView />
+    </div>
+    <div
+      class="h-full w-full {$activeMainTab === 'webdebugger'
+        ? 'flex flex-col'
+        : 'hidden'}"
+    >
+      <WebDebuggerView />
     </div>
     <div
       class="h-full w-full {$activeMainTab === 'lan' ||

@@ -11,6 +11,7 @@
     ClipboardList,
     StickyNote,
     Wand2,
+    Globe,
   } from "lucide-svelte";
   import {
     activeMainTab,
@@ -42,6 +43,7 @@
     { id: "clipboard", label: "Copy History", icon: ClipboardList },
     { id: "notes", label: "Notes & Lists", icon: StickyNote },
     { id: "converter", label: "File Converter", icon: Wand2 },
+    { id: "webdebugger", label: "Web Debugger", icon: Globe },
   ];
 
   function getBadgeCount(
