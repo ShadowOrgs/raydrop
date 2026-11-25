@@ -172,6 +172,18 @@ async function sendToRaydrop(url, filename, referrer) {
   return false;
 }
 
+function isExtVersionOlder(installed, latest) {
+  const parse = (v) => String(v || "0").replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+  const a = parse(installed);
+  const b = parse(latest);
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    if ((a[i] || 0) < (b[i] || 0)) return true;
+    if ((a[i] || 0) > (b[i] || 0)) return false;
+  }
+  return false;
+}
+
 // Check Raydrop App Connection & Update Badge
 async function updateConnectionStatusBadge() {
   if (debugSession.active) {
@@ -180,8 +192,27 @@ async function updateConnectionStatusBadge() {
     return;
   }
   try {
-    const res = await fetch(RAYDROP_PING_URL, { method: "GET" });
+    const localVer = chrome.runtime.getManifest().version;
+    const res = await fetch(`${RAYDROP_PING_URL}?extVersion=${encodeURIComponent(localVer)}`, { method: "GET" });
     if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const latestVer = data.extensionVersion;
+      if (latestVer && isExtVersionOlder(localVer, latestVer)) {
+        chrome.action.setBadgeText({ text: "UPD" });
+        chrome.action.setBadgeBackgroundColor({ color: "#f59e0b" });
+        chrome.storage.local.get(["notifiedExtVersion"], (st) => {
+          if (st.notifiedExtVersion !== latestVer) {
+            chrome.storage.local.set({ notifiedExtVersion: latestVer });
+            chrome.notifications.create({
+              type: "basic",
+              iconUrl: "icons/icon128.png",
+              title: `Raydrop Extension Update (v${latestVer})`,
+              message: `New version v${latestVer} is ready! Open Raydrop → Browser Extension → Open Folder, then click Reload in chrome://extensions.`
+            });
+          }
+        });
+        return;
+      }
       chrome.action.setBadgeText({ text: "ON" });
       chrome.action.setBadgeBackgroundColor({ color: "#06b6d4" }); // Cyan
       return;

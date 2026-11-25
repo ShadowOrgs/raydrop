@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { browserExtensionModalOpen } from '../stores/torrents';
+  import { extensionUpdateInfo } from '../stores/webDebugger';
   import { raydropApi } from '../utils/tauri-ipc';
   import {
     Puzzle,
@@ -118,6 +119,27 @@
           <X class="w-4 h-4" />
         </button>
       </div>
+
+      {#if $extensionUpdateInfo}
+        <div class="p-3 rounded-xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-between gap-3">
+          <div class="text-xs text-amber-200 leading-relaxed">
+            <strong class="text-amber-300">Extension Update Tersedia (v{$extensionUpdateInfo.installedVersion} → v{$extensionUpdateInfo.latestVersion})</strong>
+            <div class="text-[11px] text-amber-200/80">
+              Klik <b>Open Extension Folder</b> untuk memperbarui file otomatis, lalu klik <b>Reload</b> di <code>chrome://extensions</code>.
+            </div>
+          </div>
+          <button
+            type="button"
+            on:click={() => {
+              handleOpenFolder();
+              handleOpenBrowserUrl('chrome');
+            }}
+            class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 cursor-pointer"
+          >
+            Update Now
+          </button>
+        </div>
+      {/if}
 
       <!-- Live Bridge Status Banner -->
       <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between">

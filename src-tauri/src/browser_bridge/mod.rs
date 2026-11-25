@@ -8,6 +8,41 @@ use tracing::{error, info, warn};
 
 pub const BROWSER_BRIDGE_PORT: u16 = 45321;
 
+static EXT_UPDATE_NOTIFIED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn bundled_extension_version() -> String {
+    let manifest_raw = include_str!("../../browser-extension/manifest.json");
+    serde_json::from_str::<serde_json::Value>(manifest_raw)
+        .ok()
+        .and_then(|v| v.get("version").and_then(|s| s.as_str()).map(|s| s.to_string()))
+        .unwrap_or_else(|| "1.0.0".to_string())
+}
+
+fn is_version_older(installed: &str, latest: &str) -> bool {
+    let parse = |v: &str| -> Vec<u32> {
+        v.trim()
+            .trim_start_matches('v')
+            .split('.')
+            .map(|p| p.parse::<u32>().unwrap_or(0))
+            .collect()
+    };
+    let a = parse(installed);
+    let b = parse(latest);
+    let len = a.len().max(b.len());
+    for i in 0..len {
+        let av = *a.get(i).unwrap_or(&0);
+        let bv = *b.get(i).unwrap_or(&0);
+        if av < bv {
+            return true;
+        }
+        if av > bv {
+            return false;
+        }
+    }
+    false
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ExtensionDownloadRequest {
     pub url: String,
@@ -100,13 +135,33 @@ Connection: close\r\n\r\n";
         return Ok(());
     }
 
-    // Route 1: Ping / Health Check
-    if path == "/api/ping" {
+    // Route 1: Ping / Health Check (also checks extension version)
+    if path == "/api/ping" || path.starts_with("/api/ping?") {
+        let latest_ext = bundled_extension_version();
+        if let Some(query) = path.split('?').nth(1) {
+            for pair in query.split('&') {
+                if let Some(installed) = pair.strip_prefix("extVersion=") {
+                    if !installed.is_empty() && is_version_older(installed, &latest_ext) {
+                        if !EXT_UPDATE_NOTIFIED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                            let _ = app.emit(
+                                "extension_update_available",
+                                serde_json::json!({
+                                    "installedVersion": installed,
+                                    "latestVersion": latest_ext
+                                }),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         let json_body = serde_json::json!({
             "status": "ok",
             "app": "raydrop",
-            "version": "1.2.15",
-            "capabilities": ["http_segmented_accelerator", "torrent_magnet"]
+            "version": env!("CARGO_PKG_VERSION"),
+            "extensionVersion": latest_ext,
+            "capabilities": ["http_segmented_accelerator", "torrent_magnet", "web_debugger"]
         })
         .to_string();
 

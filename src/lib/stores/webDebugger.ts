@@ -150,6 +150,10 @@ export const liveRequests = writable<LiveNetworkEvent[]>([]);
 export const liveErrors = writable<LiveConsoleEvent[]>([]);
 export const liveCls = writable<number>(0);
 export const speedtestResult = writable<SpeedtestResult | null>(null);
+export const extensionUpdateInfo = writable<{
+  installedVersion: string;
+  latestVersion: string;
+} | null>(null);
 
 let listenersInitialized = false;
 const unlisteners: UnlistenFn[] = [];
@@ -214,6 +218,17 @@ export async function initWebDebuggerListeners() {
         liveErrors.update((prev) => [...newErrs.reverse(), ...prev].slice(0, 100));
       }
     }),
+  );
+
+  unlisteners.push(
+    await listen<{ installedVersion: string; latestVersion: string }>(
+      'extension_update_available',
+      (event) => {
+        if (event.payload) {
+          extensionUpdateInfo.set(event.payload);
+        }
+      },
+    ),
   );
 }
 

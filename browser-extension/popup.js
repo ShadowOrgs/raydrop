@@ -37,10 +37,37 @@ tabButtons.forEach((btn) => {
   });
 });
 
+function isExtVersionOlder(installed, latest) {
+  const parse = (v) => String(v || "0").replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+  const a = parse(installed);
+  const b = parse(latest);
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    if ((a[i] || 0) < (b[i] || 0)) return true;
+    if ((a[i] || 0) > (b[i] || 0)) return false;
+  }
+  return false;
+}
+
 async function checkStatus() {
+  const localVer = chrome.runtime.getManifest().version;
+  const footerEl = document.getElementById("extVersionFooter");
+  if (footerEl) footerEl.textContent = `Raydrop Extension v${localVer}`;
+
   try {
-    const res = await fetch(PING_URL, { method: "GET" });
+    const res = await fetch(`${PING_URL}?extVersion=${encodeURIComponent(localVer)}`, { method: "GET" });
     if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const latestVer = data.extensionVersion;
+      const banner = document.getElementById("extUpdateBanner");
+      const titleEl = document.getElementById("extUpdateTitle");
+      if (banner && latestVer && isExtVersionOlder(localVer, latestVer)) {
+        banner.style.display = "block";
+        if (titleEl) titleEl.textContent = `Update Tersedia: v${localVer} → v${latestVer}`;
+      } else if (banner) {
+        banner.style.display = "none";
+      }
+
       statusBadge.className = "status-badge";
       statusText.textContent = "Connected";
       return true;

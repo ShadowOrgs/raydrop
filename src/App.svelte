@@ -22,7 +22,8 @@
   import NotesView from "./lib/components/NotesView.svelte";
   import ConverterView from "./lib/components/ConverterView.svelte";
   import WebDebuggerView from "./lib/components/WebDebuggerView.svelte";
-  import { initWebDebuggerListeners } from "./lib/stores/webDebugger";
+  import { initWebDebuggerListeners, extensionUpdateInfo } from "./lib/stores/webDebugger";
+  import { browserExtensionModalOpen } from "./lib/stores/torrents";
   import WolModal from "./lib/components/WolModal.svelte";
   import { setupMeetingSignalListener, isInMeeting } from "./lib/stores/meeting";
   import {
@@ -1267,6 +1268,35 @@
             Approve Mesh
           </button>
         </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if $extensionUpdateInfo}
+    <div class="fixed bottom-4 right-4 z-[85] max-w-sm rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-amber-500/40 shadow-2xl p-3.5 flex items-center gap-3">
+      <div class="flex-1 text-xs">
+        <div class="font-bold text-amber-300">
+          Chrome Extension Update (v{$extensionUpdateInfo.installedVersion} → v{$extensionUpdateInfo.latestVersion})
+        </div>
+        <div class="text-[11px] text-slate-300 mt-0.5">
+          Versi ekstensi terbaru tersedia. Klik Update untuk memperbarui folder &amp; reload di Chrome.
+        </div>
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button
+          type="button"
+          on:click={() => ($browserExtensionModalOpen = true)}
+          class="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] cursor-pointer"
+        >
+          Update
+        </button>
+        <button
+          type="button"
+          on:click={() => extensionUpdateInfo.set(null)}
+          class="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 text-[11px] cursor-pointer"
+        >
+          ✕
+        </button>
       </div>
     </div>
   {/if}

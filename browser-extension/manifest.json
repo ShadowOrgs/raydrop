@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Raydrop Companion — Downloader & Web Debugger",
   "short_name": "Raydrop",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Accelerate web downloads into Raydrop and run on-demand web debugging (latency, UI/responsive audit, speedtest, and flow analysis).",
   "permissions": [
     "downloads",

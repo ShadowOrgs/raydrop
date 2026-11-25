@@ -3419,24 +3419,55 @@ pub async fn open_browser_extension_dir(app: AppHandle) -> Result<String, String
     Err("Browser extension folder could not be located.".to_string())
 }
 
+#[cfg(target_os = "windows")]
+fn read_chromium_last_profile(local_state_rel: &str) -> String {
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let path = std::path::PathBuf::from(local_app_data).join(local_state_rel);
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(last) = json
+                    .get("profile")
+                    .and_then(|p| p.get("last_used"))
+                    .and_then(|v| v.as_str())
+                {
+                    if !last.trim().is_empty() {
+                        return last.to_string();
+                    }
+                }
+            }
+        }
+    }
+    "Default".to_string()
+}
+
 #[tauri::command]
 pub async fn open_browser_extension_url(browser: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let browser_clean = browser.to_lowercase();
-        if browser_clean == "chrome" {
-            let _ = std::process::Command::new("cmd")
-                .args(["/c", "start", "chrome", "chrome://extensions"])
-                .spawn();
-        } else if browser_clean == "edge" {
-            let _ = std::process::Command::new("cmd")
-                .args(["/c", "start", "msedge", "edge://extensions"])
-                .spawn();
-        } else if browser_clean == "brave" {
-            let _ = std::process::Command::new("cmd")
-                .args(["/c", "start", "brave", "brave://extensions"])
-                .spawn();
-        }
+        let (exe_name, ext_url, local_state_rel) = match browser_clean.as_str() {
+            "chrome" => (
+                "chrome",
+                "chrome://extensions",
+                r"Google\Chrome\User Data\Local State",
+            ),
+            "edge" => (
+                "msedge",
+                "edge://extensions",
+                r"Microsoft\Edge\User Data\Local State",
+            ),
+            "brave" => (
+                "brave",
+                "brave://extensions",
+                r"BraveSoftware\Brave-Browser\User Data\Local State",
+            ),
+            _ => return Ok(()),
+        };
+        let profile = read_chromium_last_profile(local_state_rel);
+        let profile_arg = format!("--profile-directory={}", profile);
+        let _ = std::process::Command::new("cmd")
+            .args(["/c", "start", "", exe_name, &profile_arg, ext_url])
+            .spawn();
     }
     Ok(())
 }
