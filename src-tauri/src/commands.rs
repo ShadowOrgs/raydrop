@@ -3381,6 +3381,7 @@ pub async fn open_browser_extension_dir(app: AppHandle) -> Result<String, String
 
         let manifest_bytes = include_bytes!("../../browser-extension/manifest.json");
         let bg_bytes = include_bytes!("../../browser-extension/background.js");
+        let debug_collector_bytes = include_bytes!("../../browser-extension/debug_collector.js");
         let popup_html_bytes = include_bytes!("../../browser-extension/popup.html");
         let popup_js_bytes = include_bytes!("../../browser-extension/popup.js");
         let icon16_bytes = include_bytes!("../../browser-extension/icons/icon16.png");
@@ -3390,6 +3391,7 @@ pub async fn open_browser_extension_dir(app: AppHandle) -> Result<String, String
 
         let _ = std::fs::write(ext_dir.join("manifest.json"), manifest_bytes);
         let _ = std::fs::write(ext_dir.join("background.js"), bg_bytes);
+        let _ = std::fs::write(ext_dir.join("debug_collector.js"), debug_collector_bytes);
         let _ = std::fs::write(ext_dir.join("popup.html"), popup_html_bytes);
         let _ = std::fs::write(ext_dir.join("popup.js"), popup_js_bytes);
         let _ = std::fs::write(icons_dir.join("icon16.png"), icon16_bytes);
