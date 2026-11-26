@@ -1444,3 +1444,12 @@
       </div>
     {/if}
 </div>
+
+<style>
+  button {
+    transition: transform 0.12s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  button:active:not(:disabled) {
+    transform: scale(0.92);
+  }
+</style>
