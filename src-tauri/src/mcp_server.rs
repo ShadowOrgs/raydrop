@@ -561,7 +561,7 @@ pub fn restart_mcp_server(
         *guard = Some(stop.clone());
 
         let state_bg = state.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             run_mcp_http_loop(app, state_bg, port, auth_token, stop).await;
         });
     }

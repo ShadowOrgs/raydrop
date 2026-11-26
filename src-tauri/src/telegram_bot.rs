@@ -75,7 +75,7 @@ pub fn restart_telegram_bot(app: AppHandle, state: Arc<AppState>) {
         let stop = Arc::new(AtomicBool::new(false));
         *guard = Some(stop.clone());
         let state_bg = state.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             run_telegram_polling_loop(app, state_bg, stop).await;
         });
     }
