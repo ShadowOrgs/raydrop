@@ -45,6 +45,8 @@ export const remoteConnectionStatus = writable<
 >('idle');
 export const remoteErrorMessage = writable<string | null>(null);
 export const remoteLatencyMs = writable<number>(0);
+export const remoteStreamFps = writable<number>(0);
+export const remoteStreamMbps = writable<number>(0);
 export const remoteQualityMode = writable<'60fps' | 'balanced' | 'low_bandwidth'>('60fps');
 export const remoteHostMonitors = writable<
   { index: number; name: string; x: number; y: number; width: number; height: number; is_primary: boolean }[]
@@ -1371,9 +1373,31 @@ function setupClientDataChannel(dc: RTCDataChannel) {
     remoteConnectionStatus.set('connected');
     // Start periodic ping to measure latency
     if (pingInterval) clearInterval(pingInterval);
-    pingInterval = setInterval(() => {
+    let prevStatsBytes = 0;
+    let prevStatsTime = 0;
+    pingInterval = setInterval(async () => {
       if (dc.readyState === 'open') {
         dc.send(JSON.stringify({ t: 'ping', time: Date.now() }));
+      }
+      if (activePeerConnection) {
+        try {
+          const stats = await activePeerConnection.getStats();
+          stats.forEach((report) => {
+            if (report.type === 'inbound-rtp' && report.kind === 'video') {
+              if (typeof report.framesPerSecond === 'number') {
+                remoteStreamFps.set(Math.round(report.framesPerSecond));
+              }
+              const bytes = Number(report.bytesReceived || 0);
+              const ts = Number(report.timestamp || Date.now());
+              if (prevStatsTime > 0 && ts > prevStatsTime && bytes >= prevStatsBytes) {
+                const mbps = ((bytes - prevStatsBytes) * 8) / ((ts - prevStatsTime) / 1000) / 1_000_000;
+                remoteStreamMbps.set(Math.round(mbps * 10) / 10);
+              }
+              prevStatsBytes = bytes;
+              prevStatsTime = ts;
+            }
+          });
+        } catch (_) {}
       }
     }, 2000);
 
@@ -1659,4 +1683,6 @@ export function disconnectRemoteSession() {
   activeRemoteSession.set(null);
   remoteConnectionStatus.set('disconnected');
   remoteLatencyMs.set(0);
+  remoteStreamFps.set(0);
+  remoteStreamMbps.set(0);
 }

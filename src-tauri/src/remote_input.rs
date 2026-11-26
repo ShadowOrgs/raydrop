@@ -126,6 +126,152 @@ mod win_user32 {
 }
 
 #[cfg(target_os = "windows")]
+mod client_kbd_hook {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Mutex, OnceLock};
+    use tauri::{AppHandle, Emitter};
+
+    const WH_KEYBOARD_LL: i32 = 13;
+    const WM_KEYDOWN: usize = 0x0100;
+    const WM_KEYUP: usize = 0x0101;
+    const WM_SYSKEYDOWN: usize = 0x0104;
+    const WM_SYSKEYUP: usize = 0x0105;
+    const WM_QUIT: u32 = 0x0012;
+    const LLKHF_ALTDOWN: u32 = 0x20;
+
+    #[repr(C)]
+    struct KBDLLHOOKSTRUCT {
+        vk_code: u32,
+        scan_code: u32,
+        flags: u32,
+        time: u32,
+        dw_extra_info: usize,
+    }
+
+    #[repr(C)]
+    struct MSG {
+        hwnd: isize,
+        message: u32,
+        w_param: usize,
+        l_param: isize,
+        time: u32,
+        pt_x: i32,
+        pt_y: i32,
+    }
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn SetWindowsHookExW(id_hook: i32, lpfn: unsafe extern "system" fn(i32, usize, isize) -> isize, hmod: isize, dw_thread_id: u32) -> isize;
+        fn UnhookWindowsHookEx(hhk: isize) -> i32;
+        fn CallNextHookEx(hhk: isize, n_code: i32, w_param: usize, l_param: isize) -> isize;
+        fn GetMessageW(lp_msg: *mut MSG, hwnd: isize, w_msg_filter_min: u32, w_msg_filter_max: u32) -> i32;
+        fn PostThreadMessageW(id_thread: u32, msg: u32, w_param: usize, l_param: isize) -> i32;
+        fn GetForegroundWindow() -> isize;
+        fn GetWindowThreadProcessId(hwnd: isize, lpdw_process_id: *mut u32) -> u32;
+        fn GetAsyncKeyState(v_key: i32) -> i16;
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentThreadId() -> u32;
+        fn GetCurrentProcessId() -> u32;
+    }
+
+    static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
+    static HOOK_APP: OnceLock<Mutex<Option<AppHandle>>> = OnceLock::new();
+
+    unsafe extern "system" fn low_level_keyboard_proc(code: i32, w_param: usize, l_param: isize) -> isize {
+        if code >= 0 && l_param != 0 {
+            let fg = GetForegroundWindow();
+            let mut fg_pid: u32 = 0;
+            if fg != 0 {
+                GetWindowThreadProcessId(fg, &mut fg_pid);
+            }
+            if fg_pid != 0 && fg_pid == GetCurrentProcessId() {
+                let kb = &*(l_param as *const KBDLLHOOKSTRUCT);
+                let is_down = w_param == WM_KEYDOWN || w_param == WM_SYSKEYDOWN;
+                let is_up = w_param == WM_KEYUP || w_param == WM_SYSKEYUP;
+                if is_down || is_up {
+                    let alt_down = (kb.flags & LLKHF_ALTDOWN) != 0;
+                    let ctrl_down = GetAsyncKeyState(0x11) < 0;
+                    let mapped: Option<(&str, &str)> = match kb.vk_code {
+                        0x5B => Some(("Meta", "MetaLeft")),
+                        0x5C => Some(("Meta", "MetaRight")),
+                        0x09 if alt_down => Some(("Tab", "Tab")),
+                        0x1B if alt_down || ctrl_down => Some(("Escape", "Escape")),
+                        0x73 if alt_down => Some(("F4", "F4")),
+                        0x2C => Some(("PrintScreen", "PrintScreen")),
+                        _ => None,
+                    };
+                    if let Some((k, c)) = mapped {
+                        if let Some(app_lock) = HOOK_APP.get() {
+                            if let Ok(guard) = app_lock.lock() {
+                                if let Some(ref app) = *guard {
+                                    let _ = app.emit(
+                                        "client_locked_key",
+                                        serde_json::json!({
+                                            "k": k,
+                                            "c": c,
+                                            "a": if is_down { "down" } else { "up" },
+                                        }),
+                                    );
+                                }
+                            }
+                        }
+                        return 1;
+                    }
+                }
+            }
+        }
+        CallNextHookEx(0, code, w_param, l_param)
+    }
+
+    pub fn set_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+        let app_store = HOOK_APP.get_or_init(|| Mutex::new(None));
+        if let Ok(mut guard) = app_store.lock() {
+            *guard = if enabled { Some(app) } else { None };
+        }
+
+        if enabled {
+            if HOOK_THREAD_ID.load(Ordering::Acquire) != 0 {
+                return Ok(());
+            }
+            std::thread::spawn(move || unsafe {
+                let tid = GetCurrentThreadId();
+                HOOK_THREAD_ID.store(tid, Ordering::Release);
+                let hhk = SetWindowsHookExW(WH_KEYBOARD_LL, low_level_keyboard_proc, 0, 0);
+                if hhk != 0 {
+                    let mut msg = std::mem::zeroed::<MSG>();
+                    while GetMessageW(&mut msg, 0, 0, 0) > 0 {}
+                    UnhookWindowsHookEx(hhk);
+                }
+                HOOK_THREAD_ID.store(0, Ordering::Release);
+            });
+        } else {
+            let tid = HOOK_THREAD_ID.swap(0, Ordering::AcqRel);
+            if tid != 0 {
+                unsafe {
+                    PostThreadMessageW(tid, WM_QUIT, 0, 0);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn set_client_keyboard_lock(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        client_kbd_hook::set_enabled(app, enabled)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, enabled);
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "windows")]
 unsafe extern "system" fn monitor_enum_callback(
     hmonitor: isize,
     _hdc: isize,

@@ -13,6 +13,7 @@ pub struct AppStateSnapshot {
     pub ed25519_pubkey: String,
     pub os_type: String,
     pub local_ip: String,
+    pub mac_address: Option<String>,
     pub listen_port: u16,
     pub wan_reflexive_addr: Option<String>,
     pub signaling_connected: bool,
@@ -70,6 +71,7 @@ pub fn get_app_state(state: State<'_, Arc<AppState>>) -> Result<AppStateSnapshot
         ed25519_pubkey: state.identity.public_hex(),
         os_type: std::env::consts::OS.to_string(),
         local_ip: state.local_ip.clone(),
+        mac_address: get_local_mac_address(&state.local_ip),
         listen_port: state.listen_port,
         wan_reflexive_addr,
         signaling_connected: state.is_signaling_connected(),
@@ -327,45 +329,98 @@ pub fn update_settings(
         stun_addr.trim().to_string()
     };
 
-    state.db.set_setting("alias_name", &alias_name)?;
+    let clean_alias = if alias_name.trim().is_empty() {
+        "Raydrop-Device".to_string()
+    } else {
+        alias_name.trim().to_string()
+    };
+
+    state.db.set_setting("alias_name", &clean_alias)?;
     state.db.set_setting("download_dir", &download_dir)?;
     state.db.set_setting("signaling_url", signaling_url.trim())?;
     state.db.set_setting("stun_addr", &resolved_stun)?;
 
-    let mut s = state.settings.lock().map_err(|e| e.to_string())?;
-    s.alias_name = alias_name;
-    s.download_dir = download_dir.clone();
-    s.signaling_url = signaling_url.trim().to_string();
-    s.stun_addr = resolved_stun;
+    let (result_settings, auth_token_opt) = {
+        let mut s = state.settings.lock().map_err(|e| e.to_string())?;
+        s.alias_name = clean_alias.clone();
+        s.download_dir = download_dir.clone();
+        s.signaling_url = signaling_url.trim().to_string();
+        s.stun_addr = resolved_stun;
 
-    state.http_downloader.set_save_dir(std::path::PathBuf::from(download_dir));
+        state.http_downloader.set_save_dir(std::path::PathBuf::from(download_dir));
 
-    if let Some(limit) = speed_limit_mbps {
-        state.db.set_setting("speed_limit_mbps", &limit.to_string())?;
-        s.speed_limit_mbps = limit;
+        if let Some(limit) = speed_limit_mbps {
+            state.db.set_setting("speed_limit_mbps", &limit.to_string())?;
+            s.speed_limit_mbps = limit;
+        }
+
+        if let Some(cat) = auto_categorize {
+            state.db.set_setting("auto_categorize", if cat { "true" } else { "false" })?;
+            s.auto_categorize = cat;
+            state.http_downloader.set_auto_categorize(cat);
+        }
+
+        if let Some(conc) = max_concurrent_downloads {
+            state.db.set_setting("max_concurrent_downloads", &conc.to_string())?;
+            s.max_concurrent_downloads = conc;
+            state.http_downloader.set_max_concurrent_downloads(conc);
+        }
+
+        if let Some(auto) = autostart {
+            let _ = set_autostart(auto);
+            state
+                .db
+                .set_setting("autostart", if auto { "true" } else { "false" })?;
+            s.autostart = auto;
+        }
+
+        (s.clone(), s.auth_token.clone())
+    };
+
+    // Re-register with signaling server and broadcast updated alias to all contacts
+    if let Some(tx) = state.signaling_tx.lock().unwrap().as_ref() {
+        let ts = now_unix_secs();
+        let sign_payload = format!("RAYDROP_REGISTER:{}:{ts}", state.identity.device_id);
+        let sig = state.identity.sign_message(sign_payload.as_bytes());
+        let local_mac = get_local_mac_address(&state.local_ip);
+        let reg_msg = json!({
+            "type": "REGISTER",
+            "device_id": state.identity.device_id,
+            "alias_name": clean_alias,
+            "ed25519_pubkey": state.identity.public_hex(),
+            "timestamp": ts,
+            "signature": sig,
+            "auth_token": auth_token_opt,
+            "mac_address": local_mac
+        })
+        .to_string();
+        let _ = tx.send(reg_msg);
+
+        if let Ok(contacts) = state.db.list_contacts() {
+            let payload = json!({
+                "control_type": "ALIAS_UPDATED",
+                "alias_name": clean_alias,
+            })
+            .to_string();
+            let hex_payload = hex::encode(payload.as_bytes());
+            for c in contacts {
+                if c.device_id == state.identity.device_id {
+                    continue;
+                }
+                let msg = json!({
+                    "type": "RELAY_CONTROL",
+                    "session_id": format!("alias_ctl:{}", state.identity.device_id),
+                    "from_device_id": state.identity.device_id,
+                    "target_device_id": c.device_id,
+                    "payload_json": hex_payload,
+                })
+                .to_string();
+                let _ = tx.send(msg);
+            }
+        }
     }
 
-    if let Some(cat) = auto_categorize {
-        state.db.set_setting("auto_categorize", if cat { "true" } else { "false" })?;
-        s.auto_categorize = cat;
-        state.http_downloader.set_auto_categorize(cat);
-    }
-
-    if let Some(conc) = max_concurrent_downloads {
-        state.db.set_setting("max_concurrent_downloads", &conc.to_string())?;
-        s.max_concurrent_downloads = conc;
-        state.http_downloader.set_max_concurrent_downloads(conc);
-    }
-
-    if let Some(auto) = autostart {
-        let _ = set_autostart(auto);
-        state
-            .db
-            .set_setting("autostart", if auto { "true" } else { "false" })?;
-        s.autostart = auto;
-    }
-
-    Ok(s.clone())
+    Ok(result_settings)
 }
 
 #[tauri::command]
@@ -4146,6 +4201,14 @@ pub async fn revoke_direct_mesh(
 }
 
 #[tauri::command]
+pub async fn set_client_keyboard_lock(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    crate::remote_input::set_client_keyboard_lock(app, enabled)
+}
+
+#[tauri::command]
 pub async fn simulate_remote_mouse_click(
     button: String,
     action: String,
@@ -4635,5 +4698,203 @@ pub async fn convert_documents(
     })
     .await
     .map_err(|e| format!("Document convert task error: {e}"))?
+}
+
+// ── Media Player (Winamp Audio/Video + YouTube Music + Playlists) ──
+
+#[tauri::command]
+pub async fn media_search_ytmusic(
+    query: String,
+    filter: Option<String>,
+) -> Result<Vec<crate::media_player::YtMusicSearchItem>, String> {
+    crate::media_player::search_ytmusic(&query, filter.as_deref().unwrap_or("all")).await
+}
+
+#[tauri::command]
+pub async fn media_resolve_stream(
+    app: AppHandle,
+    video_id: String,
+    prefer_video: Option<bool>,
+) -> Result<crate::media_player::ResolvedMediaStream, String> {
+    crate::media_player::resolve_ytmusic_stream(
+        Some(&app),
+        &video_id,
+        prefer_video.unwrap_or(false),
+    )
+    .await
+}
+
+#[tauri::command]
+pub fn media_get_state(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::media_player::MediaPlayerState, String> {
+    state
+        .media_player
+        .lock()
+        .map(|s| s.clone())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn media_sync_frontend_state(
+    state: State<'_, Arc<AppState>>,
+    player_state: crate::media_player::MediaPlayerState,
+) -> Result<(), String> {
+    let mut guard = state.media_player.lock().map_err(|e| e.to_string())?;
+    *guard = player_state;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn media_dispatch_command(
+    app: AppHandle,
+    action: String,
+    payload: Option<serde_json::Value>,
+) -> Result<(), String> {
+    let _ = app.emit(
+        "media_player_remote_action",
+        serde_json::json!({
+            "action": action,
+            "payload": payload.unwrap_or(serde_json::Value::Null),
+        }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub fn media_list_playlists(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::storage::MediaPlaylist>, String> {
+    state.db.list_media_playlists()
+}
+
+#[tauri::command]
+pub fn media_create_playlist(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> Result<crate::db::storage::MediaPlaylist, String> {
+    state.db.create_media_playlist(&name)
+}
+
+#[tauri::command]
+pub fn media_rename_playlist(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    name: String,
+) -> Result<(), String> {
+    state.db.rename_media_playlist(&id, &name)
+}
+
+#[tauri::command]
+pub fn media_delete_playlist(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> Result<(), String> {
+    state.db.delete_media_playlist(&id)
+}
+
+#[tauri::command]
+pub fn media_list_playlist_items(
+    state: State<'_, Arc<AppState>>,
+    playlist_id: String,
+) -> Result<Vec<crate::db::storage::MediaPlaylistItem>, String> {
+    state.db.list_media_playlist_items(&playlist_id)
+}
+
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub fn media_add_playlist_item(
+    state: State<'_, Arc<AppState>>,
+    playlist_id: String,
+    source_type: String,
+    title: String,
+    artist: String,
+    duration_secs: u64,
+    uri_or_id: String,
+    thumbnail_url: Option<String>,
+    is_video: bool,
+) -> Result<crate::db::storage::MediaPlaylistItem, String> {
+    state.db.add_media_playlist_item(
+        &playlist_id,
+        &source_type,
+        &title,
+        &artist,
+        duration_secs,
+        &uri_or_id,
+        thumbnail_url.as_deref(),
+        is_video,
+    )
+}
+
+#[tauri::command]
+pub fn media_remove_playlist_item(
+    state: State<'_, Arc<AppState>>,
+    item_id: String,
+) -> Result<(), String> {
+    state.db.remove_media_playlist_item(&item_id)
+}
+
+// ── AI Agent, MCP Server & Telegram Bot Settings ──
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AiMcpRuntimeStatus {
+    pub mcp: crate::mcp_server::McpServerRuntime,
+    pub telegram: crate::telegram_bot::TelegramBotStatus,
+}
+
+#[tauri::command]
+pub fn get_ai_mcp_config(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::ai_agent::AiMcpConfig, String> {
+    Ok(crate::ai_agent::load_ai_mcp_config(&state.db))
+}
+
+#[tauri::command]
+pub fn save_ai_mcp_config(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    config: crate::ai_agent::AiMcpConfig,
+) -> Result<crate::ai_agent::AiMcpConfig, String> {
+    crate::ai_agent::save_ai_mcp_config(&state.db, &config)?;
+    crate::mcp_server::restart_mcp_server(
+        app.clone(),
+        state.inner().clone(),
+        config.mcp_enabled,
+        config.mcp_port,
+        config.mcp_auth_token.clone(),
+    );
+    crate::telegram_bot::restart_telegram_bot(app, state.inner().clone());
+    Ok(config)
+}
+
+#[tauri::command]
+pub fn get_ai_mcp_runtime_status(
+    state: State<'_, Arc<AppState>>,
+) -> Result<AiMcpRuntimeStatus, String> {
+    let mcp = state
+        .mcp_server
+        .runtime
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+    let telegram = state
+        .telegram_bot
+        .status
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+    Ok(AiMcpRuntimeStatus { mcp, telegram })
+}
+
+#[tauri::command]
+pub async fn test_llm_connection_cmd(
+    config: crate::ai_agent::AiMcpConfig,
+) -> Result<String, String> {
+    crate::ai_agent::test_llm_connection(&config).await
+}
+
+#[tauri::command]
+pub async fn verify_telegram_token_cmd(token: String) -> Result<String, String> {
+    crate::telegram_bot::verify_telegram_token(&token).await
 }
 

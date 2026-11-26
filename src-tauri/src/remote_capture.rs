@@ -33,6 +33,94 @@ pub fn is_native_capture_active() -> bool {
     CAPTURE_ACTIVE.load(Ordering::Relaxed)
 }
 
+/// Captures a single PNG screenshot (base64) of the primary/active display for MCP AI tools.
+pub fn capture_screenshot_png_base64() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use base64::Engine as _;
+        use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+        use image::{ExtendedColorType, ImageEncoder};
+
+        const SRCCOPY: u32 = 0x00CC0020;
+        const HALFTONE: i32 = 4;
+
+        crate::win_service::switch_to_active_input_desktop();
+        unsafe {
+            let src_w = win_gdi::GetSystemMetrics(0).max(1280);
+            let src_h = win_gdi::GetSystemMetrics(1).max(720);
+            let scale = if src_w > 1920 { 1920.0 / src_w as f32 } else { 1.0 };
+            let dst_w = ((src_w as f32 * scale).round() as i32).max(2) & !1;
+            let dst_h = ((src_h as f32 * scale).round() as i32).max(2) & !1;
+
+            let hdc_screen = win_gdi::GetDC(0);
+            if hdc_screen == 0 {
+                return Err("Failed to acquire screen DC".to_string());
+            }
+            let hdc_mem = win_gdi::CreateCompatibleDC(hdc_screen);
+            let hbm = win_gdi::CreateCompatibleBitmap(hdc_screen, dst_w, dst_h);
+            if hdc_mem == 0 || hbm == 0 {
+                if hbm != 0 { win_gdi::DeleteObject(hbm); }
+                if hdc_mem != 0 { win_gdi::DeleteDC(hdc_mem); }
+                win_gdi::ReleaseDC(0, hdc_screen);
+                return Err("Failed to create compatible bitmap".to_string());
+            }
+
+            let old_obj = win_gdi::SelectObject(hdc_mem, hbm);
+            let ok = if dst_w == src_w && dst_h == src_h {
+                win_gdi::BitBlt(hdc_mem, 0, 0, dst_w, dst_h, hdc_screen, 0, 0, SRCCOPY)
+            } else {
+                win_gdi::SetStretchBltMode(hdc_mem, HALFTONE);
+                win_gdi::StretchBlt(hdc_mem, 0, 0, dst_w, dst_h, hdc_screen, 0, 0, src_w, src_h, SRCCOPY)
+            };
+
+            let mut result = Err("BitBlt failed".to_string());
+            if ok != 0 {
+                let mut bmi = win_gdi::BITMAPINFO {
+                    bmi_header: win_gdi::BITMAPINFOHEADER {
+                        bi_size: std::mem::size_of::<win_gdi::BITMAPINFOHEADER>() as u32,
+                        bi_width: dst_w,
+                        bi_height: -dst_h,
+                        bi_planes: 1,
+                        bi_bit_count: 32,
+                        bi_compression: 0,
+                        bi_size_image: 0,
+                        bi_x_pels_per_meter: 0,
+                        bi_y_pels_per_meter: 0,
+                        bi_clr_used: 0,
+                        bi_clr_important: 0,
+                    },
+                    bmi_colors: [0],
+                };
+                let mut bgra = vec![0u8; (dst_w * dst_h * 4) as usize];
+                if win_gdi::GetDIBits(hdc_mem, hbm, 0, dst_h as u32, bgra.as_mut_ptr(), &mut bmi, 0) > 0 {
+                    let mut rgb = Vec::with_capacity((dst_w * dst_h * 3) as usize);
+                    for px in bgra.chunks_exact(4) {
+                        rgb.push(px[2]);
+                        rgb.push(px[1]);
+                        rgb.push(px[0]);
+                    }
+                    let mut png_buf = Vec::with_capacity(128 * 1024);
+                    let enc = PngEncoder::new_with_quality(&mut png_buf, CompressionType::Fast, FilterType::NoFilter);
+                    if enc.write_image(&rgb, dst_w as u32, dst_h as u32, ExtendedColorType::Rgb8).is_ok() {
+                        result = Ok(base64::engine::general_purpose::STANDARD.encode(&png_buf));
+                    }
+                }
+            }
+
+            win_gdi::SelectObject(hdc_mem, old_obj);
+            win_gdi::DeleteObject(hbm);
+            win_gdi::DeleteDC(hdc_mem);
+            win_gdi::ReleaseDC(0, hdc_screen);
+            result
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("Screenshot capture via MCP is currently supported on Windows hosts".to_string())
+    }
+}
+
 pub fn start_native_screen_capture(app: AppHandle) -> Result<(), String> {
     FRAME_IN_FLIGHT.store(false, Ordering::Release);
     RESET_FRAME_HASH.store(true, Ordering::Release);

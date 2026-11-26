@@ -373,6 +373,11 @@ pub fn list_tools_schema() -> Value {
                 }
             },
             {
+                "name": "raydrop_take_screenshot",
+                "description": "Capture a live PNG screenshot of the host's primary display so the AI can visually inspect the screen.",
+                "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+            },
+            {
                 "name": "raydrop_analytics_and_tools",
                 "description": "Get transfer analytics, compute SHA-256 file hash, set transfer speed limit, or toggle discoverability.",
                 "inputSchema": {
@@ -1088,6 +1093,20 @@ async fn execute_tool(
             match crate::commands::execute_system_power_action(action.clone()) {
                 Ok(()) => tool_ok(json!({ "status": "executed", "action": action })),
                 Err(e) => tool_err(&e),
+            }
+        }
+        "raydrop_take_screenshot" => {
+            match tokio::task::spawn_blocking(crate::remote_capture::capture_screenshot_png_base64).await {
+                Ok(Ok(b64)) => json!({
+                    "content": [{
+                        "type": "image",
+                        "data": b64,
+                        "mimeType": "image/png"
+                    }],
+                    "isError": false
+                }),
+                Ok(Err(e)) => tool_err(&e),
+                Err(e) => tool_err(&format!("Screenshot task error: {e}")),
             }
         }
         "raydrop_analytics_and_tools" => {

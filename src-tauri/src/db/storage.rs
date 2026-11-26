@@ -276,6 +276,29 @@ fn open_and_migrate_db(db_path: &std::path::Path) -> Result<Connection, String> 
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS media_playlists (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS media_playlist_items (
+            id TEXT PRIMARY KEY,
+            playlist_id TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            artist TEXT NOT NULL DEFAULT '',
+            duration_secs INTEGER NOT NULL DEFAULT 0,
+            uri_or_id TEXT NOT NULL,
+            thumbnail_url TEXT,
+            is_video INTEGER NOT NULL DEFAULT 0,
+            position INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_media_playlist_items_pid ON media_playlist_items(playlist_id, position);
         ",
     )
     .map_err(|e| e.to_string())?;
@@ -654,6 +677,16 @@ impl Database {
                 c.mac_address,
                 if c.mesh_status.is_empty() { "none" } else { &c.mesh_status },
             ],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn update_contact_alias(&self, device_id: &str, alias_name: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE contacts SET alias_name = ?1 WHERE device_id = ?2",
+            params![alias_name, device_id],
         )
         .map_err(|e| e.to_string())?;
         Ok(())
@@ -1952,6 +1985,201 @@ impl Database {
             .map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    // ── Media Playlists (Winamp Audio/Video Player) ──
+
+    pub fn list_media_playlists(&self) -> Result<Vec<MediaPlaylist>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT p.id, p.name, p.created_at, p.updated_at,
+                        (SELECT COUNT(*) FROM media_playlist_items i WHERE i.playlist_id = p.id) AS item_count
+                 FROM media_playlists p
+                 ORDER BY p.updated_at DESC, p.created_at DESC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(MediaPlaylist {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    created_at: row.get::<_, i64>(2)? as u64,
+                    updated_at: row.get::<_, i64>(3)? as u64,
+                    item_count: row.get::<_, i64>(4)? as usize,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    }
+
+    pub fn create_media_playlist(&self, name: &str) -> Result<MediaPlaylist, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = now_unix_secs();
+        let trimmed = name.trim();
+        let final_name = if trimmed.is_empty() { "New Playlist" } else { trimmed };
+        conn.execute(
+            "INSERT INTO media_playlists (id, name, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id, final_name, now as i64, now as i64],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(MediaPlaylist {
+            id,
+            name: final_name.to_string(),
+            created_at: now,
+            updated_at: now,
+            item_count: 0,
+        })
+    }
+
+    pub fn rename_media_playlist(&self, id: &str, name: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let now = now_unix_secs();
+        conn.execute(
+            "UPDATE media_playlists SET name = ?1, updated_at = ?2 WHERE id = ?3",
+            params![name.trim(), now as i64, id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn delete_media_playlist(&self, id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM media_playlist_items WHERE playlist_id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM media_playlists WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn list_media_playlist_items(&self, playlist_id: &str) -> Result<Vec<MediaPlaylistItem>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, playlist_id, source_type, title, artist, duration_secs, uri_or_id, thumbnail_url, is_video, position, created_at
+                 FROM media_playlist_items
+                 WHERE playlist_id = ?1
+                 ORDER BY position ASC, created_at ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![playlist_id], |row| {
+                Ok(MediaPlaylistItem {
+                    id: row.get(0)?,
+                    playlist_id: row.get(1)?,
+                    source_type: row.get(2)?,
+                    title: row.get(3)?,
+                    artist: row.get(4)?,
+                    duration_secs: row.get::<_, i64>(5)? as u64,
+                    uri_or_id: row.get(6)?,
+                    thumbnail_url: row.get(7)?,
+                    is_video: row.get::<_, i64>(8)? != 0,
+                    position: row.get::<_, i64>(9)? as usize,
+                    created_at: row.get::<_, i64>(10)? as u64,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_media_playlist_item(
+        &self,
+        playlist_id: &str,
+        source_type: &str,
+        title: &str,
+        artist: &str,
+        duration_secs: u64,
+        uri_or_id: &str,
+        thumbnail_url: Option<&str>,
+        is_video: bool,
+    ) -> Result<MediaPlaylistItem, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let max_pos: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(position), -1) FROM media_playlist_items WHERE playlist_id = ?1",
+                params![playlist_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(-1);
+        let position = (max_pos + 1) as usize;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = now_unix_secs();
+        conn.execute(
+            "INSERT INTO media_playlist_items (id, playlist_id, source_type, title, artist, duration_secs, uri_or_id, thumbnail_url, is_video, position, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                id,
+                playlist_id,
+                source_type,
+                title,
+                artist,
+                duration_secs as i64,
+                uri_or_id,
+                thumbnail_url,
+                if is_video { 1i64 } else { 0i64 },
+                position as i64,
+                now as i64,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        let _ = conn.execute(
+            "UPDATE media_playlists SET updated_at = ?1 WHERE id = ?2",
+            params![now as i64, playlist_id],
+        );
+        Ok(MediaPlaylistItem {
+            id,
+            playlist_id: playlist_id.to_string(),
+            source_type: source_type.to_string(),
+            title: title.to_string(),
+            artist: artist.to_string(),
+            duration_secs,
+            uri_or_id: uri_or_id.to_string(),
+            thumbnail_url: thumbnail_url.map(|s| s.to_string()),
+            is_video,
+            position,
+            created_at: now,
+        })
+    }
+
+    pub fn remove_media_playlist_item(&self, item_id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM media_playlist_items WHERE id = ?1", params![item_id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaPlaylist {
+    pub id: String,
+    pub name: String,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub item_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaPlaylistItem {
+    pub id: String,
+    pub playlist_id: String,
+    pub source_type: String, // "local" | "ytmusic"
+    pub title: String,
+    pub artist: String,
+    pub duration_secs: u64,
+    pub uri_or_id: String,
+    pub thumbnail_url: Option<String>,
+    pub is_video: bool,
+    pub position: usize,
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

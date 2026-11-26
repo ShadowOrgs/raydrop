@@ -16,6 +16,7 @@
   import BrowserExtensionModal from "./lib/components/BrowserExtensionModal.svelte";
   import MeetingView from "./lib/components/MeetingView.svelte";
   import MeetingInviteModal from "./lib/components/MeetingInviteModal.svelte";
+  import WinampPlayer from "./lib/components/WinampPlayer.svelte";
   import RemoteDesktopView from "./lib/components/RemoteDesktopView.svelte";
   import DashboardView from "./lib/components/DashboardView.svelte";
   import ClipboardHistoryView from "./lib/components/ClipboardHistoryView.svelte";
@@ -1227,6 +1228,7 @@
   <BrowserExtensionModal />
   <MeetingInviteModal />
   <WolModal />
+  <WinampPlayer />
 
   {#if pendingMeshRequest}
     <div

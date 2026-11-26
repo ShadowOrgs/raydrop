@@ -85,6 +85,110 @@ export interface TransferAnalytics {
   daily: DailyTransferStat[];
 }
 
+export interface TelegramAllowedUser {
+  user_id: number;
+  label: string;
+}
+
+export interface AiMcpConfig {
+  mcp_enabled: boolean;
+  mcp_port: number;
+  mcp_auth_token: string;
+  llm_provider: string;
+  llm_base_url: string;
+  llm_api_key: string;
+  llm_model: string;
+  llm_temperature: number;
+  llm_max_tokens: number;
+  persona_name: string;
+  persona_preset: string;
+  persona_language: string;
+  persona_system_prompt: string;
+  telegram_enabled: boolean;
+  telegram_bot_token: string;
+  telegram_allowed_users: TelegramAllowedUser[];
+}
+
+export interface AiMcpRuntimeStatus {
+  mcp: {
+    running: boolean;
+    port: number;
+    url: string;
+    last_error?: string | null;
+  };
+  telegram: {
+    running: boolean;
+    bot_username?: string | null;
+    last_error?: string | null;
+  };
+}
+
+export interface MediaTrack {
+  id: string;
+  source_type: 'local' | 'ytmusic';
+  title: string;
+  artist: string;
+  duration_secs: number;
+  uri_or_id: string;
+  thumbnail_url?: string | null;
+  is_video: boolean;
+  stream_url?: string | null;
+}
+
+export interface MediaPlayerState {
+  current_track: MediaTrack | null;
+  queue: MediaTrack[];
+  current_index: number | null;
+  is_playing: boolean;
+  position_secs: number;
+  duration_secs: number;
+  volume: number;
+  muted: boolean;
+  shuffle: boolean;
+  repeat_mode: 'off' | 'all' | 'one';
+  video_mode: boolean;
+  active_playlist_id: string | null;
+}
+
+export interface YtMusicSearchItem {
+  video_id: string;
+  title: string;
+  artist: string;
+  album?: string | null;
+  duration_text: string;
+  duration_secs: number;
+  thumbnail_url?: string | null;
+  is_video: boolean;
+}
+
+export interface ResolvedMediaStream {
+  video_id: string;
+  stream_url: string;
+  is_video: boolean;
+}
+
+export interface MediaPlaylist {
+  id: string;
+  name: string;
+  created_at: number;
+  updated_at: number;
+  item_count: number;
+}
+
+export interface MediaPlaylistItem {
+  id: string;
+  playlist_id: string;
+  source_type: 'local' | 'ytmusic';
+  title: string;
+  artist: string;
+  duration_secs: number;
+  uri_or_id: string;
+  thumbnail_url?: string | null;
+  is_video: boolean;
+  position: number;
+  created_at: number;
+}
+
 export interface AppSettings {
   device_id: string;
   alias_name: string;
@@ -108,6 +212,7 @@ export interface AppStateSnapshot {
   ed25519_pubkey: string;
   os_type: string;
   local_ip: string;
+  mac_address?: string | null;
   listen_port: number;
   wan_reflexive_addr: string | null;
   signaling_connected: boolean;
@@ -748,6 +853,8 @@ export const raydropApi = {
       enabled: boolean;
       status_text: string;
     }>('set_virtual_display_enabled', { enabled }),
+  setClientKeyboardLock: (enabled: boolean) =>
+    invoke<void>('set_client_keyboard_lock', { enabled }),
   simulateRemoteMouseClick: (
     button: string,
     action: string,
@@ -892,6 +999,44 @@ export const raydropApi = {
     invoke<string>('install_windows_service'),
   uninstallWindowsService: () =>
     invoke<string>('uninstall_windows_service'),
+  mediaSearchYtmusic: (query: string, filter: 'all' | 'songs' | 'videos' = 'all') =>
+    invoke<YtMusicSearchItem[]>('media_search_ytmusic', { query, filter }),
+  mediaResolveStream: (videoId: string, preferVideo = false) =>
+    invoke<ResolvedMediaStream>('media_resolve_stream', { videoId, preferVideo }),
+  mediaGetState: () => invoke<MediaPlayerState>('media_get_state'),
+  mediaSyncFrontendState: (playerState: MediaPlayerState) =>
+    invoke<void>('media_sync_frontend_state', { playerState }),
+  mediaDispatchCommand: (action: string, payload?: unknown) =>
+    invoke<void>('media_dispatch_command', { action, payload: payload ?? null }),
+  mediaListPlaylists: () => invoke<MediaPlaylist[]>('media_list_playlists'),
+  mediaCreatePlaylist: (name: string) =>
+    invoke<MediaPlaylist>('media_create_playlist', { name }),
+  mediaRenamePlaylist: (id: string, name: string) =>
+    invoke<void>('media_rename_playlist', { id, name }),
+  mediaDeletePlaylist: (id: string) =>
+    invoke<void>('media_delete_playlist', { id }),
+  mediaListPlaylistItems: (playlistId: string) =>
+    invoke<MediaPlaylistItem[]>('media_list_playlist_items', { playlistId }),
+  mediaAddPlaylistItem: (params: {
+    playlistId: string;
+    sourceType: 'local' | 'ytmusic';
+    title: string;
+    artist: string;
+    durationSecs: number;
+    uriOrId: string;
+    thumbnailUrl?: string | null;
+    isVideo: boolean;
+  }) => invoke<MediaPlaylistItem>('media_add_playlist_item', params),
+  mediaRemovePlaylistItem: (itemId: string) =>
+    invoke<void>('media_remove_playlist_item', { itemId }),
+  getAiMcpConfig: () => invoke<AiMcpConfig>('get_ai_mcp_config'),
+  saveAiMcpConfig: (config: AiMcpConfig) =>
+    invoke<AiMcpConfig>('save_ai_mcp_config', { config }),
+  getAiMcpRuntimeStatus: () => invoke<AiMcpRuntimeStatus>('get_ai_mcp_runtime_status'),
+  testLlmConnection: (config: AiMcpConfig) =>
+    invoke<string>('test_llm_connection_cmd', { config }),
+  verifyTelegramToken: (token: string) =>
+    invoke<string>('verify_telegram_token_cmd', { token }),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>
     listen<T>(event, (e) => handler(e.payload)),
 };

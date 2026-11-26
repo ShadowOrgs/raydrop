@@ -1,3 +1,4 @@
+pub mod ai_agent;
 pub mod browser_bridge;
 pub mod commands;
 pub mod crypto;
@@ -5,6 +6,8 @@ pub mod db;
 pub mod folder_sync;
 pub mod http_downloader;
 pub mod image_tools;
+pub mod mcp_server;
+pub mod media_player;
 pub mod network;
 pub mod os;
 pub mod remote_audio;
@@ -13,6 +16,7 @@ pub mod remote_fs;
 pub mod remote_input;
 pub mod state;
 pub mod system_monitor;
+pub mod telegram_bot;
 pub mod torrent;
 pub mod tray_badge;
 pub mod win_service;
@@ -166,6 +170,9 @@ pub fn run() {
         folder_sync_watcher: folder_sync_mgr.clone(),
         pending_fs_requests: Mutex::new(HashMap::new()),
         second_screen: Arc::new(crate::network::second_screen::SecondScreenState::new()),
+        media_player: Arc::new(Mutex::new(crate::media_player::MediaPlayerState::default())),
+        mcp_server: Arc::new(crate::mcp_server::McpServerManager::default()),
+        telegram_bot: Arc::new(crate::telegram_bot::TelegramBotManager::default()),
     });
 
     #[cfg(desktop)]
@@ -535,6 +542,20 @@ pub fn run() {
 
             // Start Local Loopback Server for Chrome/Edge Browser Extension (IDM mode, user session only)
             if !is_system_agent {
+                let ai_cfg = crate::ai_agent::load_ai_mcp_config(&state_for_setup.db);
+                crate::mcp_server::restart_mcp_server(
+                    handle.clone(),
+                    state_for_setup.clone(),
+                    ai_cfg.mcp_enabled,
+                    ai_cfg.mcp_port,
+                    ai_cfg.mcp_auth_token.clone(),
+                );
+                crate::telegram_bot::restart_telegram_bot(handle.clone(), state_for_setup.clone());
+                let handle_ytdlp = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    let _ = crate::media_player::ensure_ytdlp_installed(Some(&handle_ytdlp)).await;
+                });
                 browser_bridge::start_browser_bridge_daemon(handle, state_for_setup);
             }
 
@@ -655,6 +676,7 @@ pub fn run() {
             commands::get_lan_connection_statuses,
             commands::get_virtual_display_status,
             commands::set_virtual_display_enabled,
+            commands::set_client_keyboard_lock,
             commands::simulate_remote_mouse_click,
             commands::simulate_remote_mouse_wheel,
             commands::simulate_remote_keyboard_key,
@@ -695,6 +717,23 @@ pub fn run() {
             commands::generate_mobile_icons_zip,
             commands::detect_document_engines,
             commands::convert_documents,
+            commands::media_search_ytmusic,
+            commands::media_resolve_stream,
+            commands::media_get_state,
+            commands::media_sync_frontend_state,
+            commands::media_dispatch_command,
+            commands::media_list_playlists,
+            commands::media_create_playlist,
+            commands::media_rename_playlist,
+            commands::media_delete_playlist,
+            commands::media_list_playlist_items,
+            commands::media_add_playlist_item,
+            commands::media_remove_playlist_item,
+            commands::get_ai_mcp_config,
+            commands::save_ai_mcp_config,
+            commands::get_ai_mcp_runtime_status,
+            commands::test_llm_connection_cmd,
+            commands::verify_telegram_token_cmd,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Raydrop Tauri application")

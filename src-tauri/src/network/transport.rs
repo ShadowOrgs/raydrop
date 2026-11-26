@@ -416,6 +416,11 @@ fn build_quic_endpoints(port: u16) -> Result<quinn::Endpoint, String> {
     if let Ok(idle) = Duration::from_secs(45).try_into() {
         transport_cfg.max_idle_timeout(Some(idle));
     }
+    // High-BDP WAN flow-control windows (32 MB conn / 16 MB stream) for 10GB-100GB P2P transfers
+    transport_cfg.receive_window((32u32 * 1024 * 1024).into());
+    transport_cfg.stream_receive_window((16u32 * 1024 * 1024).into());
+    transport_cfg.send_window(32 * 1024 * 1024);
+    transport_cfg.datagram_receive_buffer_size(Some(8 * 1024 * 1024));
     let transport_arc = Arc::new(transport_cfg);
 
     let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(

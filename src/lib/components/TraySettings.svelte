@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { getVersion } from "@tauri-apps/api/app";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { appSettings, settingsModalOpen } from "../stores/state";
+  import { appSettings, settingsModalOpen, cloudMyDevices } from "../stores/state";
   import {
     updateInfo,
     updateModalOpen,
@@ -10,10 +10,14 @@
     updateStatusMessage,
   } from "../stores/update";
   import { checkForUpdates } from "../utils/updater";
-  import { raydropApi } from "../utils/tauri-ipc";
+  import { raydropApi, cloudApi, getApiBaseUrl } from "../utils/tauri-ipc";
   import { browserExtensionModalOpen } from "../stores/torrents";
   import { myAvatar } from "../stores/avatars";
   import { RAYDROP_THEMES, currentTheme, applyTheme } from "../stores/theme";
+  import { contacts } from "../stores/contacts";
+  import { getWolConfig, saveWolConfig, executeWakeOnLan } from "../stores/wol";
+  import WolSetupGuide from "./WolSetupGuide.svelte";
+  import AiMcpSettingsCard from "./AiMcpSettingsCard.svelte";
   import {
     FolderOpen,
     Terminal,
@@ -33,6 +37,9 @@
     Trash2,
     Palette,
     HardDrive,
+    Zap,
+    Copy,
+    Check,
   } from "lucide-svelte";
 
   let aliasName = "";
@@ -43,6 +50,62 @@
   let speedLimitMbps = 0;
   let autoCategorize = true;
   let maxConcurrentDownloads = 3;
+
+  // Wake-on-LAN per-device configuration state inside Settings
+  let wolSelectedDeviceId = "";
+  let wolMac = "";
+  let wolWanHost = "";
+  let wolPort = 9;
+  let wolSending = false;
+  let wolFeedback = "";
+  let localMacAddress = "";
+  let copiedLocalMac = false;
+
+  $: wolTargetDevices = $contacts
+    .filter((c) => c.device_id !== $appSettings.device_id)
+    .sort((a, b) => Number(b.is_own_device) - Number(a.is_own_device));
+
+  function loadWolFieldsForDevice(deviceId: string) {
+    if (!deviceId) return;
+    const cfg = getWolConfig(deviceId);
+    const contact = $contacts.find((c) => c.device_id === deviceId);
+    const detected = contact?.is_own_device && contact?.mac_address ? contact.mac_address : "";
+    wolMac = cfg.mac || detected;
+    wolWanHost = cfg.wanHost || "";
+    wolPort = cfg.port || 9;
+    wolFeedback = "";
+  }
+
+  function handleSaveWolInSettings() {
+    if (!wolSelectedDeviceId) return;
+    saveWolConfig(wolSelectedDeviceId, { mac: wolMac, wanHost: wolWanHost, port: wolPort });
+    wolFeedback = "Konfigurasi Wake-on-LAN disimpan!";
+    setTimeout(() => (wolFeedback = ""), 3000);
+  }
+
+  async function handleTestWolInSettings() {
+    if (!wolSelectedDeviceId || wolSending) return;
+    if (!wolMac.trim()) {
+      wolFeedback = "Masukkan MAC Address perangkat tujuan terlebih dahulu.";
+      return;
+    }
+    wolSending = true;
+    wolFeedback = "";
+    try {
+      const contact = $contacts.find((c) => c.device_id === wolSelectedDeviceId);
+      const name = contact?.custom_name || contact?.alias_name || wolSelectedDeviceId;
+      await executeWakeOnLan(wolSelectedDeviceId, name, {
+        mac: wolMac,
+        wanHost: wolWanHost,
+        port: wolPort,
+      });
+      wolFeedback = `Magic Packet terkirim ke ${wolMac.trim()}!`;
+    } catch (err: any) {
+      wolFeedback = err?.message || String(err);
+    } finally {
+      wolSending = false;
+    }
+  }
   let win11DirectMenu = false;
   let statusBanner = "";
   let saveError = "";
@@ -75,7 +138,19 @@
       .getWin11DirectMenu()
       .then((res) => (win11DirectMenu = res))
       .catch(() => {});
+    raydropApi
+      .getAppState()
+      .then((snap) => {
+        localMacAddress = snap.mac_address || "";
+      })
+      .catch(() => {});
     loadSharedFolders();
+    if (!wolSelectedDeviceId && wolTargetDevices.length > 0) {
+      wolSelectedDeviceId = wolTargetDevices[0].device_id;
+    }
+    if (wolSelectedDeviceId) {
+      loadWolFieldsForDevice(wolSelectedDeviceId);
+    }
   }
 
   async function loadSharedFolders() {
@@ -169,8 +244,21 @@
         maxConcurrentDownloads,
       });
       appSettings.set(updated);
+      if (updated.auth_token && updated.alias_name) {
+        try {
+          const res = await cloudApi.renameDevice(
+            getApiBaseUrl(updated.signaling_url),
+            updated.auth_token,
+            updated.device_id,
+            updated.alias_name,
+          );
+          if (res?.my_devices) {
+            cloudMyDevices.set(res.my_devices);
+          }
+        } catch (_) {}
+      }
       statusBanner =
-        "Settings saved! Autorun & Signaling configuration updated.";
+        "Settings saved! Device alias broadcasted to contacts & cloud.";
       justSaved = true;
       setTimeout(() => (justSaved = false), 2500);
       setTimeout(() => (statusBanner = ""), 4000);
@@ -711,6 +799,144 @@
             <span>Install Extension</span>
           </button>
         </div>
+
+        <!-- Wake-on-LAN Device Configuration -->
+        <div class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <p class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <Zap class="w-3.5 h-3.5 text-amber-400" />
+                <span>Wake-on-LAN (Device Configuration)</span>
+              </p>
+              <p class="text-[11px] text-slate-400 mt-0.5">
+                Configure MAC Address &amp; WAN/Port per device anytime (online or offline).
+              </p>
+            </div>
+          </div>
+
+          {#if localMacAddress}
+            <div class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg bg-slate-900/90 border border-slate-800">
+              <div class="min-w-0">
+                <p class="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+                  This Device MAC (Auto-Detected)
+                </p>
+                <p class="text-xs font-mono text-white truncate">{localMacAddress}</p>
+              </div>
+              <button
+                type="button"
+                on:click={() => {
+                  navigator.clipboard?.writeText(localMacAddress);
+                  copiedLocalMac = true;
+                  setTimeout(() => (copiedLocalMac = false), 2000);
+                }}
+                class="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-semibold text-slate-200 flex items-center gap-1 shrink-0 cursor-pointer transition"
+              >
+                {#if copiedLocalMac}
+                  <Check class="w-3 h-3 text-emerald-400" />
+                  <span class="text-emerald-300">Copied</span>
+                {:else}
+                  <Copy class="w-3 h-3 text-slate-400" />
+                  <span>Copy</span>
+                {/if}
+              </button>
+            </div>
+          {/if}
+
+          {#if wolTargetDevices.length === 0}
+            <p class="text-[11px] text-slate-500 italic">
+              Belum ada perangkat lain yang tersimpan di kontak / My Devices.
+            </p>
+          {:else}
+            <div class="space-y-2.5">
+              <div>
+                <label for="setting-wol-device" class="block text-[11px] font-medium text-slate-400 mb-1">
+                  Target Device
+                </label>
+                <select
+                  id="setting-wol-device"
+                  bind:value={wolSelectedDeviceId}
+                  on:change={() => loadWolFieldsForDevice(wolSelectedDeviceId)}
+                  class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-amber-500"
+                >
+                  {#each wolTargetDevices as dev (dev.device_id)}
+                    <option value={dev.device_id}>
+                      {dev.custom_name || dev.alias_name} ({dev.device_id}) {dev.is_own_device ? "• My Device" : ""}
+                    </option>
+                  {/each}
+                </select>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <label for="setting-wol-mac" class="block text-[11px] font-medium text-slate-400 mb-1">
+                    MAC Address
+                  </label>
+                  <input
+                    id="setting-wol-mac"
+                    type="text"
+                    bind:value={wolMac}
+                    placeholder="AA:BB:CC:DD:EE:FF"
+                    class="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label for="setting-wol-wan" class="block text-[11px] font-medium text-slate-400 mb-1">
+                    WAN Host / IP (Optional)
+                  </label>
+                  <input
+                    id="setting-wol-wan"
+                    type="text"
+                    bind:value={wolWanHost}
+                    placeholder="ddns / public IP"
+                    class="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label for="setting-wol-port" class="block text-[11px] font-medium text-slate-400 mb-1">
+                    UDP Port
+                  </label>
+                  <input
+                    id="setting-wol-port"
+                    type="number"
+                    min="1"
+                    max="65535"
+                    bind:value={wolPort}
+                    class="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              {#if wolFeedback}
+                <p class="text-[11px] text-amber-300 font-medium">{wolFeedback}</p>
+              {/if}
+
+              <div class="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  on:click={handleSaveWolInSettings}
+                  class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition"
+                >
+                  <Save class="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Save WoL Config</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={wolSending}
+                  on:click={handleTestWolInSettings}
+                  class="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/40 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition disabled:opacity-50"
+                >
+                  <Zap class="w-3.5 h-3.5" />
+                  <span>{wolSending ? "Sending..." : "Wake Now"}</span>
+                </button>
+              </div>
+            </div>
+          {/if}
+
+          <WolSetupGuide />
+        </div>
+
+        <!-- AI Remote Control (MCP, LLM Provider, Persona & Telegram Bot) -->
+        <AiMcpSettingsCard />
 
         <!-- Software Updates -->
         <div

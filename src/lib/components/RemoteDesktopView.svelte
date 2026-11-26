@@ -48,6 +48,8 @@
     remoteConnectionStatus,
     remoteErrorMessage,
     remoteLatencyMs,
+    remoteStreamFps,
+    remoteStreamMbps,
     remoteHostMonitors,
     activeMonitorIndex,
     remoteCursorShape,
@@ -130,6 +132,7 @@
   let isFullscreen = false;
   let showToolbar = false;
   let hideLocalCursor = false;
+  let lockKeyboardToHost = true;
   let isAudioMuted = false;
   let isPiP = false;
   let showAnnotation = false;
@@ -396,10 +399,24 @@
 
     refreshVddStatus();
 
+    const unlistenLockedKeyPromise = raydropApi.listenEvent<{ k: string; c: string; a: string }>(
+      "client_locked_key",
+      (ev) => {
+        if (!isClientConnected || !lockKeyboardToHost) return;
+        sendInputToHost({
+          t: "kk",
+          k: ev.k,
+          c: ev.c,
+          a: ev.a,
+        });
+      },
+    );
+
     document.addEventListener("fullscreenchange", handleFullscreenChange);
   });
 
   onDestroy(() => {
+    raydropApi.setClientKeyboardLock(false).catch(() => {});
     stopSecondScreenSharing();
     document.removeEventListener("fullscreenchange", handleFullscreenChange);
     if (typeof navigator !== "undefined" && (navigator as any).keyboard?.unlock) {
@@ -407,12 +424,10 @@
     }
   });
 
-  function handleFullscreenChange() {
-    isFullscreen = !!document.fullscreenElement;
-    if (isFullscreen) {
-      // Auto hide toolbar on fullscreen enter for clean view
-      showToolbar = false;
-      // Lock keyboard so all system shortcuts (Alt+Tab, Windows key, PrintScreen, Escape) pass to host
+  function syncKeyboardLockState() {
+    const shouldLock = isClientConnected && lockKeyboardToHost;
+    raydropApi.setClientKeyboardLock(shouldLock).catch(() => {});
+    if (shouldLock && isFullscreen) {
       if (typeof navigator !== "undefined" && (navigator as any).keyboard?.lock) {
         (navigator as any).keyboard.lock().catch(() => {});
       }
@@ -421,6 +436,19 @@
         (navigator as any).keyboard.unlock();
       }
     }
+  }
+
+  $: if (isClientConnected || !isClientConnected || lockKeyboardToHost || !lockKeyboardToHost) {
+    syncKeyboardLockState();
+  }
+
+  function handleFullscreenChange() {
+    isFullscreen = !!document.fullscreenElement;
+    if (isFullscreen) {
+      // Auto hide toolbar on fullscreen enter for clean view
+      showToolbar = false;
+    }
+    syncKeyboardLockState();
   }
 
   async function handleToggleHostEnabled() {
@@ -1080,9 +1108,9 @@
       triggerLocalClipboardSyncNow();
     }
 
-    // In Fullscreen mode: intercept and prevent default for ALL shortcuts
-    // (Alt+Tab, Windows key/Meta, PrintScreen, F-keys, etc.) so host handles them!
-    if (isFullscreen) {
+    // When Keyboard Lock is ON (in Desktop Mode or Game Mode, windowed or fullscreen),
+    // intercept system/browser shortcuts so they go to Host instead of local OS/browser!
+    if (isFullscreen || lockKeyboardToHost) {
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -1110,7 +1138,7 @@
       a: "up",
     });
 
-    if (isFullscreen) {
+    if (isFullscreen || lockKeyboardToHost) {
       e.preventDefault();
       e.stopPropagation();
     }
@@ -1267,6 +1295,14 @@
             >
               ⚡ {$remoteLatencyMs} ms
             </span>
+            {#if $remoteStreamFps > 0 || $remoteStreamMbps > 0}
+              <span
+                class="hidden md:flex text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-slate-800/90 text-emerald-300 border border-slate-700 shrink-0 whitespace-nowrap items-center gap-1"
+                title="Live WebRTC Video FPS & Throughput"
+              >
+                {$remoteStreamFps} FPS • {$remoteStreamMbps.toFixed(1)} Mbps
+              </span>
+            {/if}
           </div>
 
           <!-- Desktop vs Game Mode Switcher -->
@@ -1349,6 +1385,21 @@
                 </select>
               </div>
             {/if}
+
+            <!-- Keyboard Lock to Host Toggle (Default ON for Desktop & Game Mode) -->
+            <button
+              type="button"
+              on:click={() => (lockKeyboardToHost = !lockKeyboardToHost)}
+              class="px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer border {lockKeyboardToHost
+                ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/35 hover:bg-emerald-500/25'
+                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'}"
+              title={lockKeyboardToHost
+                ? "Keyboard Lock ON: Shortcut Windows (Win, Alt+Tab, PrintScreen) dikirim ke Host (Klik untuk mematikan)"
+                : "Keyboard Lock OFF: Shortcut Windows tetap di PC lokal (Klik untuk kunci ke Host)"}
+            >
+              <Lock class="w-3 h-3" />
+              <span>{lockKeyboardToHost ? "Key Lock ON" : "Key Lock OFF"}</span>
+            </button>
 
             <!-- Remote Audio Streaming Toggle (Mute/Unmute) -->
             <button

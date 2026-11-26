@@ -201,6 +201,12 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 val.get("is_online").and_then(|v| v.as_bool()),
             ) {
                 let _ = state.db.update_contact_online(device_id, is_online);
+                if let Some(new_alias) = val.get("alias_name").and_then(|v| v.as_str()) {
+                    let clean = new_alias.trim();
+                    if !clean.is_empty() {
+                        let _ = state.db.update_contact_alias(device_id, clean);
+                    }
+                }
                 let _ = app.emit("contacts_updated", ());
             }
         }
@@ -314,6 +320,23 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 .unwrap_or_default();
 
             if session_id.is_empty() || from_device_id.is_empty() {
+                return;
+            }
+
+            // Peer Alias Update Broadcast Handler
+            if session_id.starts_with("alias_ctl:") {
+                if let Ok(bytes) = hex::decode(payload_json) {
+                    if let Ok(ctl_val) = serde_json::from_slice::<Value>(&bytes) {
+                        if let Some(new_alias) = ctl_val.get("alias_name").and_then(|v| v.as_str()) {
+                            let clean = new_alias.trim();
+                            if !clean.is_empty() {
+                                let _ = state.db.update_contact_alias(&from_device_id, clean);
+                                let _ = app.emit("contacts_updated", ());
+                                let _ = app.emit("lan_contacts_updated", ());
+                            }
+                        }
+                    }
+                }
                 return;
             }
 

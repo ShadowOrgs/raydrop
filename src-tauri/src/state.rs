@@ -53,6 +53,9 @@ pub struct AppState {
     pub folder_sync_watcher: Arc<crate::folder_sync::FolderSyncManager>,
     pub pending_fs_requests: Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>,
     pub second_screen: Arc<crate::network::second_screen::SecondScreenState>,
+    pub media_player: Arc<Mutex<crate::media_player::MediaPlayerState>>,
+    pub mcp_server: Arc<crate::mcp_server::McpServerManager>,
+    pub telegram_bot: Arc<crate::telegram_bot::TelegramBotManager>,
 }
 
 impl AppState {

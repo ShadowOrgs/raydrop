@@ -146,6 +146,8 @@ async fn handle_extension_client(
 
     // Read HTTP headers
     let mut content_length: usize = 0;
+    let mut origin_header: Option<String> = None;
+    let mut auth_header: Option<String> = None;
     loop {
         let mut header_line = String::new();
         if buf_reader.read_line(&mut header_line).await.is_err() {
@@ -155,10 +157,44 @@ async fn handle_extension_client(
         if trimmed.is_empty() {
             break;
         }
-        if let Some(pos) = trimmed.to_lowercase().find("content-length:") {
+        let lower = trimmed.to_lowercase();
+        if let Some(pos) = lower.find("content-length:") {
             let val = trimmed[pos + 15..].trim();
             if let Ok(cl) = val.parse::<usize>() {
                 content_length = cl;
+            }
+        } else if let Some(val) = trimmed.strip_prefix("Origin:").or_else(|| trimmed.strip_prefix("origin:")) {
+            origin_header = Some(val.trim().to_string());
+        } else if let Some(val) = trimmed.strip_prefix("Authorization:").or_else(|| trimmed.strip_prefix("authorization:")) {
+            auth_header = Some(val.trim().to_string());
+        }
+    }
+
+    // Block cross-origin web pages from CSRF-probing local MCP or privileged endpoints
+    let is_safe_origin = match origin_header.as_deref() {
+        None => true, // Local CLI / stdio / curl
+        Some(orig) => {
+            orig.starts_with("chrome-extension://")
+                || orig.starts_with("moz-extension://")
+                || orig.starts_with("edge://")
+                || orig.starts_with("http://127.0.0.1")
+                || orig.starts_with("http://localhost")
+                || orig.starts_with("tauri://")
+        }
+    };
+    if !is_safe_origin && (path == "/mcp" || path == "/api/mcp" || path == "/api/download") {
+        let err = serde_json::json!({ "error": "Forbidden: untrusted cross-origin request to local Raydrop bridge" }).to_string();
+        send_json_response(&mut writer_half, "403 Forbidden", &err).await;
+        return Ok(());
+    }
+
+    if let Ok(required_token) = std::env::var("RAYDROP_BRIDGE_TOKEN") {
+        if !required_token.trim().is_empty() && (path == "/mcp" || path == "/api/mcp") {
+            let expected = format!("Bearer {}", required_token.trim());
+            if auth_header.as_deref() != Some(expected.as_str()) {
+                let err = serde_json::json!({ "error": "Unauthorized: invalid RAYDROP_BRIDGE_TOKEN" }).to_string();
+                send_json_response(&mut writer_half, "401 Unauthorized", &err).await;
+                return Ok(());
             }
         }
     }

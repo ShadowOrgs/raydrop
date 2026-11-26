@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.48"
+    tag = clean_args[0] if clean_args else "v1.2.77"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Pre-Login Windows Service, Native Zero-Prompt Capture & Auto-Minimize"
+    title = f"Raydrop {tag}: RayAmp Audio/Video Player, Full MCP Server & Telegram AI Bot"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/ShadowOrgs/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Pre-Login Windows Service, Native Zero-Prompt Capture & Auto-Minimize</h2>
+<h2 align="center">Raydrop {tag}: RayAmp Audio/Video Player, Full MCP Server & Telegram AI Bot</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,16 +126,15 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🛡️ Windows System Service (Pre-Login & Lock Screen PIN Access)
-- **Boot-Time `RaydropService`:** Installable in 1 click from **Remote Desktop → Host Settings**. Runs as `NT AUTHORITY\\SYSTEM` in Session 0 at Windows boot and spawns an elevated session worker (`--system-agent`) into the active console session.
-- **`Winlogon` Secure Desktop Capture & Input:** Automatically switches thread desktop (`OpenInputDesktop` / `SetThreadDesktop`) so you can view the Windows Lock/PIN screen right after reboot and type your Windows login PIN remotely.
+#### 🎵 RayAmp (Winamp-Style Audio/Video Player & YouTube Music)
+- **Audio + Video Playback & Visualizer:** Draggable floating deck with real-time Web Audio spectrum visualizer, inline Video mode, Queue management, and persistent SQLite playlists.
+- **YouTube Music Search & Auto `yt-dlp`:** Search songs and music videos directly inside RayAmp with automatic first-time `yt-dlp` download so streaming works out of the box.
 
-#### 📸 Native Zero-Prompt Desktop Capture & Auto-Minimize
-- **No Browser Permission Popups:** Windows GDI (`StretchBlt` / `GetDIBits`) native screen capture eliminates the browser `getDisplayMedia()` picker dialog on Host startup, enabling 100% unattended remote access after reboot.
-- **Auto-Minimize on Connect:** Automatically minimizes the Host Raydrop window as soon as a remote session connects for a clean desktop view.
-- **Unattended Boot & Admin Control:** Optional elevated Task Scheduler registration (`ONLOGON` with `/RL HIGHEST`) for full UAC & Task Manager control.
+#### 🤖 Full MCP Server & Telegram AI Bot
+- **RayDrop MCP Server (`http://127.0.0.1:8765/mcp`):** Standard JSON-RPC 2.0 MCP server exposing RayAmp playback/playlists, Wake-on-LAN, system telemetry, devices, clipboard history, notes, and shared folders.
+- **Telegram AI Bot + Bot Persona + Custom LLM:** Long-polling Telegram bot with multiple allowed User IDs whitelist, customizable Bot Persona (name, style preset, language, custom system instructions), and preset/custom OpenAI-compatible LLM providers (OpenAI, Gemini, Claude, DeepSeek, Groq, OpenRouter, Ollama).
 
-#### 🌐 WebRTC Connection Stability
-- **Transient Disconnect Grace Window:** Prevents WebRTC connections from dropping prematurely on brief ICE `'disconnected'` flickers during initial negotiation.
+#### ⚡ Wake-on-LAN Settings, Auto-MAC & Setup Guide
+- **Per-Device WoL Config in Settings:** Configure MAC, DDNS host, and UDP port directly in Settings with automatic local MAC detection + Copy button and a built-in English BIOS/OS/Free-DDNS setup guide.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

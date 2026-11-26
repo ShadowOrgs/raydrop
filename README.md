@@ -37,6 +37,8 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 **Your files, voice data, screen streams, and metadata NEVER touch the cloud.**
 
 ### 🌟 What Makes Raydrop Unique?
+- 🎵 **RayAmp (Winamp-Style Audio/Video Player & YouTube Music):** Floating deck with Web Audio spectrum visualizer, local MP3/FLAC/MP4/MKV & persistent SQLite playlists, YouTube Music search, and automatic zero-config `yt-dlp` stream engine setup.
+- 🤖 **Full MCP Server & Telegram AI Bot:** Built-in JSON-RPC MCP server (`http://127.0.0.1:8765/mcp`) plus a native Telegram AI Bot with multi-user whitelist, customizable Bot Persona, and preset/custom OpenAI-compatible LLM providers (OpenAI, Gemini, Claude, DeepSeek, Groq, OpenRouter, Ollama).
 - 🖥️ **Unattended P2P Remote Desktop (Pre-Login Windows Service):** Full 60fps remote control with Windows `SYSTEM` service for pre-login Lock/PIN screen access, native zero-prompt capture, WASAPI system audio streaming, multi-monitor switching, remote power controls, and auto-minimize on connect.
 - 📱 **Extend to iPad / Tablet via QR Code:** Turn any iPad, iPhone, or Android tablet into a wireless touch-enabled second display via Safari/Chrome—no app installation required.
 - ⚡ **Wake-on-LAN (WoL) & Instant Media Streaming:** Wake offline PCs with UDP Magic Packets and stream actively downloading videos before completion.
@@ -75,6 +77,12 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 ---
 
 ## ✨ Key Features
+
+### 🆕 RayAmp Media Player, Full MCP Server & Telegram AI Bot (New in v1.2.77)
+- **RayAmp Winamp-Style Audio & Video Player:** Draggable floating deck with real-time Web Audio spectrum visualizer, Audio/Video mode toggle, Queue & persistent SQLite Playlists, YouTube Music search (`Songs` / `Videos`), and automatic background `yt-dlp` installation for zero-config streaming.
+- **RayDrop Full MCP Server (HTTP / JSON-RPC):** Exposes RayAmp playback/playlists and core RayDrop tools (`devices_list`, `device_wake_on_lan`, `system_telemetry`, `clipboard_get_history`, `notes_list`, `notes_create`, `shared_folders_list`) with optional Bearer Auth token.
+- **Telegram AI Bot with Multi-User Whitelist & Bot Persona:** Built-in long-polling Telegram bot (`@BotFather` token + multiple allowed numeric User IDs) connected to full RayDrop MCP tools, customizable Bot Persona (name, style preset, language, custom system instructions), and support for **OpenAI, Google Gemini, Anthropic Claude, DeepSeek, Groq, OpenRouter, Ollama**, or any **Custom OpenAI-Compatible** endpoint.
+- **Wake-on-LAN Settings & English Setup Guide:** Configure per-device MAC, DDNS host, and UDP port directly in Settings with automatic local MAC detection and a built-in BIOS/OS/Free-DDNS setup guide.
 
 ### 🆕 Productivity, Analytics & Privacy Suite (Updated in v1.2.62)
 - **WAN Direct QUIC STUN Fix & 2 GB Relay Fallback Guard:** Awaits STUN reflexive address discovery before sending `CONNECT_INTENT` / `CANDIDATE_ANSWER`, releases Windows UDP hole-punch sockets cleanly before QUIC handshakes, and raises the fallback WSS Relay limit from `100 MB` to `2 GB` for strict Symmetric NAT / CGNAT networks.
@@ -266,10 +274,10 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.76/Raydrop_1.2.76_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.76/Raydrop_1.2.76_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.76/Raydrop_1.2.76_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.76/Raydrop_1.2.76_amd64.AppImage) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.77/Raydrop_1.2.77_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.77/Raydrop_1.2.77_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.77/Raydrop_1.2.77_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.77/Raydrop_1.2.77_amd64.AppImage) |
 | **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.23/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**
@@ -304,14 +312,14 @@ For MCP clients supporting HTTP JSON-RPC directly, point to:
 http://127.0.0.1:45321/mcp
 ```
 
-### Available MCP Tools (29 Tools)
+### Available MCP Tools (30 Tools)
 - **Status, Network & Power:** `raydrop_get_status`, `raydrop_list_contacts`, `raydrop_get_lan_statuses`, `raydrop_manage_mesh`, `raydrop_wake_on_lan`, `raydrop_system_power`, `raydrop_analytics_and_tools`
 - **File Transfers & Public Share:** `raydrop_send_files`, `raydrop_list_transfers`, `raydrop_control_transfer`, `raydrop_respond_transfer`, `raydrop_web_share`, `raydrop_folder_sync`, `raydrop_remote_files`
 - **Encrypted Chat & Groups:** `raydrop_send_chat`, `raydrop_get_chat_history`, `raydrop_group_chat`
 - **Downloader & Torrent:** `raydrop_start_download`, `raydrop_list_downloads`, `raydrop_control_download`
 - **Web Debugger & Speedtest:** `raydrop_web_debug` (`speedtest`, `get_audit`, `get_events`, `clear`)
 - **Productivity & Converters:** `raydrop_clipboard`, `raydrop_notes`, `raydrop_convert_images`, `raydrop_convert_documents`, `raydrop_generate_mobile_icons`
-- **Display & Input:** `raydrop_list_monitors`, `raydrop_virtual_display`, `raydrop_remote_input`
+- **Display, Screenshot & Input:** `raydrop_list_monitors`, `raydrop_virtual_display`, `raydrop_take_screenshot`, `raydrop_remote_input`
 
 ---
 

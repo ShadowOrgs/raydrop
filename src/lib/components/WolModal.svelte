@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Zap, X, Globe, Wifi, Save, CheckCircle2, AlertCircle } from "lucide-svelte";
+  import WolSetupGuide from "./WolSetupGuide.svelte";
   import { contacts } from "../stores/contacts";
   import {
     wolModalTarget,
@@ -155,9 +156,11 @@
             <span>LAN vs WAN Mode</span>
           </div>
           <p>
-            Kosongkan <strong>WAN Host / DDNS</strong> untuk broadcast LAN lokal (port 9 & 7). Isi dengan domain DDNS / IP Publik + port custom jika router target sudah diset Port Forwarding UDP + Static ARP.
+            Leave <strong>WAN Host / DDNS</strong> empty for local LAN broadcast (UDP ports 9 &amp; 7). Enter your DDNS domain or Public IP + UDP port if your target router has Port Forwarding &amp; Static ARP configured.
           </p>
         </div>
+
+        <WolSetupGuide />
 
         {#if errorMsg}
           <div class="flex items-center gap-2 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 px-3 py-2 rounded-xl">

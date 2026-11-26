@@ -25,6 +25,7 @@
   import { checkForUpdates } from "../utils/updater";
   import { myAvatar } from "../stores/avatars";
   import { presenceSoundEnabled, togglePresenceSound } from "../stores/presence";
+  import { winampPlayerOpen, mediaPlayerState } from "../stores/player";
   import { RAYDROP_THEMES, currentTheme, applyTheme } from "../stores/theme";
   import {
     Copy,
@@ -282,6 +283,18 @@
       <span class="hidden lg:inline">
         {$appSettings.discoverable ? "Visible" : "Hidden • Offline"}
       </span>
+    </button>
+
+    <!-- Winamp Media Player Toggle -->
+    <button
+      type="button"
+      on:click={() => winampPlayerOpen.update((v) => !v)}
+      class="p-2 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 {$winampPlayerOpen || $mediaPlayerState.is_playing
+        ? 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40'
+        : 'bg-slate-800/70 hover:bg-slate-700 text-slate-300 hover:text-white'}"
+      title="RayAmp Media Player (Audio & Video + YTMusic)"
+    >
+      <Video class="w-4 h-4 {$mediaPlayerState.is_playing ? 'animate-pulse text-amber-400' : ''}" />
     </button>
 
     <!-- Quick Theme Switcher Dropdown -->
