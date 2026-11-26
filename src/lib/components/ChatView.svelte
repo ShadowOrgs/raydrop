@@ -178,6 +178,7 @@
   let isSavingGroupSettings = false;
 
   let isRecordingVoice = false;
+  let isSendingVoice = false;
   let recordingDuration = 0;
   let recordingTimer: any = null;
   let mediaRecorder: MediaRecorder | null = null;
@@ -191,10 +192,17 @@
   }
 
   async function startVoiceRecording() {
+    if (isRecordingVoice || isSendingVoice) return;
     try {
       audioChunks = [];
       audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(audioStream);
+      try {
+        mediaRecorder = new MediaRecorder(audioStream, {
+          audioBitsPerSecond: 32000,
+        });
+      } catch (_) {
+        mediaRecorder = new MediaRecorder(audioStream);
+      }
       mediaRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) audioChunks.push(e.data);
       };
@@ -213,6 +221,7 @@
   function cancelVoiceRecording() {
     if (recordingTimer) clearInterval(recordingTimer);
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.onstop = null;
       mediaRecorder.stop();
     }
     if (audioStream) {
@@ -225,37 +234,75 @@
     recordingDuration = 0;
   }
 
-  function sendVoiceRecording() {
-    if (!mediaRecorder || !audioStream) return;
-    if (recordingTimer) clearInterval(recordingTimer);
-
-    mediaRecorder.onstop = async () => {
-      const blob = new Blob(audioChunks, { type: "audio/webm;codecs=opus" });
-      if (blob.size > 0) {
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const base64Audio = reader.result as string;
-          if (base64Audio) {
-            await handleSendVoiceNote(base64Audio);
-          }
-        };
-        reader.readAsDataURL(blob);
-      }
-      if (audioStream) {
-        audioStream.getTracks().forEach((t) => t.stop());
-      }
-      audioStream = null;
-      mediaRecorder = null;
-      audioChunks = [];
-      isRecordingVoice = false;
-      recordingDuration = 0;
-    };
-
-    mediaRecorder.stop();
+  function blobToDataUrl(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === "string" && reader.result.length > 0) {
+          resolve(reader.result);
+        } else {
+          reject(new Error("Empty audio data URL"));
+        }
+      };
+      reader.onerror = () => reject(reader.error || new Error("Failed reading audio blob"));
+      reader.readAsDataURL(blob);
+    });
   }
 
-  async function handleSendVoiceNote(audioDataUrl: string) {
-    if (!$activeChatPeerId) return;
+  function sendVoiceRecording() {
+    if (!mediaRecorder || !audioStream || isSendingVoice) return;
+    if (recordingTimer) clearInterval(recordingTimer);
+
+    const recorder = mediaRecorder;
+    const stream = audioStream;
+    const targetPeerId = $activeChatPeerId;
+    const recordedMime = recorder.mimeType || "audio/webm";
+    isSendingVoice = true;
+
+    recorder.onstop = async () => {
+      try {
+        const blob = new Blob(audioChunks, { type: recordedMime });
+        if (blob.size === 0) {
+          alert("Rekaman suara kosong. Coba tahan sedikit lebih lama sebelum mengirim.");
+          return;
+        }
+        const base64Audio = await blobToDataUrl(blob);
+        await handleSendVoiceNote(base64Audio, targetPeerId);
+      } catch (err: any) {
+        console.error("Failed to process/send voice note:", err);
+        alert(`Gagal mengirim voice note: ${err?.message || err}`);
+      } finally {
+        stream.getTracks().forEach((t) => t.stop());
+        audioStream = null;
+        mediaRecorder = null;
+        audioChunks = [];
+        isRecordingVoice = false;
+        isSendingVoice = false;
+        recordingDuration = 0;
+      }
+    };
+
+    try {
+      if (recorder.state === "recording") {
+        try {
+          recorder.requestData();
+        } catch (_) {}
+        recorder.stop();
+      } else {
+        isSendingVoice = false;
+      }
+    } catch (err: any) {
+      isSendingVoice = false;
+      console.error("MediaRecorder stop error:", err);
+      alert(`Gagal menghentikan rekaman: ${err?.message || err}`);
+    }
+  }
+
+  async function handleSendVoiceNote(
+    audioDataUrl: string,
+    targetPeerId: string | null = $activeChatPeerId,
+  ) {
+    if (!targetPeerId) return;
     if (isGroupChat && !canSendInGroup) {
       alert("Anda tidak memiliki izin mengirim pesan di grup ini.");
       return;
@@ -263,25 +310,27 @@
     try {
       if (isGroupChat) {
         const sent = await raydropApi.sendGroupChatMessage(
-          $activeChatPeerId,
+          targetPeerId,
           audioDataUrl,
           "audio",
         );
         handleOutgoingChatMessage(sent);
       } else {
-        await raydropApi.sendChatMessage(
-          $activeChatPeerId,
+        const sent = await raydropApi.sendChatMessage(
+          targetPeerId,
           audioDataUrl,
           "audio",
           null,
           null,
         );
+        handleOutgoingChatMessage(sent);
       }
-      await loadChatHistory($activeChatPeerId);
+      await loadChatHistory(targetPeerId);
       await tick();
       scrollToBottom();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to send voice note:", err);
+      alert(`Gagal mengirim voice note: ${err?.message || err}`);
     }
   }
 
@@ -1325,6 +1374,14 @@
     return null;
   }
 
+  function extractImageCaption(content: string): string {
+    if (!content) return "";
+    return content
+      .replace(/!\[.*?\]\(data:image\/[^)]+\)/g, "")
+      .replace(/data:image\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+/g, "")
+      .trim();
+  }
+
   async function copyMessageText(content: string, id: string) {
     const dataImg = extractDataImage(content);
     if (dataImg) {
@@ -2315,7 +2372,15 @@
 
                   <!-- Direct Image Content (Clipboard Image Screenshot) -->
                   {#if isDataImage && dataImageUrl}
+                    {@const captionText = extractImageCaption(msg.content)}
                     <div class="mt-1 space-y-2">
+                      {#if captionText}
+                        <div
+                          class="text-slate-100 text-xs leading-relaxed font-sans break-words markdown-body select-text pr-6"
+                        >
+                          {@html renderMarkdown(captionText)}
+                        </div>
+                      {/if}
                       <div
                         class="relative group/img rounded-xl overflow-hidden border border-slate-700/80 bg-slate-950/80 shadow-md inline-block max-w-full"
                       >
@@ -2958,12 +3023,13 @@
               </button>
               <button
                 type="button"
+                disabled={isSendingVoice}
                 on:click={sendVoiceRecording}
-                class="px-4 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white font-bold text-xs shadow-md shadow-rose-600/30 transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                class="px-4 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-rose-600/30 transition flex items-center gap-1.5 cursor-pointer active:scale-95"
                 title="Send voice note"
               >
                 <Send class="w-3.5 h-3.5" />
-                <span>Send Note</span>
+                <span>{isSendingVoice ? "Sending..." : "Send Note"}</span>
               </button>
             </div>
           </div>

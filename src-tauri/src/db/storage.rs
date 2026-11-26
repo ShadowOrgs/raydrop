@@ -136,6 +136,26 @@ pub struct Database {
     data_dir: PathBuf,
 }
 
+impl Database {
+    pub fn data_dir(&self) -> &std::path::Path {
+        &self.data_dir
+    }
+
+    pub fn with_conn<F, R>(&self, f: F) -> Result<R, String>
+    where
+        F: FnOnce(&Connection) -> Result<R, String>,
+    {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        f(&conn)
+    }
+
+    pub fn checkpoint_wal(&self) {
+        if let Ok(conn) = self.conn.lock() {
+            let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+        }
+    }
+}
+
 fn safe_user_db_filename(user_id: &str) -> String {
     let clean: String = user_id
         .chars()
@@ -323,6 +343,131 @@ fn open_and_migrate_db(db_path: &std::path::Path) -> Result<Connection, String> 
         "UPDATE transfer_history SET status = 'paused' WHERE status = 'in_progress'",
         [],
     );
+
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS skill_sources (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            provider_type TEXT NOT NULL,
+            source_url TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            last_synced_at INTEGER,
+            last_error TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS skills_catalog (
+            id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            slug TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            author TEXT,
+            license TEXT,
+            repository_url TEXT,
+            source_url TEXT NOT NULL,
+            source_path TEXT,
+            version TEXT,
+            branch TEXT,
+            commit_sha TEXT,
+            categories_json TEXT NOT NULL DEFAULT '[]',
+            tags_json TEXT NOT NULL DEFAULT '[]',
+            compatibility_json TEXT NOT NULL DEFAULT '[]',
+            security_status TEXT NOT NULL DEFAULT 'clean',
+            security_report_json TEXT NOT NULL DEFAULT '{}',
+            popularity INTEGER,
+            local_package_path TEXT,
+            last_updated INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_skills_catalog_source ON skills_catalog(source_id);
+        CREATE INDEX IF NOT EXISTS idx_skills_catalog_name ON skills_catalog(name);
+
+        CREATE TABLE IF NOT EXISTS skill_files (
+            id TEXT PRIMARY KEY,
+            skill_id TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            size INTEGER NOT NULL DEFAULT 0,
+            file_type TEXT NOT NULL DEFAULT 'text',
+            storage_path TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_skill_files_skill ON skill_files(skill_id);
+
+        CREATE TABLE IF NOT EXISTS skill_agents (
+            id TEXT PRIMARY KEY,
+            agent_type TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            detected_status TEXT NOT NULL DEFAULT 'NotDetected',
+            detection_reason TEXT NOT NULL DEFAULT '',
+            configured_path TEXT,
+            global_skill_path TEXT NOT NULL DEFAULT '',
+            project_skill_path TEXT NOT NULL DEFAULT '',
+            compatibility_level TEXT NOT NULL DEFAULT 'Native',
+            last_detected_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS skill_installations (
+            id TEXT PRIMARY KEY,
+            skill_id TEXT NOT NULL,
+            skill_name TEXT NOT NULL,
+            agent_id TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            project_path TEXT,
+            install_path TEXT NOT NULL,
+            installed_version TEXT,
+            installed_commit_sha TEXT,
+            installed_manifest_json TEXT NOT NULL DEFAULT '[]',
+            installed_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'installed'
+        );
+        CREATE INDEX IF NOT EXISTS idx_skill_installations_skill ON skill_installations(skill_id);
+        CREATE INDEX IF NOT EXISTS idx_skill_installations_agent ON skill_installations(agent_id);
+
+        CREATE TABLE IF NOT EXISTS skill_install_history (
+            id TEXT PRIMARY KEY,
+            installation_id TEXT NOT NULL,
+            skill_id TEXT NOT NULL,
+            skill_name TEXT NOT NULL,
+            agent_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            previous_version TEXT,
+            new_version TEXT,
+            backup_path TEXT,
+            timestamp INTEGER NOT NULL,
+            result TEXT NOT NULL,
+            error_message TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS skill_favorites (
+            skill_id TEXT PRIMARY KEY,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS skill_presets (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            role_tag TEXT NOT NULL DEFAULT 'custom',
+            is_builtin INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS skill_preset_items (
+            preset_id TEXT NOT NULL,
+            skill_id TEXT NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (preset_id, skill_id)
+        );
+        ",
+    )
+    .map_err(|e| e.to_string())?;
+
     Ok(conn)
 }
 

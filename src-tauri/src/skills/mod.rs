@@ -1,0 +1,10 @@
+pub mod commands;
+pub mod compatibility;
+pub mod detector;
+pub mod installer;
+pub mod models;
+pub mod parser;
+pub mod presets;
+pub mod security;
+pub mod sources;
+pub mod storage;

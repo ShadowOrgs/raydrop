@@ -974,7 +974,7 @@ For agent execution:
 
 Use this as the first task for a coding agent:
 
-> Read `artifacts/skills-library/implementation-plan.md` completely. First audit the current Raydrop repository architecture relevant to implementing AI Skills Library: navigation, Svelte component conventions, Tauri IPC registration, SQLite migration/persistence, filesystem and picker utilities, HTTP/download utilities, logging/progress, permissions/capabilities, tests, and CI. Do not modify code yet. Verify assumptions against the current checkout. Produce a concise audit report, identify integration points and any risks/unknowns, propose the exact Phase 1 file changes, and confirm a phased execution plan. Do not refactor unrelated code.
+> Read `raydrop-skills-library-implementation-plan.md` completely. First audit the current Raydrop repository architecture relevant to implementing AI Skills Library: navigation, Svelte component conventions, Tauri IPC registration, SQLite migration/persistence, filesystem and picker utilities, HTTP/download utilities, logging/progress, permissions/capabilities, tests, and CI. Do not modify code yet. Verify assumptions against the current checkout. Produce a concise audit report, identify integration points and any risks/unknowns, propose the exact Phase 1 file changes, and confirm a phased execution plan. Do not refactor unrelated code.
 
 ---
 

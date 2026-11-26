@@ -15,6 +15,7 @@ pub mod remote_audio;
 pub mod remote_capture;
 pub mod remote_fs;
 pub mod remote_input;
+pub mod skills;
 pub mod state;
 pub mod system_monitor;
 pub mod telegram_bot;
@@ -117,14 +118,6 @@ pub fn run() {
 
     tracing_subscriber::fmt::init();
 
-    let (db, identity, settings) =
-        Database::init().expect("Failed to initialize Raydrop SQLite database");
-
-    let local_ip = local_ip_address::local_ip()
-        .map(|ip| ip.to_string())
-        .unwrap_or_else(|_| "127.0.0.1".to_string());
-    let listen_port = allocate_dynamic_port();
-
     let initial_args: Vec<String> = std::env::args().collect();
     let initial_send_paths = extract_send_paths(&initial_args);
     let initial_convert_paths = extract_convert_paths(&initial_args);
@@ -134,51 +127,6 @@ pub fn run() {
         || (initial_args.iter().any(|a| a == "--minimized")
             && initial_send_paths.is_empty()
             && initial_convert_paths.is_empty());
-
-    let torrent_mgr = Arc::new(crate::torrent::TorrentManager::new(
-        std::path::PathBuf::from(&settings.download_dir),
-    ));
-
-    let http_mgr = Arc::new(crate::http_downloader::HttpDownloadManager::new(
-        std::path::PathBuf::from(&settings.download_dir),
-        settings.auto_categorize,
-        settings.max_concurrent_downloads,
-    ));
-
-    let folder_sync_mgr = Arc::new(crate::folder_sync::FolderSyncManager::new());
-
-    let app_state = Arc::new(AppState {
-        db: Arc::new(db),
-        identity,
-        settings: Mutex::new(settings),
-        local_ip,
-        listen_port,
-        wan_reflexive_addr: Mutex::new(None),
-        signaling_connected: AtomicBool::new(false),
-        signaling_tx: Mutex::new(None),
-        quic_endpoint: Mutex::new(None),
-        mesh_connections: Mutex::new(HashMap::new()),
-        relay_streams: Mutex::new(HashMap::new()),
-        pending_requests: Mutex::new(HashMap::new()),
-        active_cancellations: Mutex::new(HashMap::new()),
-        pending_wan_candidates: Mutex::new(HashMap::new()),
-        queued_cli_files: Mutex::new(initial_send_paths.clone()),
-        queued_convert_files: Mutex::new(initial_convert_paths.clone()),
-        active_web_share: Mutex::new(None),
-        torrent_manager: torrent_mgr,
-        pending_magnet_link: Mutex::new(initial_magnet.clone()),
-        http_downloader: http_mgr,
-        folder_sync_watcher: folder_sync_mgr.clone(),
-        pending_fs_requests: Mutex::new(HashMap::new()),
-        second_screen: Arc::new(crate::network::second_screen::SecondScreenState::new()),
-        media_player: Arc::new(Mutex::new(crate::media_player::MediaPlayerState::default())),
-        mcp_server: Arc::new(crate::mcp_server::McpServerManager::default()),
-        telegram_bot: Arc::new(crate::telegram_bot::TelegramBotManager::default()),
-    });
-
-    #[cfg(desktop)]
-    let state_for_single_instance = app_state.clone();
-    let state_for_setup = app_state.clone();
 
     let builder = tauri::Builder::default();
 
@@ -191,28 +139,30 @@ pub fn run() {
 
         crate::network::transport::popup_and_focus_main_window(app);
 
-        if let Some(m) = magnet {
-            info!("Received magnet URL from secondary instance: {}", m);
-            if let Ok(mut pending) = state_for_single_instance.pending_magnet_link.lock() {
-                *pending = Some(m.clone());
+        if let Some(state_ref) = app.try_state::<Arc<AppState>>() {
+            if let Some(m) = magnet {
+                info!("Received magnet URL from secondary instance: {}", m);
+                if let Ok(mut pending) = state_ref.pending_magnet_link.lock() {
+                    *pending = Some(m.clone());
+                }
+                let _ = app.emit("open_magnet_link", m);
             }
-            let _ = app.emit("open_magnet_link", m);
-        }
 
-        if !paths.is_empty() {
-            info!("Received CLI --send paths from secondary instance: {:?}", paths);
-            if let Ok(mut q) = state_for_single_instance.queued_cli_files.lock() {
-                q.extend(paths.clone());
+            if !paths.is_empty() {
+                info!("Received CLI --send paths from secondary instance: {:?}", paths);
+                if let Ok(mut q) = state_ref.queued_cli_files.lock() {
+                    q.extend(paths.clone());
+                }
+                let _ = app.emit("cli_send_files", paths);
             }
-            let _ = app.emit("cli_send_files", paths);
-        }
 
-        if !convert_paths.is_empty() {
-            info!("Received CLI --convert paths from secondary instance: {:?}", convert_paths);
-            if let Ok(mut q) = state_for_single_instance.queued_convert_files.lock() {
-                q.extend(convert_paths.clone());
+            if !convert_paths.is_empty() {
+                info!("Received CLI --convert paths from secondary instance: {:?}", convert_paths);
+                if let Ok(mut q) = state_ref.queued_convert_files.lock() {
+                    q.extend(convert_paths.clone());
+                }
+                let _ = app.emit("cli_convert_files", convert_paths);
             }
-            let _ = app.emit("cli_convert_files", convert_paths);
         }
     }))
     } else {
@@ -225,9 +175,71 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
-        .manage(app_state)
         .setup(move |app| {
             let handle = app.handle().clone();
+
+            let (db, identity, settings) =
+                Database::init().expect("Failed to initialize Raydrop SQLite database");
+
+            let local_ip = local_ip_address::local_ip()
+                .map(|ip| ip.to_string())
+                .unwrap_or_else(|_| "127.0.0.1".to_string());
+            let listen_port = allocate_dynamic_port();
+
+            let torrent_mgr = Arc::new(crate::torrent::TorrentManager::new(
+                std::path::PathBuf::from(&settings.download_dir),
+            ));
+
+            let http_mgr = Arc::new(crate::http_downloader::HttpDownloadManager::new(
+                std::path::PathBuf::from(&settings.download_dir),
+                settings.auto_categorize,
+                settings.max_concurrent_downloads,
+            ));
+
+            let folder_sync_mgr = Arc::new(crate::folder_sync::FolderSyncManager::new());
+
+            let persisted_media_player: crate::media_player::MediaPlayerState = db
+                .get_setting("rayamp_persisted_state")
+                .ok()
+                .flatten()
+                .and_then(|s| serde_json::from_str::<crate::media_player::MediaPlayerState>(&s).ok())
+                .map(|mut m| {
+                    m.is_playing = false;
+                    m
+                })
+                .unwrap_or_default();
+
+            let app_state = Arc::new(AppState {
+                db: Arc::new(db),
+                identity,
+                settings: Mutex::new(settings),
+                local_ip,
+                listen_port,
+                wan_reflexive_addr: Mutex::new(None),
+                signaling_connected: AtomicBool::new(false),
+                signaling_tx: Mutex::new(None),
+                quic_endpoint: Mutex::new(None),
+                mesh_connections: Mutex::new(HashMap::new()),
+                relay_streams: Mutex::new(HashMap::new()),
+                pending_requests: Mutex::new(HashMap::new()),
+                active_cancellations: Mutex::new(HashMap::new()),
+                pending_wan_candidates: Mutex::new(HashMap::new()),
+                queued_cli_files: Mutex::new(initial_send_paths.clone()),
+                queued_convert_files: Mutex::new(initial_convert_paths.clone()),
+                active_web_share: Mutex::new(None),
+                torrent_manager: torrent_mgr,
+                pending_magnet_link: Mutex::new(initial_magnet.clone()),
+                http_downloader: http_mgr,
+                folder_sync_watcher: folder_sync_mgr.clone(),
+                pending_fs_requests: Mutex::new(HashMap::new()),
+                second_screen: Arc::new(crate::network::second_screen::SecondScreenState::new()),
+                media_player: Arc::new(Mutex::new(persisted_media_player)),
+                mcp_server: Arc::new(crate::mcp_server::McpServerManager::default()),
+                telegram_bot: Arc::new(crate::telegram_bot::TelegramBotManager::default()),
+            });
+
+            let state_for_setup = app_state.clone();
+            app.manage(app_state);
 
             #[cfg(desktop)]
             if !is_system_agent {
@@ -321,7 +333,17 @@ pub fn run() {
                             }
                         }
                         "quit" => {
+                            if let Some(w) = app_handle.get_webview_window("main") {
+                                let _ = w.destroy();
+                            }
+                            crate::remote_input::set_host_cursor_hidden(false);
+                            crate::remote_audio::stop_host_audio_loopback();
+                            crate::remote_capture::stop_native_screen_capture();
+                            if let Some(state_ref) = app_handle.try_state::<Arc<AppState>>() {
+                                state_ref.db.checkpoint_wal();
+                            }
                             app_handle.exit(0);
+                            std::process::exit(0);
                         }
                         _ => {}
                     })
@@ -743,14 +765,53 @@ pub fn run() {
             commands::verify_telegram_token_cmd,
             commands::detect_media_converter_engine,
             commands::convert_media_files,
+            skills::commands::skills_init_library,
+            skills::commands::skills_search,
+            skills::commands::skills_get_detail,
+            skills::commands::skills_get_files,
+            skills::commands::skills_preview_file,
+            skills::commands::skills_import_local_folder,
+            skills::commands::skills_import_zip,
+            skills::commands::skills_discover_github,
+            skills::commands::skills_import_github,
+            skills::commands::skills_delete,
+            skills::commands::skills_toggle_favorite,
+            skills::commands::skills_list_sources,
+            skills::commands::skills_add_source,
+            skills::commands::skills_toggle_source,
+            skills::commands::skills_refresh_source,
+            skills::commands::skills_remove_source,
+            skills::commands::skills_detect_agents,
+            skills::commands::skills_get_agents,
+            skills::commands::skills_configure_agent_path,
+            skills::commands::skills_validate_agent_path,
+            skills::commands::skills_get_compatibility,
+            skills::commands::skills_preview_install,
+            skills::commands::skills_install,
+            skills::commands::skills_list_installed,
+            skills::commands::skills_scan_project_folder,
+            skills::commands::skills_list_scanned_projects,
+            skills::commands::skills_remove_scanned_project,
+            skills::commands::skills_uninstall,
+            skills::commands::skills_update_check,
+            skills::commands::skills_rollback,
+            skills::commands::skills_get_install_history,
+            skills::commands::skills_list_presets,
+            skills::commands::skills_save_preset,
+            skills::commands::skills_delete_preset,
+            skills::commands::skills_get_settings,
+            skills::commands::skills_update_settings,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Raydrop Tauri application")
-        .run(|_app_handle, event| {
+        .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 crate::remote_input::set_host_cursor_hidden(false);
                 crate::remote_audio::stop_host_audio_loopback();
                 crate::remote_capture::stop_native_screen_capture();
+                if let Some(state_ref) = app_handle.try_state::<Arc<AppState>>() {
+                    state_ref.db.checkpoint_wal();
+                }
             }
         });
 }

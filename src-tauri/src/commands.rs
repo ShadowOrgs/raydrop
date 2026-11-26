@@ -4896,8 +4896,28 @@ pub fn media_sync_frontend_state(
     state: State<'_, Arc<AppState>>,
     player_state: crate::media_player::MediaPlayerState,
 ) -> Result<(), String> {
-    let mut guard = state.media_player.lock().map_err(|e| e.to_string())?;
-    *guard = player_state;
+    let should_persist = {
+        let mut guard = state.media_player.lock().map_err(|e| e.to_string())?;
+        let old_ids: Vec<&str> = guard.queue.iter().map(|t| t.id.as_str()).collect();
+        let new_ids: Vec<&str> = player_state.queue.iter().map(|t| t.id.as_str()).collect();
+        let changed = old_ids != new_ids
+            || guard.current_index != player_state.current_index
+            || guard.shuffle != player_state.shuffle
+            || guard.repeat_mode != player_state.repeat_mode
+            || guard.muted != player_state.muted
+            || guard.video_mode != player_state.video_mode
+            || guard.active_playlist_id != player_state.active_playlist_id
+            || (guard.volume - player_state.volume).abs() > 0.01;
+        *guard = player_state.clone();
+        changed
+    };
+    if should_persist {
+        let mut snapshot = player_state;
+        snapshot.is_playing = false;
+        if let Ok(json) = serde_json::to_string(&snapshot) {
+            let _ = state.db.set_setting("rayamp_persisted_state", &json);
+        }
+    }
     Ok(())
 }
 

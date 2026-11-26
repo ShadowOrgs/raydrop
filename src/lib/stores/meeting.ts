@@ -56,6 +56,9 @@ let audioCtx: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
 let audioCheckInterval: any = null;
 let recordingTimer: any = null;
+let recordingDrawTimer: any = null;
+let recordingAudioCtx: AudioContext | null = null;
+let recordingCanvasStream: MediaStream | null = null;
 let mediaRecorder: MediaRecorder | null = null;
 let recordedChunks: Blob[] = [];
 
@@ -439,32 +442,199 @@ export function sendMeetingChat(text: string) {
   });
 }
 
+function cleanupRecordingResources(videoCache: Map<string, HTMLVideoElement>) {
+  if (recordingDrawTimer) {
+    clearInterval(recordingDrawTimer);
+    recordingDrawTimer = null;
+  }
+  if (recordingCanvasStream) {
+    recordingCanvasStream.getTracks().forEach((t) => t.stop());
+    recordingCanvasStream = null;
+  }
+  if (recordingAudioCtx) {
+    recordingAudioCtx.close().catch(() => {});
+    recordingAudioCtx = null;
+  }
+  for (const v of videoCache.values()) {
+    v.srcObject = null;
+  }
+  videoCache.clear();
+}
+
 export function startRecording() {
   recordedChunks = [];
+  const videoCache = new Map<string, HTMLVideoElement>();
   try {
     const aStream = get(localAudioStream);
     const vStream = get(localVideoStream);
+    const peersMap = get(participants);
 
-    const combinedTracks: MediaStreamTrack[] = [];
-    if (aStream) combinedTracks.push(...aStream.getAudioTracks());
-    if (vStream) combinedTracks.push(...vStream.getVideoTracks());
+    const hasAnyAudio =
+      (aStream && aStream.getAudioTracks().length > 0) ||
+      Object.values(peersMap).some((p) => p.stream && p.stream.getAudioTracks().length > 0);
+    const hasAnyVideo =
+      (vStream && vStream.getVideoTracks().length > 0) ||
+      Object.values(peersMap).some((p) => p.stream && p.stream.getVideoTracks().length > 0);
 
-    if (combinedTracks.length === 0) {
+    if (!hasAnyAudio && !hasAnyVideo) {
       alert('No audio or video stream available to record.');
       return;
     }
 
-    const combinedStream = new MediaStream(combinedTracks);
-    const mime = MediaRecorder.isTypeSupported('video/webm; codecs=vp9,opus')
-      ? 'video/webm; codecs=vp9,opus'
-      : 'video/webm';
+    // 1. Canvas video compositor (captures local camera/screen + remote participants)
+    const canvas = document.createElement('canvas');
+    canvas.width = 1280;
+    canvas.height = 720;
+    const ctx = canvas.getContext('2d');
 
-    mediaRecorder = new MediaRecorder(combinedStream, { mimeType: mime });
+    const getOrCreateVideo = (stream: MediaStream): HTMLVideoElement => {
+      const existing = videoCache.get(stream.id);
+      if (existing) return existing;
+      const vid = document.createElement('video');
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.autoplay = true;
+      vid.srcObject = stream;
+      vid.play().catch(() => {});
+      videoCache.set(stream.id, vid);
+      return vid;
+    };
+
+    const drawFrame = () => {
+      if (!ctx) return;
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const curLocalVid = get(localVideoStream);
+      const curPeers = Object.values(get(participants));
+      const sources: Array<{ label: string; stream: MediaStream; isScreen: boolean }> = [];
+
+      if (curLocalVid && curLocalVid.getVideoTracks().some((t) => t.readyState === 'live')) {
+        sources.push({
+          label: get(appSettings).alias_name || 'You',
+          stream: curLocalVid,
+          isScreen: get(isScreenSharing),
+        });
+      }
+      for (const p of curPeers) {
+        if (p.stream && p.stream.getVideoTracks().some((t) => t.readyState === 'live')) {
+          sources.push({
+            label: p.alias,
+            stream: p.stream,
+            isScreen: p.isScreenSharing,
+          });
+        }
+      }
+
+      if (sources.length === 0) {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(40, 40, canvas.width - 80, canvas.height - 80);
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 34px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(get(currentRoomTitle) || 'Raydrop Meeting', canvas.width / 2, canvas.height / 2 - 12);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '20px sans-serif';
+        ctx.fillText('Recording Audio (No Active Camera / Screen)', canvas.width / 2, canvas.height / 2 + 28);
+        return;
+      }
+
+      const drawContained = (
+        vid: HTMLVideoElement,
+        x: number,
+        y: number,
+        w: number,
+        h: number,
+        label: string
+      ) => {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(x, y, w, h);
+        if (vid.videoWidth > 0 && vid.videoHeight > 0) {
+          const scale = Math.min(w / vid.videoWidth, h / vid.videoHeight);
+          const dw = vid.videoWidth * scale;
+          const dh = vid.videoHeight * scale;
+          const dx = x + (w - dw) / 2;
+          const dy = y + (h - dh) / 2;
+          ctx.drawImage(vid, dx, dy, dw, dh);
+        }
+        ctx.fillStyle = 'rgba(2, 6, 23, 0.72)';
+        ctx.fillRect(x + 10, y + h - 34, Math.min(220, w - 20), 24);
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(label, x + 18, y + h - 18);
+      };
+
+      const screenSource = sources.find((s) => s.isScreen);
+      if (screenSource) {
+        drawContained(getOrCreateVideo(screenSource.stream), 0, 0, canvas.width, canvas.height, `${screenSource.label} (Screen)`);
+        const cams = sources.filter((s) => s !== screenSource).slice(0, 3);
+        cams.forEach((cam, idx) => {
+          const pipW = 240;
+          const pipH = 135;
+          const pipX = canvas.width - pipW - 16;
+          const pipY = canvas.height - (pipH + 12) * (idx + 1);
+          drawContained(getOrCreateVideo(cam.stream), pipX, pipY, pipW, pipH, cam.label);
+        });
+      } else {
+        const cols = sources.length === 1 ? 1 : sources.length <= 4 ? 2 : 3;
+        const rows = Math.ceil(sources.length / cols);
+        const cellW = canvas.width / cols;
+        const cellH = canvas.height / rows;
+        sources.forEach((src, i) => {
+          const col = i % cols;
+          const row = Math.floor(i / cols);
+          drawContained(getOrCreateVideo(src.stream), col * cellW, row * cellH, cellW, cellH, src.label);
+        });
+      }
+    };
+
+    drawFrame();
+    recordingDrawTimer = setInterval(drawFrame, 42); // ~24 fps
+    recordingCanvasStream = canvas.captureStream(24);
+
+    // 2. Mix local + remote audio tracks via AudioContext
+    const combinedTracks: MediaStreamTrack[] = [...recordingCanvasStream.getVideoTracks()];
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      recordingAudioCtx = new AudioCtx();
+      const dest = recordingAudioCtx.createMediaStreamDestination();
+      let connectedAudioCount = 0;
+
+      if (aStream && aStream.getAudioTracks().length > 0) {
+        recordingAudioCtx.createMediaStreamSource(aStream).connect(dest);
+        connectedAudioCount++;
+      }
+      for (const p of Object.values(peersMap)) {
+        if (p.stream && p.stream.getAudioTracks().length > 0) {
+          recordingAudioCtx.createMediaStreamSource(p.stream).connect(dest);
+          connectedAudioCount++;
+        }
+      }
+      if (connectedAudioCount > 0) {
+        combinedTracks.push(...dest.stream.getAudioTracks());
+      }
+    } catch (_) {
+      if (aStream) combinedTracks.push(...aStream.getAudioTracks());
+    }
+
+    const combinedStream = new MediaStream(combinedTracks);
+    const mimeCandidates = [
+      'video/webm; codecs=vp9,opus',
+      'video/webm; codecs=vp8,opus',
+      'video/webm',
+    ];
+    const mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || '';
+
+    mediaRecorder = mime
+      ? new MediaRecorder(combinedStream, { mimeType: mime, videoBitsPerSecond: 2_500_000 })
+      : new MediaRecorder(combinedStream);
     mediaRecorder.ondataavailable = (e) => {
       if (e.data.size > 0) recordedChunks.push(e.data);
     };
 
     mediaRecorder.onstop = () => {
+      cleanupRecordingResources(videoCache);
       const blob = new Blob(recordedChunks, { type: 'video/webm' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -482,6 +652,7 @@ export function startRecording() {
       recordingDuration.update((d) => d + 1);
     }, 1000);
   } catch (err) {
+    cleanupRecordingResources(videoCache);
     console.warn('Failed to start recording:', err);
   }
 }

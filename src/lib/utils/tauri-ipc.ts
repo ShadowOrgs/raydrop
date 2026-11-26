@@ -1280,3 +1280,329 @@ export function formatEta(seconds: number | null | undefined): string {
   }
   return `${secs}s`;
 }
+
+// --- AI Skills Library Types & IPC ---
+
+export type SkillCompatibilityLevel = 'Native' | 'Compatible' | 'Adapted' | 'Unsupported';
+export type SkillSecuritySeverity = 'Info' | 'Low' | 'Medium' | 'High' | 'Critical';
+
+export interface SkillSecurityFinding {
+  id: string;
+  severity: SkillSecuritySeverity;
+  title: string;
+  explanation: string;
+  why_it_matters: string;
+  recommendation: string;
+  file_path: string;
+  line_number?: number | null;
+  snippet?: string | null;
+}
+
+export interface SkillSecurityReport {
+  status: string;
+  summary: string;
+  highest_severity?: SkillSecuritySeverity | null;
+  findings: SkillSecurityFinding[];
+  scanned_files: number;
+  executable_files: number;
+  scanned_at: number;
+}
+
+export interface SkillCompatibilityEntry {
+  agent_id: string;
+  agent_name: string;
+  level: SkillCompatibilityLevel;
+  note: string;
+}
+
+export interface SkillRecord {
+  id: string;
+  source_id: string;
+  name: string;
+  slug: string;
+  description: string;
+  author?: string | null;
+  license?: string | null;
+  repository_url?: string | null;
+  source_url: string;
+  source_path?: string | null;
+  version?: string | null;
+  branch?: string | null;
+  commit_sha?: string | null;
+  categories: string[];
+  tags: string[];
+  compatibility: SkillCompatibilityEntry[];
+  security_status: string;
+  security_report: SkillSecurityReport;
+  popularity?: number | null;
+  local_package_path?: string | null;
+  last_updated?: number | null;
+  created_at: number;
+  updated_at: number;
+  is_favorite: boolean;
+  installed_agents: string[];
+}
+
+export interface SkillFileRecord {
+  id: string;
+  skill_id: string;
+  relative_path: string;
+  content_hash: string;
+  size: number;
+  file_type: string;
+  storage_path: string;
+}
+
+export interface SkillFilePreview {
+  relative_path: string;
+  file_type: string;
+  size: number;
+  content_hash: string;
+  content?: string | null;
+  truncated: boolean;
+}
+
+export interface SkillInstallationRecord {
+  id: string;
+  skill_id: string;
+  skill_name: string;
+  agent_id: string;
+  scope: string;
+  project_path?: string | null;
+  install_path: string;
+  installed_version?: string | null;
+  installed_commit_sha?: string | null;
+  installed_manifest: { relative_path: string; content_hash: string; size: number }[];
+  installed_at: number;
+  updated_at: number;
+  status: string;
+}
+
+export interface SkillDetailResponse {
+  skill: SkillRecord;
+  files: SkillFileRecord[];
+  skill_md_content?: string | null;
+  installations: SkillInstallationRecord[];
+}
+
+export interface SkillSourceRecord {
+  id: string;
+  name: string;
+  provider_type: string;
+  source_url: string;
+  enabled: boolean;
+  last_synced_at?: number | null;
+  last_error?: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export type AgentDetectedStatus =
+  | 'Detected'
+  | 'NotDetected'
+  | 'ManualConfiguration'
+  | 'PathInvalid'
+  | 'UnsupportedPlatform';
+
+export interface SkillAgentRecord {
+  id: string;
+  agent_type: string;
+  display_name: string;
+  detected_status: AgentDetectedStatus;
+  detection_reason: string;
+  configured_path?: string | null;
+  global_skill_path: string;
+  project_skill_path: string;
+  compatibility_level: SkillCompatibilityLevel;
+  supports_global: boolean;
+  supports_project: boolean;
+  last_detected_at: number;
+}
+
+export interface SkillInstallPreviewTarget {
+  agent_id: string;
+  agent_name: string;
+  destination_path: string;
+  compatibility: SkillCompatibilityLevel;
+  conflict_exists: boolean;
+  conflict_same_hash: boolean;
+  existing_files_count: number;
+  allowed: boolean;
+  block_reason?: string | null;
+}
+
+export interface SkillInstallPreviewResponse {
+  skill_id: string;
+  skill_name: string;
+  security_report: SkillSecurityReport;
+  targets: SkillInstallPreviewTarget[];
+}
+
+export interface SkillInstallTargetResult {
+  agent_id: string;
+  agent_name: string;
+  destination_path: string;
+  success: boolean;
+  action_taken: string;
+  installation_id?: string | null;
+  error?: string | null;
+}
+
+export interface SkillInstallHistoryRecord {
+  id: string;
+  installation_id: string;
+  skill_id: string;
+  skill_name: string;
+  agent_id: string;
+  action: string;
+  previous_version?: string | null;
+  new_version?: string | null;
+  backup_path?: string | null;
+  timestamp: number;
+  result: string;
+  error_message?: string | null;
+}
+
+export interface SkillUpdateCheckItem {
+  installation_id: string;
+  skill_id: string;
+  skill_name: string;
+  agent_id: string;
+  current_commit_sha?: string | null;
+  latest_commit_sha?: string | null;
+  has_update: boolean;
+  locally_modified_files: string[];
+  changed_files: string[];
+  added_files: string[];
+  removed_files: string[];
+}
+
+export interface SkillPresetRecord {
+  id: string;
+  name: string;
+  description: string;
+  role_tag: string;
+  is_builtin: boolean;
+  skill_ids: string[];
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SkillsSettings {
+  backup_retention_count: number;
+  require_confirm_high_risk: boolean;
+  block_critical_by_default: boolean;
+  default_scope: string;
+  auto_sync_curated: boolean;
+}
+
+export interface DiscoveredRepoSkill {
+  name: string;
+  description: string;
+  relative_path: string;
+  tags: string[];
+}
+
+export const skillsApi = {
+  initLibrary: () => invoke<void>('skills_init_library'),
+  search: (query?: {
+    query?: string;
+    source_id?: string;
+    category?: string;
+    tag?: string;
+    favorites_only?: boolean;
+    sort_by?: string;
+  }) => invoke<SkillRecord[]>('skills_search', { query: query ?? null }),
+  getDetail: (skillId: string) =>
+    invoke<SkillDetailResponse>('skills_get_detail', { skillId }),
+  getFiles: (skillId: string) =>
+    invoke<SkillFileRecord[]>('skills_get_files', { skillId }),
+  previewFile: (skillId: string, relativePath: string) =>
+    invoke<SkillFilePreview>('skills_preview_file', { skillId, relativePath }),
+  importLocalFolder: (folderPath: string) =>
+    invoke<SkillRecord>('skills_import_local_folder', { folderPath }),
+  importZip: (zipPath: string) =>
+    invoke<SkillRecord>('skills_import_zip', { zipPath }),
+  discoverGithub: (url: string) =>
+    invoke<[string, string, DiscoveredRepoSkill[]]>('skills_discover_github', { url }),
+  importGithub: (url: string, subpath?: string | null) =>
+    invoke<SkillRecord>('skills_import_github', { url, subpath: subpath ?? null }),
+  deleteSkill: (skillId: string) =>
+    invoke<void>('skills_delete', { skillId }),
+  toggleFavorite: (skillId: string) =>
+    invoke<boolean>('skills_toggle_favorite', { skillId }),
+  listSources: () => invoke<SkillSourceRecord[]>('skills_list_sources'),
+  addSource: (name: string, providerType: string, sourceUrl: string) =>
+    invoke<SkillSourceRecord>('skills_add_source', { name, providerType, sourceUrl }),
+  toggleSource: (sourceId: string, enabled: boolean) =>
+    invoke<void>('skills_toggle_source', { sourceId, enabled }),
+  refreshSource: (sourceId: string) =>
+    invoke<number>('skills_refresh_source', { sourceId }),
+  removeSource: (sourceId: string) =>
+    invoke<void>('skills_remove_source', { sourceId }),
+  detectAgents: () => invoke<SkillAgentRecord[]>('skills_detect_agents'),
+  getAgents: () => invoke<SkillAgentRecord[]>('skills_get_agents'),
+  configureAgentPath: (agentId: string, manualPath: string | null) =>
+    invoke<SkillAgentRecord>('skills_configure_agent_path', { agentId, manualPath }),
+  getCompatibility: (skillId: string) =>
+    invoke<SkillCompatibilityEntry[]>('skills_get_compatibility', { skillId }),
+  previewInstall: (
+    skillId: string,
+    agentIds: string[],
+    scope: string,
+    projectPath?: string | null
+  ) =>
+    invoke<SkillInstallPreviewResponse>('skills_preview_install', {
+      skillId,
+      agentIds,
+      scope,
+      projectPath: projectPath ?? null,
+    }),
+  install: (
+    skillId: string,
+    agentIds: string[],
+    scope: string,
+    projectPath: string | null,
+    conflictPolicy: string,
+    confirmHighRisk: boolean
+  ) =>
+    invoke<SkillInstallTargetResult[]>('skills_install', {
+      skillId,
+      agentIds,
+      scope,
+      projectPath,
+      conflictPolicy,
+      confirmHighRisk,
+    }),
+  listInstalled: () => invoke<SkillInstallationRecord[]>('skills_list_installed'),
+  scanProjectFolder: (projectPath: string) =>
+    invoke<SkillInstallationRecord[]>('skills_scan_project_folder', { projectPath }),
+  listScannedProjects: () => invoke<string[]>('skills_list_scanned_projects'),
+  removeScannedProject: (projectPath: string) =>
+    invoke<string[]>('skills_remove_scanned_project', { projectPath }),
+  uninstall: (installationId: string, forceModified: boolean) =>
+    invoke<string[]>('skills_uninstall', { installationId, forceModified }),
+  checkUpdates: () => invoke<SkillUpdateCheckItem[]>('skills_update_check'),
+  rollback: (historyId: string) => invoke<string>('skills_rollback', { historyId }),
+  getInstallHistory: () => invoke<SkillInstallHistoryRecord[]>('skills_get_install_history'),
+  listPresets: () => invoke<SkillPresetRecord[]>('skills_list_presets'),
+  savePreset: (
+    id: string | null,
+    name: string,
+    description: string,
+    roleTag: string,
+    skillIds: string[]
+  ) =>
+    invoke<SkillPresetRecord>('skills_save_preset', {
+      id,
+      name,
+      description,
+      roleTag,
+      skillIds,
+    }),
+  deletePreset: (presetId: string) =>
+    invoke<void>('skills_delete_preset', { presetId }),
+  getSettings: () => invoke<SkillsSettings>('skills_get_settings'),
+  updateSettings: (settings: SkillsSettings) =>
+    invoke<SkillsSettings>('skills_update_settings', { settings }),
+};

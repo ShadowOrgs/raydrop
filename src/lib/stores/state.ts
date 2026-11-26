@@ -60,7 +60,8 @@ export type MainTab =
   | 'clipboard'
   | 'notes'
   | 'converter'
-  | 'webdebugger';
+  | 'webdebugger'
+  | 'skills';
 
 export const activeMainTab = writable<MainTab>('dashboard');
 export const activeChatPeerId = writable<string | null>(null);

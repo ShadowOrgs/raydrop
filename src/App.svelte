@@ -23,6 +23,7 @@
   import NotesView from "./lib/components/NotesView.svelte";
   import ConverterView from "./lib/components/ConverterView.svelte";
   import WebDebuggerView from "./lib/components/WebDebuggerView.svelte";
+  import SkillsLibraryView from "./lib/components/SkillsLibraryView.svelte";
   import { initWebDebuggerListeners, extensionUpdateInfo } from "./lib/stores/webDebugger";
   import { browserExtensionModalOpen } from "./lib/stores/torrents";
   import WolModal from "./lib/components/WolModal.svelte";
@@ -143,6 +144,7 @@
     { id: "clipboard", label: "Copy History" },
     { id: "notes", label: "Notes" },
     { id: "converter", label: "Converter" },
+    { id: "skills", label: "AI Skills" },
   ] as const;
   type BottomMenuId = (typeof ALL_BOTTOM_MENUS)[number]["id"];
   const DEFAULT_BOTTOM_TAB_IDS: BottomMenuId[] = [
@@ -883,6 +885,21 @@
               <div class="text-[10px] text-rose-200/75 truncate">Stats &amp; system monitor</div>
             </div>
           </button>
+
+          <!-- AI Skills Library -->
+          <button
+            type="button"
+            on:click={() => activeMainTab.set("skills")}
+            class="relative p-3.5 rounded-2xl bg-gradient-to-br from-cyan-600/25 to-slate-900 border border-cyan-500/40 text-left flex flex-col justify-between min-h-[100px] shadow-md active:scale-[0.98] transition cursor-pointer"
+          >
+            <div class="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300">
+              <Zap class="w-5 h-5" />
+            </div>
+            <div class="mt-2">
+              <div class="text-xs font-bold text-white">AI Skills</div>
+              <div class="text-[10px] text-cyan-200/75 truncate">Coding agent skills</div>
+            </div>
+          </button>
         </div>
       </div>
     {/if}
@@ -949,6 +966,13 @@
         : 'hidden'}"
     >
       <WebDebuggerView />
+    </div>
+    <div
+      class="h-full w-full {$activeMainTab === 'skills'
+        ? 'flex flex-col'
+        : 'hidden'}"
+    >
+      <SkillsLibraryView />
     </div>
     <div
       class="h-full w-full {$activeMainTab === 'lan' ||

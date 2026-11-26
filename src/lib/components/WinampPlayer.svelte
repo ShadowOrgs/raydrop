@@ -95,6 +95,13 @@
   let lastSyncTs = 0;
 
   onMount(async () => {
+    try {
+      const persisted = await raydropApi.mediaGetState();
+      if (persisted && (persisted.queue.length > 0 || persisted.current_track)) {
+        mediaPlayerState.set({ ...persisted, is_playing: false });
+      }
+    } catch (_) {}
+
     await refreshMediaPlaylists();
     const list = get(mediaPlaylists);
     if (list.length > 0) {
@@ -869,19 +876,19 @@
     </div>
 
     <!-- Winamp LCD + Spectrum Visualizer -->
-    <div class="p-3 space-y-2.5 bg-slate-950">
-      <div class="rounded-xl bg-black/90 border border-slate-800 p-2.5 flex items-center gap-3">
-        <div class="w-24 shrink-0 flex flex-col justify-between">
-          <div class="font-mono text-lg font-bold text-emerald-400 leading-none tracking-tight">
+    <div class="bg-slate-950 {$mediaPlayerState.video_mode ? 'px-3 py-2 space-y-1.5' : 'p-3 space-y-2.5'}">
+      <div class="rounded-xl bg-black/90 border border-slate-800 flex items-center {$mediaPlayerState.video_mode ? 'px-2.5 py-1.5 gap-2' : 'p-2.5 gap-3'}">
+        <div class="shrink-0 flex {$mediaPlayerState.video_mode ? 'items-baseline gap-1 w-auto' : 'w-24 flex-col justify-between'}">
+          <div class="font-mono font-bold text-emerald-400 leading-none tracking-tight {$mediaPlayerState.video_mode ? 'text-xs' : 'text-lg'}">
             {formatTime($mediaPlayerState.position_secs)}
           </div>
-          <div class="text-[10px] font-mono text-slate-500 mt-1">
+          <div class="text-[10px] font-mono text-slate-500 {$mediaPlayerState.video_mode ? '' : 'mt-1'}">
             / {formatTime($mediaPlayerState.duration_secs || $mediaPlayerState.current_track?.duration_secs || 0)}
           </div>
         </div>
-        <div class="flex-1 min-w-0 space-y-1">
+        <div class="flex-1 min-w-0 {$mediaPlayerState.video_mode ? '' : 'space-y-1'}">
           <div class="flex items-center justify-between gap-2">
-            <p class="text-xs font-semibold text-cyan-200 truncate">
+            <p class="{$mediaPlayerState.video_mode ? 'text-[11px]' : 'text-xs'} font-semibold text-cyan-200 truncate">
               {#if resolvingStream}
                 {resolvingMessage}
               {:else if $mediaPlayerState.current_track}
@@ -896,10 +903,10 @@
               </span>
             {/if}
           </div>
-          <p class="text-[10px] text-slate-400 truncate">
+          <p class="text-[10px] text-slate-400 truncate" class:hidden={$mediaPlayerState.video_mode}>
             {$mediaPlayerState.current_track?.artist || "Drop files, pick playlist, or search YTMusic"}
           </p>
-          <canvas bind:this={canvasEl} width="230" height="24" class="w-full h-6 rounded"></canvas>
+          <canvas bind:this={canvasEl} width="230" height="24" class="w-full h-6 rounded" class:hidden={$mediaPlayerState.video_mode}></canvas>
         </div>
       </div>
 
