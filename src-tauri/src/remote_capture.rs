@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
 static CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
+static CAPTURE_GEN: AtomicU64 = AtomicU64::new(0);
 static FRAME_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static RESET_FRAME_HASH: AtomicBool = AtomicBool::new(false);
 static LAST_EMIT_EPOCH_MS: AtomicU64 = AtomicU64::new(0);
@@ -125,32 +126,35 @@ pub fn capture_screenshot_png_base64() -> Result<String, String> {
 pub fn start_native_screen_capture(app: AppHandle) -> Result<(), String> {
     FRAME_IN_FLIGHT.store(false, Ordering::Release);
     RESET_FRAME_HASH.store(true, Ordering::Release);
-    if CAPTURE_ACTIVE.swap(true, Ordering::SeqCst) {
-        return Ok(()); // Already running
-    }
+    let my_gen = CAPTURE_GEN.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
+    CAPTURE_ACTIVE.store(true, Ordering::SeqCst);
 
     #[cfg(target_os = "windows")]
     {
         std::thread::spawn(move || {
-            if let Err(e) = run_windows_capture_loop(app) {
+            if let Err(e) = run_windows_capture_loop(app, my_gen) {
                 tracing::warn!("Native screen capture stopped: {}", e);
             }
-            CAPTURE_ACTIVE.store(false, Ordering::SeqCst);
+            if CAPTURE_GEN.load(Ordering::SeqCst) == my_gen {
+                CAPTURE_ACTIVE.store(false, Ordering::SeqCst);
+            }
         });
         Ok(())
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = app;
+        let _ = (app, my_gen);
         CAPTURE_ACTIVE.store(false, Ordering::SeqCst);
         Err("Native zero-prompt screen capture is currently supported on Windows hosts".to_string())
     }
 }
 
 pub fn stop_native_screen_capture() {
+    CAPTURE_GEN.fetch_add(1, Ordering::SeqCst);
     CAPTURE_ACTIVE.store(false, Ordering::SeqCst);
     FRAME_IN_FLIGHT.store(false, Ordering::Release);
+    set_capture_bounds(None);
 }
 
 #[cfg(target_os = "windows")]
@@ -302,7 +306,7 @@ fn detect_cursor_css_shape() -> &'static str {
 }
 
 #[cfg(target_os = "windows")]
-fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
+fn run_windows_capture_loop(app: AppHandle, my_gen: u64) -> Result<(), String> {
     use base64::Engine;
     use image::codecs::jpeg::JpegEncoder;
     use image::ExtendedColorType;
@@ -318,7 +322,7 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
     let mut last_desktop_switch = std::time::Instant::now() - std::time::Duration::from_secs(2);
     let mut last_cursor_shape = "";
 
-    while CAPTURE_ACTIVE.load(Ordering::Relaxed) {
+    while CAPTURE_ACTIVE.load(Ordering::Acquire) && CAPTURE_GEN.load(Ordering::Acquire) == my_gen {
         let loop_start = std::time::Instant::now();
         if RESET_FRAME_HASH.swap(false, Ordering::AcqRel) {
             last_frame_hash = 0;
