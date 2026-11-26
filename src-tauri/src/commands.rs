@@ -3441,10 +3441,10 @@ fn read_chromium_last_profile(local_state_rel: &str) -> String {
 }
 
 #[tauri::command]
-pub async fn open_browser_extension_url(browser: String) -> Result<(), String> {
+pub async fn open_browser_extension_url(_browser: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        let browser_clean = browser.to_lowercase();
+        let browser_clean = _browser.to_lowercase();
         let (exe_name, ext_url, local_state_rel) = match browser_clean.as_str() {
             "chrome" => (
                 "chrome",

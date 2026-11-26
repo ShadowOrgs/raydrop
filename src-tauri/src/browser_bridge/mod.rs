@@ -12,7 +12,7 @@ static EXT_UPDATE_NOTIFIED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 fn bundled_extension_version() -> String {
-    let manifest_raw = include_str!("../../browser-extension/manifest.json");
+    let manifest_raw = include_str!("../../../browser-extension/manifest.json");
     serde_json::from_str::<serde_json::Value>(manifest_raw)
         .ok()
         .and_then(|v| v.get("version").and_then(|s| s.as_str()).map(|s| s.to_string()))
