@@ -266,13 +266,52 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.75/Raydrop_1.2.75_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.75/Raydrop_1.2.75_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.75/Raydrop_1.2.75_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.75/Raydrop_1.2.75_amd64.AppImage) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.76/Raydrop_1.2.76_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.76/Raydrop_1.2.76_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.76/Raydrop_1.2.76_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.76/Raydrop_1.2.76_amd64.AppImage) |
 | **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.23/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**
+
+---
+
+## 🤖 AI Integration — Raydrop MCP Server (Model Context Protocol)
+
+Raydrop includes a built-in **MCP Server** so AI assistants (**Antigravity**, **Claude Desktop**, **Cursor**, **Windsurf**, etc.) can directly control all Raydrop features while the desktop app is running.
+
+### Prerequisites
+- **Raydrop Desktop** is open and running (exposes `http://127.0.0.1:45321/mcp`).
+- **Node.js 18+** (for `stdio` MCP clients; zero external npm dependencies required).
+
+### Option 1: Stdio Config (Antigravity / Claude Desktop / Cursor)
+Add the following entry to your MCP config (`mcp_config.json`, `claude_desktop_config.json`, or `.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "raydrop": {
+      "command": "node",
+      "args": ["C:/path/to/raydrop/mcp-server/index.mjs"]
+    }
+  }
+}
+```
+
+### Option 2: Direct HTTP JSON-RPC 2.0
+For MCP clients supporting HTTP JSON-RPC directly, point to:
+```
+http://127.0.0.1:45321/mcp
+```
+
+### Available MCP Tools (29 Tools)
+- **Status, Network & Power:** `raydrop_get_status`, `raydrop_list_contacts`, `raydrop_get_lan_statuses`, `raydrop_manage_mesh`, `raydrop_wake_on_lan`, `raydrop_system_power`, `raydrop_analytics_and_tools`
+- **File Transfers & Public Share:** `raydrop_send_files`, `raydrop_list_transfers`, `raydrop_control_transfer`, `raydrop_respond_transfer`, `raydrop_web_share`, `raydrop_folder_sync`, `raydrop_remote_files`
+- **Encrypted Chat & Groups:** `raydrop_send_chat`, `raydrop_get_chat_history`, `raydrop_group_chat`
+- **Downloader & Torrent:** `raydrop_start_download`, `raydrop_list_downloads`, `raydrop_control_download`
+- **Web Debugger & Speedtest:** `raydrop_web_debug` (`speedtest`, `get_audit`, `get_events`, `clear`)
+- **Productivity & Converters:** `raydrop_clipboard`, `raydrop_notes`, `raydrop_convert_images`, `raydrop_convert_documents`, `raydrop_generate_mobile_icons`
+- **Display & Input:** `raydrop_list_monitors`, `raydrop_virtual_display`, `raydrop_remote_input`
 
 ---
 

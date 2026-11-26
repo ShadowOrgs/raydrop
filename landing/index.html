@@ -65,7 +65,7 @@
           "priceCurrency": "USD"
         },
         "description": "High-speed, zero-cloud peer-to-peer (P2P) file transfer and real-time synchronization tool for Windows, macOS, Linux, and Android.",
-        "softwareVersion": "1.2.75",
+        "softwareVersion": "1.2.76",
         "url": "https://raydrop.web.id",
         "downloadUrl": "https://github.com/ShadowOrgs/raydrop/releases/latest",
         "license": "https://opensource.org/licenses/MIT",
@@ -1151,6 +1151,7 @@
         <a href="#how" data-i18n="nav_how">How it Works</a>
         <a href="#features" data-i18n="nav_features">Features</a>
         <a href="#download" data-i18n="nav_download">Download</a>
+        <a href="#mcp">AI MCP</a>
         <a href="https://github.com/ShadowOrgs/raydrop" target="_blank" rel="noopener">GitHub</a>
       </nav>
 
@@ -1238,7 +1239,7 @@
           <span>&bull;</span>
           <span data-i18n="hero_meta_mit">Free & Open Source (MIT)</span>
           <span>&bull;</span>
-          <span id="heroReleaseVer">v1.2.75</span>
+          <span id="heroReleaseVer">v1.2.76</span>
         </p>
       </div>
 
@@ -1634,7 +1635,7 @@
 
             <div class="dl-meta">
               <span id="msiSize">Size: ~9.1 MB</span>
-              <span id="msiVersion">v1.2.75</span>
+              <span id="msiVersion">v1.2.76</span>
             </div>
           </div>
 
@@ -1668,7 +1669,7 @@
 
             <div class="dl-meta">
               <span id="dmgSize">Size: ~12 MB</span>
-              <span id="dmgVersion">v1.2.75</span>
+              <span id="dmgVersion">v1.2.76</span>
             </div>
           </div>
 
@@ -1708,7 +1709,7 @@
 
             <div class="dl-meta">
               <span id="linuxSize">Size: ~8.5 MB</span>
-              <span id="linuxVersion">v1.2.75</span>
+              <span id="linuxVersion">v1.2.76</span>
             </div>
           </div>
 
@@ -1742,7 +1743,7 @@
 
             <div class="dl-meta">
               <span id="apkSize">Size: ~15 MB</span>
-              <span id="apkVersion">v1.2.75</span>
+              <span id="apkVersion">v1.2.76</span>
             </div>
           </div>
         </div>
@@ -1752,6 +1753,49 @@
           <a href="https://github.com/ShadowOrgs/raydrop/releases" target="_blank" rel="noopener"
             style="text-decoration: underline; color: var(--accent);" data-i18n="dl_older_link">View all releases on
             GitHub</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Raydrop MCP Server (AI Integration) Section -->
+    <section class="section" id="mcp">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-badge">Model Context Protocol (MCP)</span>
+          <h2>Connect Raydrop to Any AI Assistant</h2>
+          <p>Let AI agents (Antigravity, Claude Desktop, Cursor, Windsurf) send files, chat P2P, manage Direct Mesh LAN, start downloads, sync clipboard, and convert images via Raydrop.</p>
+        </div>
+
+        <div class="dl-grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
+          <div class="dl-card">
+            <div class="dl-head">
+              <div>
+                <div class="dl-title">1. Stdio MCP (Antigravity / Claude / Cursor)</div>
+                <div class="dl-desc">Keep Raydrop Desktop running (Node.js 18+ required, zero npm dependencies). Add to your <code>mcp_config.json</code> or <code>claude_desktop_config.json</code>:</div>
+              </div>
+            </div>
+            <pre style="background: rgba(15, 23, 42, 0.75); border: 1px solid var(--line); border-radius: 12px; padding: 14px; font-size: 12px; line-height: 1.5; overflow-x: auto; color: #e2e8f0; margin: 12px 0 0;">{
+  "mcpServers": {
+    "raydrop": {
+      "command": "node",
+      "args": ["C:/path/to/raydrop/mcp-server/index.mjs"]
+    }
+  }
+}</pre>
+          </div>
+
+          <div class="dl-card">
+            <div class="dl-head">
+              <div>
+                <div class="dl-title">2. Direct HTTP JSON-RPC Endpoint</div>
+                <div class="dl-desc">Built directly into Raydrop Desktop on loopback port <code>45321</code>. Supports <code>initialize</code>, <code>tools/list</code>, and <code>tools/call</code>:</div>
+              </div>
+            </div>
+            <pre style="background: rgba(15, 23, 42, 0.75); border: 1px solid var(--line); border-radius: 12px; padding: 14px; font-size: 12px; line-height: 1.5; overflow-x: auto; color: #38bdf8; margin: 12px 0;">POST http://127.0.0.1:45321/mcp</pre>
+            <div class="dl-desc" style="margin-top: 8px;">
+              <strong>29 Built-in Tools:</strong> <code>raydrop_get_status</code>, <code>raydrop_list_contacts</code>, <code>raydrop_get_lan_statuses</code>, <code>raydrop_send_files</code>, <code>raydrop_list_transfers</code>, <code>raydrop_control_transfer</code>, <code>raydrop_respond_transfer</code>, <code>raydrop_send_chat</code>, <code>raydrop_get_chat_history</code>, <code>raydrop_group_chat</code>, <code>raydrop_manage_mesh</code>, <code>raydrop_wake_on_lan</code>, <code>raydrop_start_download</code>, <code>raydrop_list_downloads</code>, <code>raydrop_control_download</code>, <code>raydrop_web_debug</code>, <code>raydrop_folder_sync</code>, <code>raydrop_remote_files</code>, <code>raydrop_web_share</code>, <code>raydrop_clipboard</code>, <code>raydrop_notes</code>, <code>raydrop_list_monitors</code>, <code>raydrop_virtual_display</code>, <code>raydrop_remote_input</code>, <code>raydrop_convert_images</code>, <code>raydrop_convert_documents</code>, <code>raydrop_generate_mobile_icons</code>, <code>raydrop_system_power</code>, <code>raydrop_analytics_and_tools</code>.
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -1778,6 +1822,7 @@
             <li><a href="#how" data-i18n="nav_how">How it Works</a></li>
             <li><a href="#features" data-i18n="nav_features">Features</a></li>
             <li><a href="#download" data-i18n="nav_download">Download</a></li>
+            <li><a href="#mcp">AI MCP</a></li>
             <li><a href="https://github.com/ShadowOrgs/raydrop/releases" target="_blank" rel="noopener">Release
                 Notes</a></li>
           </ul>
@@ -1954,7 +1999,7 @@
     };
 
     let currentLang = 'en';
-    let currentTag = 'v1.2.75';
+    let currentTag = 'v1.2.76';
 
     function changeLanguage(lang) {
       if (!translations[lang]) return;

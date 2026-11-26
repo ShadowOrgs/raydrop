@@ -1725,6 +1725,26 @@ pub fn send_chat_message(
     transfer_session_id: Option<String>,
     files_json: Option<String>,
 ) -> Result<ChatMessage, String> {
+    send_chat_message_internal(
+        &app,
+        state.inner(),
+        peer_device_id,
+        content,
+        msg_type,
+        transfer_session_id,
+        files_json,
+    )
+}
+
+pub(crate) fn send_chat_message_internal(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    peer_device_id: String,
+    content: String,
+    msg_type: Option<String>,
+    transfer_session_id: Option<String>,
+    files_json: Option<String>,
+) -> Result<ChatMessage, String> {
     let now = now_unix_secs();
     let msg_id = uuid::Uuid::new_v4().to_string();
     let effective_type = msg_type.unwrap_or_else(|| "text".to_string());
@@ -3753,7 +3773,7 @@ pub async fn simulate_remote_gamepad(
     crate::remote_input::simulate_gamepad_input(buttons, lx, ly, rx, ry, lt, rt)
 }
 
-fn send_mesh_control(state: &Arc<AppState>, peer_device_id: &str, control_type: &str) {
+pub(crate) fn send_mesh_control(state: &Arc<AppState>, peer_device_id: &str, control_type: &str) {
     if let Some(tx) = state.signaling_tx.lock().unwrap().as_ref() {
         let my_alias = state
             .settings
@@ -3980,6 +4000,12 @@ pub async fn set_virtual_display_enabled(
 pub async fn get_lan_connection_statuses(
     state: State<'_, Arc<AppState>>,
 ) -> Result<std::collections::HashMap<String, LanStatusInfo>, String> {
+    Ok(compute_lan_connection_statuses(state.inner()))
+}
+
+pub(crate) fn compute_lan_connection_statuses(
+    state: &Arc<AppState>,
+) -> std::collections::HashMap<String, LanStatusInfo> {
     let mut my_tailscale_on = false;
     if let Ok(ifaces) = local_ip_address::list_afinet_netifas() {
         for (_, ip) in ifaces {
@@ -4064,7 +4090,7 @@ pub async fn get_lan_connection_statuses(
         );
     }
 
-    Ok(map)
+    map
 }
 
 #[tauri::command]

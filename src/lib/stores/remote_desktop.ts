@@ -325,7 +325,7 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
     pendingFrameDraw = false;
     await raydropApi.stopNativeScreenCapture().catch(() => { });
     await raydropApi.startNativeScreenCapture();
-    const stream = nativeCanvasEl.captureStream(24);
+    const stream = nativeCanvasEl.captureStream(30);
     return stream;
   } catch (err) {
     console.warn('Native zero-prompt screen capture unavailable, falling back to browser picker:', err);
@@ -347,7 +347,9 @@ export async function acquireHostScreenStream(): Promise<MediaStream | null> {
   const requireNativeWinlogonCapture = await raydropApi.isSecureDesktopActive().catch(() => false);
   const isWindowsHost =
     typeof navigator !== 'undefined' && /Win/i.test(navigator.platform || navigator.userAgent);
-  if (requireNativeWinlogonCapture || (mode === 'desktop' && isWindowsHost)) {
+  // Use Zero-Prompt Native GDI BitBlt capture on Windows so unattended Remote Desktop
+  // NEVER hangs on a browser "Choose what to share" screen-picker modal (including Indonesian Windows / multi-monitor).
+  if (requireNativeWinlogonCapture || isWindowsHost) {
     const nativeStream = await startNativeCanvasStream();
     if (nativeStream && nativeStream.getVideoTracks().length > 0) {
       const track = nativeStream.getVideoTracks()[0];
@@ -475,8 +477,13 @@ async function handleIncomingAuthRequest(
   const enteredPin = (payload.pin || '').trim();
   const hostPin = (settings.pin || '').trim();
 
-  // 1. PIN matches -> Send immediate acknowledgment so client clears timeout, then start session
+  // 1. PIN matches -> Clean up any stale session, send immediate ack, then start new session
   if (enteredPin && enteredPin === hostPin) {
+    if (activePeerConnection || get(activeRemoteSession)) {
+      cleanupPeerConnection();
+      stopHostScreenCapture();
+      activeRemoteSession.set(null);
+    }
     sendRemoteSignal(clientDeviceId, sessionId, {
       type: 'remote_auth_accepted',
       hostAlias: myAlias,
@@ -585,13 +592,12 @@ async function proceedHostAcceptRemote(
   }
 }
 
-// Utility to tune SDP bitrate across ALL video codecs (VP8, VP9, H264, AV1)
-// so WebRTC never starts at Chromium's blurry 300kbps default
-function boostSdpBitrate(sdp: string, kbps: number = 35000): string {
+// Utility to tune SDP bitrate across video codecs without forcing bufferbloat on slower WAN links
+function boostSdpBitrate(sdp: string, kbps: number = 20000): string {
   if (!sdp) return sdp;
   const bps = kbps * 1000;
-  const minKbps = kbps >= 40000 ? 10000 : 8000;
-  const startKbps = kbps >= 40000 ? 25000 : 18000;
+  const minKbps = kbps >= 25000 ? 2000 : 1000;
+  const startKbps = kbps >= 25000 ? 6000 : 3500;
   const bitrateParams = `x-google-min-bitrate=${minKbps};x-google-max-bitrate=${kbps};x-google-start-bitrate=${startKbps}`;
 
   const lines = sdp.split(/\r\n|\n/);
@@ -699,30 +705,32 @@ async function setupHostPeerConnection(
     pc.addTrack(audioTrack, stream);
   }
 
-  // Prefer sharper modern codecs (VP9 / H264 / AV1) over legacy VP8 so text and game edges stay crisp
+  // Prefer AV1 (crisp text at low bandwidth like Chrome Remote Desktop) -> Hardware H264 -> VP9 -> VP8
   try {
     const caps = RTCRtpSender.getCapabilities?.('video');
     if (caps?.codecs) {
-      const preferredOrder = ['video/VP9', 'video/H264', 'video/AV1', 'video/VP8'];
+      const preferredOrder = ['video/AV1', 'video/H264', 'video/VP9', 'video/VP8'];
       const sortedCodecs = [...caps.codecs].sort((a, b) => {
         const ia = preferredOrder.indexOf(a.mimeType);
         const ib = preferredOrder.indexOf(b.mimeType);
         return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
       });
       const videoTransceiver = pc.getTransceivers().find((t) => t.sender === sender);
-      videoTransceiver?.setCodecPreferences?.(sortedCodecs);
+      if (sortedCodecs.length > 0) {
+        videoTransceiver?.setCodecPreferences?.(sortedCodecs);
+      }
     }
   } catch (_) {}
 
-  // Always maintain native resolution (never downscale to 720p/540p) with high bitrate headroom
-  const targetMaxKbps = isGame ? 50_000 : 35_000;
+  // Maintain native resolution with smooth adaptive bitrate (no bufferbloat lag on WAN)
+  const targetMaxKbps = isGame ? 30_000 : 20_000;
   try {
     const params = sender.getParameters();
     (params as any).degradationPreference = 'maintain-resolution';
     if (params.encodings && params.encodings.length > 0) {
       params.encodings[0].maxBitrate = targetMaxKbps * 1000;
-      params.encodings[0].minBitrate = isGame ? 10_000_000 : 8_000_000;
-      params.encodings[0].maxFramerate = 60;
+      params.encodings[0].minBitrate = isGame ? 2_000_000 : 1_000_000;
+      params.encodings[0].maxFramerate = isGame ? 60 : 30;
     }
     await sender.setParameters(params);
   } catch (err) {
@@ -989,8 +997,9 @@ function setupHostDataChannel(dc: RTCDataChannel) {
             const p = activeVideoSender.getParameters();
             (p as any).degradationPreference = 'maintain-resolution';
             if (p.encodings && p.encodings.length > 0) {
-              p.encodings[0].maxBitrate = isGameNow ? 50_000_000 : 35_000_000;
-              p.encodings[0].minBitrate = isGameNow ? 10_000_000 : 8_000_000;
+              p.encodings[0].maxBitrate = isGameNow ? 30_000_000 : 20_000_000;
+              p.encodings[0].minBitrate = isGameNow ? 2_000_000 : 1_000_000;
+              p.encodings[0].maxFramerate = isGameNow ? 60 : 30;
             }
             await activeVideoSender.setParameters(p);
           } catch (_) { }
@@ -1105,6 +1114,7 @@ export async function connectToRemoteHost(targetDeviceId: string, pin: string) {
 
   const settings = get(appSettings);
   const myDeviceId = settings.device_id;
+  cleanupPeerConnection();
   const myAlias = settings.alias_name || 'Raydrop Client';
 
   remoteErrorMessage.set(null);
@@ -1240,7 +1250,7 @@ async function handleIncomingOffer(
   const answer = await pc.createAnswer();
   const boostedAnswer = {
     type: answer.type,
-    sdp: boostSdpBitrate(answer.sdp || '', 50000),
+    sdp: boostSdpBitrate(answer.sdp || '', 30000),
   };
   await pc.setLocalDescription(boostedAnswer);
 
@@ -1584,6 +1594,9 @@ export function stopHostScreenCapture() {
   }
   hostScreenStream.set(null);
   isHostSharingScreen.set(false);
+  nativeCanvasEl = null;
+  nativeCanvasCtx = null;
+  pendingFrameDraw = false;
 }
 
 function cleanupPeerConnection() {

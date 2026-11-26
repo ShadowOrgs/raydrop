@@ -1,3 +1,5 @@
+pub mod mcp;
+
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -10,6 +12,40 @@ pub const BROWSER_BRIDGE_PORT: u16 = 45321;
 
 static EXT_UPDATE_NOTIFIED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+
+static LATEST_WEB_AUDIT: std::sync::OnceLock<std::sync::Mutex<Option<serde_json::Value>>> =
+    std::sync::OnceLock::new();
+static RECENT_WEB_EVENTS: std::sync::OnceLock<std::sync::Mutex<Vec<serde_json::Value>>> =
+    std::sync::OnceLock::new();
+
+pub fn get_latest_web_audit() -> Option<serde_json::Value> {
+    LATEST_WEB_AUDIT
+        .get_or_init(|| std::sync::Mutex::new(None))
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+}
+
+pub fn get_recent_web_events(limit: usize) -> Vec<serde_json::Value> {
+    RECENT_WEB_EVENTS
+        .get_or_init(|| std::sync::Mutex::new(Vec::new()))
+        .lock()
+        .map(|g| {
+            let len = g.len();
+            let start = len.saturating_sub(limit);
+            g[start..].to_vec()
+        })
+        .unwrap_or_default()
+}
+
+pub fn clear_web_debug_cache() {
+    if let Ok(mut g) = LATEST_WEB_AUDIT.get_or_init(|| std::sync::Mutex::new(None)).lock() {
+        *g = None;
+    }
+    if let Ok(mut g) = RECENT_WEB_EVENTS.get_or_init(|| std::sync::Mutex::new(Vec::new())).lock() {
+        g.clear();
+    }
+}
 
 fn bundled_extension_version() -> String {
     let manifest_raw = include_str!("../../../browser-extension/manifest.json");
@@ -370,6 +406,9 @@ Connection: close\r\n\r\n{}",
     if path == "/api/debug/audit" && method == "POST" {
         match read_json_value(&mut buf_reader, content_length, 2 * 1024 * 1024).await {
             Ok(payload) => {
+                if let Ok(mut g) = LATEST_WEB_AUDIT.get_or_init(|| std::sync::Mutex::new(None)).lock() {
+                    *g = Some(payload.clone());
+                }
                 crate::network::transport::popup_and_focus_main_window(&app);
                 let _ = app.emit("web_debug_audit", &payload);
                 let ok = serde_json::json!({ "status": "ok" }).to_string();
@@ -387,12 +426,47 @@ Connection: close\r\n\r\n{}",
     if path == "/api/debug/events" && method == "POST" {
         match read_json_value(&mut buf_reader, content_length, 512 * 1024).await {
             Ok(payload) => {
+                if let Ok(mut g) = RECENT_WEB_EVENTS.get_or_init(|| std::sync::Mutex::new(Vec::new())).lock() {
+                    if let Some(arr) = payload.get("events").and_then(|v| v.as_array()) {
+                        g.extend(arr.iter().cloned());
+                    } else {
+                        g.push(payload.clone());
+                    }
+                    if g.len() > 200 {
+                        let drain_count = g.len() - 200;
+                        g.drain(0..drain_count);
+                    }
+                }
                 let _ = app.emit("web_debug_events", &payload);
                 let ok = serde_json::json!({ "status": "ok" }).to_string();
                 send_json_response(&mut writer_half, "200 OK", &ok).await;
             }
             Err((code, msg)) => {
                 let err = serde_json::json!({ "error": msg }).to_string();
+                send_json_response(&mut writer_half, code, &err).await;
+            }
+        }
+        return Ok(());
+    }
+
+    // Route 6: Raydrop MCP (Model Context Protocol JSON-RPC 2.0)
+    if (path == "/mcp" || path == "/api/mcp") && method == "POST" {
+        match read_json_value(&mut buf_reader, content_length, 1024 * 1024).await {
+            Ok(rpc_req) => {
+                if let Some(resp_json) = mcp::handle_mcp_request(rpc_req, &app, &state).await {
+                    send_json_response(&mut writer_half, "200 OK", &resp_json).await;
+                } else {
+                    let resp = "HTTP/1.1 202 Accepted\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    let _ = writer_half.write_all(resp.as_bytes()).await;
+                }
+            }
+            Err((code, msg)) => {
+                let err = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": null,
+                    "error": { "code": -32700, "message": msg }
+                })
+                .to_string();
                 send_json_response(&mut writer_half, code, &err).await;
             }
         }

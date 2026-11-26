@@ -137,6 +137,17 @@ mod win_gdi {
         pub fn CreateCompatibleBitmap(hdc: isize, cx: i32, cy: i32) -> isize;
         pub fn SelectObject(hdc: isize, h: isize) -> isize;
         pub fn SetStretchBltMode(hdc: isize, mode: i32) -> i32;
+        pub fn BitBlt(
+            hdc_dest: isize,
+            x_dest: i32,
+            y_dest: i32,
+            w_dest: i32,
+            h_dest: i32,
+            hdc_src: isize,
+            x_src: i32,
+            y_src: i32,
+            rop: u32,
+        ) -> i32;
         pub fn StretchBlt(
             hdc_dest: isize,
             x_dest: i32,
@@ -256,9 +267,9 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
             },
         };
 
-        // Scale to max 2560px width so 1080p/1440p screens keep native pixel sharpness
-        let scale = if src_w > 2560 {
-            2560.0 / src_w as f32
+        // Cap at 1920px width for fast, low-lag 30fps capture while keeping crisp 1080p text
+        let scale = if src_w > 1920 {
+            1920.0 / src_w as f32
         } else {
             1.0
         };
@@ -275,20 +286,34 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
 
                 if hdc_mem != 0 && hbm != 0 {
                     let old_obj = win_gdi::SelectObject(hdc_mem, hbm);
-                    win_gdi::SetStretchBltMode(hdc_mem, HALFTONE);
-                    let ok = win_gdi::StretchBlt(
-                        hdc_mem,
-                        0,
-                        0,
-                        dst_w,
-                        dst_h,
-                        hdc_screen,
-                        src_x,
-                        src_y,
-                        src_w,
-                        src_h,
-                        SRCCOPY,
-                    );
+                    let ok = if dst_w == src_w && dst_h == src_h {
+                        win_gdi::BitBlt(
+                            hdc_mem,
+                            0,
+                            0,
+                            dst_w,
+                            dst_h,
+                            hdc_screen,
+                            src_x,
+                            src_y,
+                            SRCCOPY,
+                        )
+                    } else {
+                        win_gdi::SetStretchBltMode(hdc_mem, HALFTONE);
+                        win_gdi::StretchBlt(
+                            hdc_mem,
+                            0,
+                            0,
+                            dst_w,
+                            dst_h,
+                            hdc_screen,
+                            src_x,
+                            src_y,
+                            src_w,
+                            src_h,
+                            SRCCOPY,
+                        )
+                    };
 
                     if ok != 0 {
                         let mut bmi = win_gdi::BITMAPINFO {
@@ -346,7 +371,7 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
                                 }
 
                                 jpeg_buf.clear();
-                                let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buf, 94);
+                                let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buf, 88);
                                 if encoder
                                     .encode(&rgb, dst_w as u32, dst_h as u32, ExtendedColorType::Rgb8)
                                     .is_ok()
@@ -379,10 +404,10 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
             }
         }
 
-        // Target ~24 fps (42ms per frame) for smooth & responsive remote without UI saturation
+        // Target ~30 fps (33ms per frame) matching Chrome Remote Desktop's smooth low-lag cadence
         let elapsed = loop_start.elapsed();
-        if elapsed < std::time::Duration::from_millis(42) {
-            std::thread::sleep(std::time::Duration::from_millis(42) - elapsed);
+        if elapsed < std::time::Duration::from_millis(33) {
+            std::thread::sleep(std::time::Duration::from_millis(33) - elapsed);
         }
     }
 
