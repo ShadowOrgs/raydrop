@@ -100,6 +100,7 @@ export interface AiMcpConfig {
   llm_model: string;
   llm_temperature: number;
   llm_max_tokens: number;
+  llm_prompt_tool_mode?: boolean;
   persona_name: string;
   persona_preset: string;
   persona_language: string;

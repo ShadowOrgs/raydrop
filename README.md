@@ -38,7 +38,7 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 
 ### 🌟 What Makes Raydrop Unique?
 - 🎵 **RayAmp (Winamp-Style Audio/Video Player & YouTube Music):** Floating deck with Web Audio spectrum visualizer, local MP3/FLAC/MP4/MKV & persistent SQLite playlists, YouTube Music search, and automatic zero-config `yt-dlp` stream engine setup.
-- 🤖 **Full MCP Server & Telegram AI Bot:** Built-in JSON-RPC MCP server (`http://127.0.0.1:8765/mcp`) plus a native Telegram AI Bot with multi-user whitelist, customizable Bot Persona, and preset/custom OpenAI-compatible LLM providers (OpenAI, Gemini, Claude, DeepSeek, Groq, OpenRouter, Ollama).
+- 🤖 **Full MCP Server & Telegram AI Bot:** Built-in JSON-RPC MCP server (`http://127.0.0.1:48765/mcp`) plus a native Telegram AI Bot with multi-user whitelist, customizable Bot Persona, and preset/custom OpenAI-compatible LLM providers (OpenAI, Gemini, Claude, DeepSeek, Groq, OpenRouter, Ollama).
 - 🖥️ **Unattended P2P Remote Desktop (Pre-Login Windows Service):** Full 60fps remote control with Windows `SYSTEM` service for pre-login Lock/PIN screen access, native zero-prompt capture, WASAPI system audio streaming, multi-monitor switching, remote power controls, and auto-minimize on connect.
 - 📱 **Extend to iPad / Tablet via QR Code:** Turn any iPad, iPhone, or Android tablet into a wireless touch-enabled second display via Safari/Chrome—no app installation required.
 - ⚡ **Wake-on-LAN (WoL) & Instant Media Streaming:** Wake offline PCs with UDP Magic Packets and stream actively downloading videos before completion.
@@ -274,10 +274,10 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.77/Raydrop_1.2.77_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.77/Raydrop_1.2.77_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.77/Raydrop_1.2.77_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.77/Raydrop_1.2.77_amd64.AppImage) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.78/Raydrop_1.2.78_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.78/Raydrop_1.2.78_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.78/Raydrop_1.2.78_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.78/Raydrop_1.2.78_amd64.AppImage) |
 | **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.23/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**

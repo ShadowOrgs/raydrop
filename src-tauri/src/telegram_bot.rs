@@ -101,6 +101,18 @@ fn split_utf8_chunks(text: &str, max_bytes: usize) -> Vec<&str> {
     chunks
 }
 
+async fn send_typing_action(client: &reqwest::Client, token: &str, chat_id: i64) {
+    let url = format!("https://api.telegram.org/bot{}/sendChatAction", token);
+    let _ = client
+        .post(&url)
+        .json(&json!({
+            "chat_id": chat_id,
+            "action": "typing"
+        }))
+        .send()
+        .await;
+}
+
 async fn send_telegram_message(client: &reqwest::Client, token: &str, chat_id: i64, text: &str) {
     let url = format!("https://api.telegram.org/bot{}/sendMessage", token);
     // Telegram max message length is 4096 chars; split on valid UTF-8 char boundaries
@@ -276,8 +288,28 @@ async fn run_telegram_polling_loop(
                 continue;
             }
 
+            // Keep Telegram "typing..." indicator alive every 4 seconds until the AI finishes
+            let typing_stop = Arc::new(AtomicBool::new(false));
+            let typing_stop_c = typing_stop.clone();
+            let typing_client = client.clone();
+            let typing_token = token.clone();
+            tauri::async_runtime::spawn(async move {
+                while !typing_stop_c.load(Ordering::Relaxed) {
+                    send_typing_action(&typing_client, &typing_token, chat_id).await;
+                    for _ in 0..8 {
+                        if typing_stop_c.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    }
+                }
+            });
+
             let history = chat_histories.entry(chat_id).or_default();
-            match chat_with_mcp_tools(&app, &state, &cfg, history, text).await {
+            let ai_res = chat_with_mcp_tools(&app, &state, &cfg, history, text).await;
+            typing_stop.store(true, Ordering::Relaxed);
+
+            match ai_res {
                 Ok(reply) => {
                     send_telegram_message(&client, &token, chat_id, &reply).await;
                 }

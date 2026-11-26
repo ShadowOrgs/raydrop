@@ -49,6 +49,7 @@
   } from "../stores/player";
 
   let mediaEl: HTMLVideoElement;
+  let videoBoxEl: HTMLDivElement;
   let canvasEl: HTMLCanvasElement;
   let audioCtx: AudioContext | null = null;
   let analyser: AnalyserNode | null = null;
@@ -78,10 +79,14 @@
   let ytResults: YtMusicSearchItem[] = [];
   let ytSearching = false;
   let ytDownloadingKey = "";
+  let ytDownloadPercent = 0;
+  let ytDownloadStatusText = "";
   let ytLastDownloaded: { title: string; output_path: string; format: string } | null = null;
 
   let unlistenRemote: (() => void) | null = null;
   let unlistenYtdlp: (() => void) | null = null;
+  let unlistenYtDlProg: (() => void) | null = null;
+  let unlistenFfmpeg: (() => void) | null = null;
   let lastSyncTs = 0;
 
   onMount(async () => {
@@ -104,11 +109,37 @@
       (evt) => {
         if (evt.status === "downloading" && evt.message) {
           resolvingMessage = evt.message;
+          if (ytDownloadingKey) {
+            ytDownloadStatusText = evt.message;
+          }
         } else {
           resolvingMessage = "Resolving stream...";
         }
       },
     );
+
+    unlistenYtDlProg = await raydropApi.listenEvent<{
+      video_id: string;
+      format: string;
+      percent: number;
+      status_text: string;
+    }>("media_ytdlp_download_progress", (p) => {
+      ytDownloadPercent = Math.round(p.percent ?? 0);
+      ytDownloadStatusText = p.status_text || "";
+    });
+
+    unlistenFfmpeg = await raydropApi.listenEvent<{
+      status: string;
+      percent?: number;
+      message: string;
+    }>("media_ffmpeg_status", (s) => {
+      if (ytDownloadingKey && (s.status === "downloading" || s.status === "extracting")) {
+        ytDownloadStatusText = s.message || "Preparing FFmpeg...";
+        if (typeof s.percent === "number") {
+          ytDownloadPercent = Math.round(s.percent);
+        }
+      }
+    });
 
     startVisualizerLoop();
   });
@@ -116,6 +147,8 @@
   onDestroy(() => {
     if (unlistenRemote) unlistenRemote();
     if (unlistenYtdlp) unlistenYtdlp();
+    if (unlistenYtDlProg) unlistenYtDlProg();
+    if (unlistenFfmpeg) unlistenFfmpeg();
     if (animFrameId !== null) cancelAnimationFrame(animFrameId);
     if (audioCtx) {
       audioCtx.close().catch(() => {});
@@ -459,6 +492,7 @@
 
   async function handleYtSearch() {
     if (!ytQuery.trim() || ytSearching) return;
+    activeTab = "ytmusic";
     ytSearching = true;
     playerError = "";
     try {
@@ -473,6 +507,8 @@
   async function handleYtDownload(item: YtMusicSearchItem, format: "mp3" | "mp4") {
     if (ytDownloadingKey) return;
     ytDownloadingKey = `${item.video_id}-${format}`;
+    ytDownloadPercent = 0;
+    ytDownloadStatusText = `Starting ${format.toUpperCase()} download...`;
     playerError = "";
     ytLastDownloaded = null;
     try {
@@ -490,6 +526,8 @@
       playerError = err?.message || String(err);
     } finally {
       ytDownloadingKey = "";
+      ytDownloadPercent = 0;
+      ytDownloadStatusText = "";
     }
   }
 
@@ -605,6 +643,54 @@
     }
   }
 
+  async function toggleVideoMode() {
+    const st = get(mediaPlayerState);
+    const nextVideoMode = !st.video_mode;
+    mediaPlayerState.update((s) => ({ ...s, video_mode: nextVideoMode }));
+    syncBackend(true);
+
+    if (
+      nextVideoMode &&
+      st.current_track &&
+      st.current_track.source_type === "ytmusic" &&
+      mediaEl &&
+      mediaEl.videoWidth === 0
+    ) {
+      const savedTime = mediaEl.currentTime || 0;
+      const wasPlaying = !mediaEl.paused;
+      resolvingStream = true;
+      resolvingMessage = "Loading video stream...";
+      playerError = "";
+      try {
+        const resolved = await raydropApi.mediaResolveStream(
+          st.current_track.uri_or_id,
+          true,
+        );
+        mediaEl.src = resolved.stream_url;
+        mediaEl.currentTime = savedTime;
+        if (wasPlaying) {
+          await mediaEl.play().catch(() => {});
+        }
+      } catch (err: any) {
+        playerError = err?.message || String(err);
+      } finally {
+        resolvingStream = false;
+        resolvingMessage = "Resolving stream...";
+      }
+    }
+  }
+
+  function toggleVideoFullscreen() {
+    if (!mediaEl) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      mediaEl.requestFullscreen?.().catch(() => {
+        videoBoxEl?.requestFullscreen?.().catch(() => {});
+      });
+    }
+  }
+
   function startDrag(e: MouseEvent) {
     dragging = true;
     dragOffsetX = e.clientX - posX;
@@ -646,14 +732,14 @@
       <div class="flex items-center gap-1" on:mousedown|stopPropagation>
         <button
           type="button"
-          on:click={() =>
-            mediaPlayerState.update((s) => ({ ...s, video_mode: !s.video_mode }))}
-          class="p-1 rounded-md text-xs transition cursor-pointer {$mediaPlayerState.video_mode
-            ? 'bg-cyan-500/20 text-cyan-300'
-            : 'text-slate-400 hover:text-white hover:bg-slate-800'}"
-          title="Toggle Video View"
+          on:click={toggleVideoMode}
+          class="px-2 py-1 rounded-md text-[10px] font-semibold flex items-center gap-1 transition cursor-pointer {$mediaPlayerState.video_mode
+            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+            : 'text-slate-300 bg-slate-800/80 hover:text-white hover:bg-slate-700'}"
+          title={$mediaPlayerState.video_mode ? "Hide Video" : "Show Video"}
         >
-          <Video class="w-3.5 h-3.5" />
+          <Video class="w-3 h-3" />
+          <span>{$mediaPlayerState.video_mode ? "Hide Video" : "Show Video"}</span>
         </button>
         <button
           type="button"
@@ -680,12 +766,15 @@
 
     <!-- Video Display Frame when Video Mode is ON -->
     <div
-      class="{$mediaPlayerState.video_mode && !minimizedBar ? 'block' : 'hidden'} relative bg-black border-b border-slate-800"
+      bind:this={videoBoxEl}
+      class="{$mediaPlayerState.video_mode && !minimizedBar ? 'block' : 'hidden'} relative bg-black border-b border-slate-800 group"
     >
       <video
         bind:this={mediaEl}
-        class="w-full aspect-video bg-black"
+        class="w-full aspect-video bg-black cursor-pointer"
         playsinline
+        controls={$mediaPlayerState.video_mode}
+        on:dblclick={toggleVideoFullscreen}
         on:timeupdate={() => {
           if (!mediaEl) return;
           mediaPlayerState.update((s) => ({
@@ -713,6 +802,25 @@
           syncBackend(true);
         }}
       ></video>
+      <div class="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          type="button"
+          on:click={toggleVideoFullscreen}
+          class="px-2 py-1 rounded-lg bg-black/75 hover:bg-black text-[10px] font-semibold text-white border border-white/20 flex items-center gap-1 cursor-pointer"
+          title="Fullscreen Video"
+        >
+          <Maximize2 class="w-3 h-3" />
+          <span>Fullscreen</span>
+        </button>
+        <button
+          type="button"
+          on:click={toggleVideoMode}
+          class="px-2 py-1 rounded-lg bg-black/75 hover:bg-black text-[10px] font-semibold text-slate-200 border border-white/20 cursor-pointer"
+          title="Hide Video"
+        >
+          Hide
+        </button>
+      </div>
     </div>
 
     <!-- Winamp LCD + Spectrum Visualizer -->
@@ -865,6 +973,45 @@
     <!-- Drawer Tabs: Queue | Playlists | YouTube Music -->
     {#if !minimizedBar}
       <div class="border-t border-slate-800 bg-slate-900/60">
+        <!-- Quick YTMusic Search + Add Local always accessible at the top -->
+        <div class="px-3 pt-2.5 pb-2 border-b border-slate-800/80 flex items-center gap-1.5">
+          <div class="flex-1 flex items-center gap-1 bg-slate-950 border border-slate-700/90 rounded-lg px-2 py-1 focus-within:border-amber-500">
+            <Search class="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <input
+              type="text"
+              bind:value={ytQuery}
+              placeholder="Search YTMusic / YouTube..."
+              on:keydown={(e) => e.key === "Enter" && handleYtSearch()}
+              class="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
+            />
+          </div>
+          <select
+            bind:value={ytFilter}
+            class="px-1.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-[10px] text-slate-200"
+          >
+            <option value="all">All</option>
+            <option value="songs">Songs</option>
+            <option value="videos">Videos</option>
+          </select>
+          <button
+            type="button"
+            disabled={ytSearching}
+            on:click={handleYtSearch}
+            class="px-2 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-bold cursor-pointer disabled:opacity-50 shrink-0"
+          >
+            {ytSearching ? "..." : "Go"}
+          </button>
+          <button
+            type="button"
+            on:click={() => addLocalFiles()}
+            class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-semibold text-cyan-300 flex items-center gap-1 cursor-pointer shrink-0"
+            title="Add Local Audio / Video"
+          >
+            <FolderPlus class="w-3.5 h-3.5" />
+            <span>Local</span>
+          </button>
+        </div>
+
         <div class="grid grid-cols-3 border-b border-slate-800 text-[11px] font-semibold">
           <button
             type="button"
@@ -931,13 +1078,13 @@
 
             {#if $mediaPlayerState.queue.length === 0}
               <p class="text-[11px] text-slate-500 italic py-4 text-center">
-                Queue kosong. Tambahkan file lokal atau cari lagu/video di tab YTMusic.
+                Queue kosong. Tambahkan file lokal atau cari lagu/video di atas.
               </p>
             {:else}
               <div class="space-y-1">
                 {#each $mediaPlayerState.queue as track, idx (track.id)}
                   <div
-                    class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border text-xs {$mediaPlayerState.current_index === idx
+                    class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg border text-xs {$mediaPlayerState.current_index === idx
                       ? 'bg-cyan-500/15 border-cyan-500/40 text-white'
                       : 'bg-slate-900/70 border-slate-800/80 text-slate-300 hover:bg-slate-800/70'}"
                   >
@@ -946,13 +1093,26 @@
                       on:click={() => playTrack(track, idx)}
                       class="flex-1 min-w-0 text-left flex items-center gap-2 cursor-pointer"
                     >
-                      <span class="text-[10px] font-mono text-slate-500 w-4">{idx + 1}.</span>
-                      {#if track.is_video}
-                        <Video class="w-3 h-3 text-amber-400 shrink-0" />
+                      <span class="text-[10px] font-mono text-slate-500 w-4 shrink-0">{idx + 1}.</span>
+                      {#if track.thumbnail_url}
+                        <img
+                          src={track.thumbnail_url}
+                          alt={track.title}
+                          class="w-8 h-8 rounded object-cover shrink-0 border border-slate-700/60"
+                        />
                       {:else}
-                        <Music class="w-3 h-3 text-cyan-400 shrink-0" />
+                        <div class="w-8 h-8 rounded bg-slate-800/90 border border-slate-700/60 flex items-center justify-center shrink-0">
+                          {#if track.is_video}
+                            <Video class="w-3.5 h-3.5 text-amber-400" />
+                          {:else}
+                            <Music class="w-3.5 h-3.5 text-cyan-400" />
+                          {/if}
+                        </div>
                       {/if}
-                      <span class="truncate">{track.title}</span>
+                      <div class="min-w-0">
+                        <p class="truncate font-medium text-xs">{track.title}</p>
+                        <p class="truncate text-[10px] text-slate-400">{track.artist}</p>
+                      </div>
                     </button>
                     <button
                       type="button"
@@ -1043,13 +1203,31 @@
 
                 <div class="space-y-1">
                   {#each $selectedPlaylistItems as item (item.id)}
-                    <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs">
+                    <div class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs">
                       <button
                         type="button"
                         on:click={() => playTrack(playlistItemToTrack(item))}
-                        class="flex-1 min-w-0 text-left truncate text-slate-200 hover:text-cyan-300 cursor-pointer"
+                        class="flex-1 min-w-0 text-left flex items-center gap-2 text-slate-200 hover:text-cyan-300 cursor-pointer"
                       >
-                        {item.title} <span class="text-slate-500 text-[10px]">• {item.artist}</span>
+                        {#if item.thumbnail_url}
+                          <img
+                            src={item.thumbnail_url}
+                            alt={item.title}
+                            class="w-8 h-8 rounded object-cover shrink-0 border border-slate-700/60"
+                          />
+                        {:else}
+                          <div class="w-8 h-8 rounded bg-slate-800/90 border border-slate-700/60 flex items-center justify-center shrink-0">
+                            {#if item.is_video}
+                              <Video class="w-3.5 h-3.5 text-amber-400" />
+                            {:else}
+                              <Music class="w-3.5 h-3.5 text-cyan-400" />
+                            {/if}
+                          </div>
+                        {/if}
+                        <div class="min-w-0">
+                          <p class="truncate font-medium text-xs">{item.title}</p>
+                          <p class="truncate text-[10px] text-slate-400">{item.artist}</p>
+                        </div>
                       </button>
                       <button
                         type="button"
@@ -1069,32 +1247,6 @@
             {/if}
 
           {:else if activeTab === "ytmusic"}
-            <div class="flex items-center gap-1.5">
-              <input
-                type="text"
-                bind:value={ytQuery}
-                placeholder="Search songs or music videos..."
-                on:keydown={(e) => e.key === "Enter" && handleYtSearch()}
-                class="flex-1 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-amber-500"
-              />
-              <select
-                bind:value={ytFilter}
-                class="px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-[11px] text-slate-200"
-              >
-                <option value="all">All</option>
-                <option value="songs">Songs</option>
-                <option value="videos">Videos</option>
-              </select>
-              <button
-                type="button"
-                disabled={ytSearching}
-                on:click={handleYtSearch}
-                class="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold cursor-pointer disabled:opacity-50"
-              >
-                {ytSearching ? "..." : "Go"}
-              </button>
-            </div>
-
             {#if $mediaPlaylists.length > 0}
               <div class="flex items-center gap-1.5 text-[10px] text-slate-400">
                 <span>Save to:</span>
@@ -1106,6 +1258,21 @@
                     <option value={pl.id}>{pl.name}</option>
                   {/each}
                 </select>
+              </div>
+            {/if}
+
+            {#if ytDownloadingKey}
+              <div class="p-2 rounded-lg bg-slate-900/90 border border-cyan-500/30 space-y-1.5 text-[11px]">
+                <div class="flex items-center justify-between gap-2 text-cyan-300 font-medium">
+                  <span class="truncate">{ytDownloadStatusText || "Downloading..."}</span>
+                  <span class="shrink-0 font-mono">{ytDownloadPercent}%</span>
+                </div>
+                <div class="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    class="h-full bg-cyan-400 transition-all duration-200"
+                    style="width: {ytDownloadPercent}%"
+                  ></div>
+                </div>
               </div>
             {/if}
 

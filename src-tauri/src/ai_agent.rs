@@ -28,6 +28,8 @@ pub struct AiMcpConfig {
     pub llm_model: String,
     pub llm_temperature: f32,
     pub llm_max_tokens: u32,
+    #[serde(default)]
+    pub llm_prompt_tool_mode: bool,
 
     // Bot Persona
     pub persona_name: String,
@@ -45,7 +47,7 @@ impl Default for AiMcpConfig {
     fn default() -> Self {
         Self {
             mcp_enabled: true,
-            mcp_port: 8765,
+            mcp_port: 48765,
             mcp_auth_token: String::new(),
             llm_provider: "openai".to_string(),
             llm_base_url: "https://api.openai.com/v1".to_string(),
@@ -53,6 +55,7 @@ impl Default for AiMcpConfig {
             llm_model: "gpt-4o-mini".to_string(),
             llm_temperature: 0.7,
             llm_max_tokens: 2048,
+            llm_prompt_tool_mode: false,
             persona_name: "RayBot".to_string(),
             persona_preset: "assistant".to_string(),
             persona_language: "auto".to_string(),
@@ -175,9 +178,147 @@ pub async fn chat_with_mcp_tools(
 ) -> Result<String, String> {
     if cfg.llm_provider == "anthropic" {
         chat_anthropic_loop(app, state, cfg, history, user_message).await
+    } else if cfg.llm_prompt_tool_mode {
+        chat_prompt_tool_loop(app, state, cfg, history, user_message).await
     } else {
-        chat_openai_compatible_loop(app, state, cfg, history, user_message).await
+        match chat_openai_compatible_loop(app, state, cfg, history, user_message).await {
+            Ok(res) => Ok(res),
+            Err(err)
+                if err.contains("timed out")
+                    || err.contains("tools")
+                    || err.contains("HTTP 400")
+                    || err.contains("HTTP 422") =>
+            {
+                // Auto-fallback to Prompt-Based Tool Calling if proxy doesn't support OpenAI `tools`
+                chat_prompt_tool_loop(app, state, cfg, history, user_message).await
+            }
+            Err(err) => Err(err),
+        }
     }
+}
+
+fn extract_prompt_tool_call(text: &str) -> Option<(String, Value)> {
+    let start = text.find("<tool_call>")?;
+    let after = &text[start + "<tool_call>".len()..];
+    let end = after.find("</tool_call>")?;
+    let json_str = after[..end].trim();
+    let val: Value = serde_json::from_str(json_str).ok()?;
+    let name = val.get("name")?.as_str()?.to_string();
+    let args = val.get("arguments").cloned().unwrap_or(json!({}));
+    Some((name, args))
+}
+
+async fn chat_prompt_tool_loop(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    cfg: &AiMcpConfig,
+    history: &mut Vec<Value>,
+    user_message: &str,
+) -> Result<String, String> {
+    let base = cfg.llm_base_url.trim().trim_end_matches('/');
+    if base.is_empty() || cfg.llm_model.trim().is_empty() {
+        return Err("LLM Base URL and Model must be configured in Settings".to_string());
+    }
+    let url = format!("{}/chat/completions", base);
+
+    history.push(json!({ "role": "user", "content": user_message }));
+    if history.len() > 20 {
+        let drain = history.len() - 20;
+        history.drain(0..drain);
+    }
+
+    let tool_specs: Vec<String> = get_mcp_tool_definitions()
+        .into_iter()
+        .map(|t| {
+            format!(
+                "- {}: {} | args: {}",
+                t["name"].as_str().unwrap_or(""),
+                t["description"].as_str().unwrap_or(""),
+                t["inputSchema"]
+            )
+        })
+        .collect();
+
+    let system_prompt = format!(
+        "{}\n\nYou have access to RayDrop MCP tools:\n{}\n\nWhen you need to call a tool, respond ONLY with:\n<tool_call>{{\"name\":\"tool_name\",\"arguments\":{{...}}}}</tool_call>\nAfter receiving the tool result, answer the user clearly.",
+        build_persona_system_prompt(cfg),
+        tool_specs.join("\n")
+    );
+
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .timeout(std::time::Duration::from_secs(90))
+        .pool_max_idle_per_host(0)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    for _step in 0..5 {
+        let mut messages = vec![json!({ "role": "system", "content": system_prompt })];
+        messages.extend(history.clone());
+
+        let mut req = client.post(&url);
+        if !cfg.llm_api_key.trim().is_empty() {
+            req = req.bearer_auth(cfg.llm_api_key.trim());
+        }
+
+        let resp = req
+            .json(&json!({
+                "model": cfg.llm_model.trim(),
+                "messages": messages,
+                "temperature": cfg.llm_temperature,
+                "max_tokens": cfg.llm_max_tokens
+            }))
+            .send()
+            .await
+            .map_err(|e| format!("LLM request failed: {}", format_reqwest_error(&e)))?;
+
+        let status = resp.status();
+        let raw_text = resp
+            .text()
+            .await
+            .map_err(|e| format!("Failed reading LLM response: {}", format_reqwest_error(&e)))?;
+        let body: Value = serde_json::from_str(&raw_text)
+            .map_err(|e| format!("Failed to parse LLM JSON ({}): {}", e, raw_text))?;
+
+        if !status.is_success() {
+            return Err(format!("LLM HTTP {}: {}", status, body));
+        }
+
+        let reply_text = body
+            .pointer("/choices/0/message/content")
+            .and_then(|c| c.as_str())
+            .unwrap_or("(No response)")
+            .to_string();
+
+        history.push(json!({ "role": "assistant", "content": reply_text }));
+
+        if let Some((fn_name, args_val)) = extract_prompt_tool_call(&reply_text) {
+            let tool_out = match execute_mcp_tool(app, state, &fn_name, &args_val).await {
+                Ok(out) => out,
+                Err(e) => format!("Tool error: {}", e),
+            };
+            history.push(json!({
+                "role": "user",
+                "content": format!("[Tool Result for {}]:\n{}", fn_name, tool_out)
+            }));
+            continue;
+        }
+
+        return Ok(reply_text);
+    }
+
+    Err("AI reached maximum tool-calling steps".to_string())
+}
+
+fn format_reqwest_error(e: &reqwest::Error) -> String {
+    use std::error::Error;
+    let mut parts = vec![e.to_string()];
+    let mut cur = e.source();
+    while let Some(src) = cur {
+        parts.push(src.to_string());
+        cur = src.source();
+    }
+    parts.join(" -> ")
 }
 
 async fn chat_openai_compatible_loop(
@@ -202,7 +343,9 @@ async fn chat_openai_compatible_loop(
     let system_prompt = build_persona_system_prompt(cfg);
     let tools = to_openai_tools();
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .timeout(std::time::Duration::from_secs(120))
+        .pool_max_idle_per_host(0)
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -210,28 +353,43 @@ async fn chat_openai_compatible_loop(
         let mut messages = vec![json!({ "role": "system", "content": system_prompt })];
         messages.extend(history.clone());
 
-        let mut req = client.post(&url);
-        if !cfg.llm_api_key.trim().is_empty() {
-            req = req.bearer_auth(cfg.llm_api_key.trim());
-        }
+        let payload = json!({
+            "model": cfg.llm_model.trim(),
+            "messages": messages,
+            "tools": tools,
+            "temperature": cfg.llm_temperature,
+            "max_tokens": cfg.llm_max_tokens
+        });
 
-        let resp = req
-            .json(&json!({
-                "model": cfg.llm_model.trim(),
-                "messages": messages,
-                "tools": tools,
-                "temperature": cfg.llm_temperature,
-                "max_tokens": cfg.llm_max_tokens
-            }))
-            .send()
-            .await
-            .map_err(|e| format!("LLM request failed: {}", e))?;
+        let mut resp_opt = None;
+        let mut last_send_err = String::new();
+        for attempt in 0..2 {
+            let mut req = client.post(&url);
+            if !cfg.llm_api_key.trim().is_empty() {
+                req = req.bearer_auth(cfg.llm_api_key.trim());
+            }
+            match req.json(&payload).send().await {
+                Ok(r) => {
+                    resp_opt = Some(r);
+                    break;
+                }
+                Err(e) => {
+                    last_send_err = format_reqwest_error(&e);
+                    if attempt == 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                    }
+                }
+            }
+        }
+        let resp = resp_opt.ok_or_else(|| format!("LLM request failed: {}", last_send_err))?;
 
         let status = resp.status();
-        let body: Value = resp
-            .json()
+        let raw_text = resp
+            .text()
             .await
-            .map_err(|e| format!("Failed to parse LLM JSON: {}", e))?;
+            .map_err(|e| format!("Failed reading LLM response: {}", format_reqwest_error(&e)))?;
+        let body: Value = serde_json::from_str(&raw_text)
+            .map_err(|e| format!("Failed to parse LLM JSON ({}): {}", e, raw_text))?;
 
         if !status.is_success() {
             return Err(format!("LLM HTTP {}: {}", status, body));

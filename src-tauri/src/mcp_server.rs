@@ -22,8 +22,8 @@ impl Default for McpServerRuntime {
     fn default() -> Self {
         Self {
             running: false,
-            port: 8765,
-            url: "http://127.0.0.1:8765/mcp".to_string(),
+            port: 48765,
+            url: "http://127.0.0.1:48765/mcp".to_string(),
             last_error: None,
         }
     }
@@ -574,24 +574,52 @@ async fn run_mcp_http_loop(
     auth_token: String,
     stop: Arc<AtomicBool>,
 ) {
-    let bind_addr = format!("127.0.0.1:{}", port);
-    let listener = match TcpListener::bind(&bind_addr).await {
-        Ok(l) => l,
-        Err(e) => {
-            warn!("Failed to bind MCP HTTP server on {}: {}", bind_addr, e);
+    // Try configured port first, then automatically fall back to nearby free ports if occupied
+    let mut listener_opt: Option<(TcpListener, u16)> = None;
+    let mut last_bind_err = String::new();
+    for offset in 0..=20u16 {
+        let candidate_port = port.saturating_add(offset);
+        if candidate_port == 0 {
+            continue;
+        }
+        let addr = format!("127.0.0.1:{}", candidate_port);
+        match TcpListener::bind(&addr).await {
+            Ok(l) => {
+                listener_opt = Some((l, candidate_port));
+                break;
+            }
+            Err(e) => {
+                last_bind_err = e.to_string();
+            }
+        }
+    }
+
+    if listener_opt.is_none() {
+        if let Ok(l) = TcpListener::bind("127.0.0.1:0").await {
+            if let Ok(local) = l.local_addr() {
+                listener_opt = Some((l, local.port()));
+            }
+        }
+    }
+
+    let (listener, actual_port) = match listener_opt {
+        Some(pair) => pair,
+        None => {
+            warn!("Failed to bind MCP HTTP server near port {}: {}", port, last_bind_err);
             if let Ok(mut rt) = state.mcp_server.runtime.lock() {
                 rt.running = false;
                 rt.port = port;
-                rt.last_error = Some(format!("Port {} bind error: {}", port, e));
+                rt.last_error = Some(format!("Port {} bind error: {}", port, last_bind_err));
             }
             return;
         }
     };
 
+    let bind_addr = format!("127.0.0.1:{}", actual_port);
     info!("RayDrop MCP HTTP server listening on http://{}/mcp", bind_addr);
     if let Ok(mut rt) = state.mcp_server.runtime.lock() {
         rt.running = true;
-        rt.port = port;
+        rt.port = actual_port;
         rt.url = format!("http://{}/mcp", bind_addr);
         rt.last_error = None;
     }

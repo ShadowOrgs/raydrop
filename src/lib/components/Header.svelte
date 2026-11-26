@@ -52,6 +52,7 @@
     Camera,
     Video,
     Monitor,
+    Music,
     Palette,
     Volume2,
     VolumeX,
@@ -289,12 +290,13 @@
     <button
       type="button"
       on:click={() => winampPlayerOpen.update((v) => !v)}
-      class="p-2 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 {$winampPlayerOpen || $mediaPlayerState.is_playing
+      class="px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition-colors cursor-pointer flex items-center gap-1.5 {$winampPlayerOpen || $mediaPlayerState.is_playing
         ? 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40'
         : 'bg-slate-800/70 hover:bg-slate-700 text-slate-300 hover:text-white'}"
       title="RayAmp Media Player (Audio & Video + YTMusic)"
     >
-      <Video class="w-4 h-4 {$mediaPlayerState.is_playing ? 'animate-pulse text-amber-400' : ''}" />
+      <Music class="w-3.5 h-3.5 {$mediaPlayerState.is_playing ? 'animate-pulse text-amber-400' : 'text-amber-400'}" />
+      <span class="hidden sm:inline">RayAmp</span>
     </button>
 
     <!-- Quick Theme Switcher Dropdown -->

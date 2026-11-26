@@ -131,7 +131,7 @@ if __name__ == "__main__":
 - **YouTube Music Search & Auto `yt-dlp`:** Search songs and music videos directly inside RayAmp with automatic first-time `yt-dlp` download so streaming works out of the box.
 
 #### 🤖 Full MCP Server & Telegram AI Bot
-- **RayDrop MCP Server (`http://127.0.0.1:8765/mcp`):** Standard JSON-RPC 2.0 MCP server exposing RayAmp playback/playlists, Wake-on-LAN, system telemetry, devices, clipboard history, notes, and shared folders.
+- **RayDrop MCP Server (`http://127.0.0.1:48765/mcp`):** Standard JSON-RPC 2.0 MCP server exposing RayAmp playback/playlists, Wake-on-LAN, system telemetry, devices, clipboard history, notes, and shared folders.
 - **Telegram AI Bot + Bot Persona + Custom LLM:** Long-polling Telegram bot with multiple allowed User IDs whitelist, customizable Bot Persona (name, style preset, language, custom system instructions), and preset/custom OpenAI-compatible LLM providers (OpenAI, Gemini, Claude, DeepSeek, Groq, OpenRouter, Ollama).
 
 #### ⚡ Wake-on-LAN Settings, Auto-MAC & Setup Guide

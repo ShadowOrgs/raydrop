@@ -75,14 +75,51 @@ pub struct ResolvedMediaStream {
     pub is_video: bool,
 }
 
-/// Search YouTube Music via the public InnerTube WEB_REMIX API.
+/// Search YouTube Music (WEB_REMIX) + standard YouTube (WEB) so covers, remixes, and videos are always found.
 pub async fn search_ytmusic(query: &str, filter: &str) -> Result<Vec<YtMusicSearchItem>, String> {
     let trimmed = query.trim();
     if trimmed.is_empty() {
         return Ok(Vec::new());
     }
 
-    let params_code = match filter.to_lowercase().as_str() {
+    let filter_lower = filter.to_lowercase();
+    let default_is_video = matches!(filter_lower.as_str(), "videos" | "video");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut items = Vec::new();
+
+    if filter_lower != "videos" && filter_lower != "video" {
+        if let Ok(ytm_items) = search_ytmusic_innertube(&client, trimmed, &filter_lower, default_is_video).await {
+            items.extend(ytm_items);
+        }
+    }
+
+    // For "all", "videos", or when YTMusic returns too few results (e.g. VTuber covers / remixes),
+    // also search standard YouTube WEB InnerTube (`videoRenderer`).
+    if filter_lower == "all" || filter_lower == "videos" || filter_lower == "video" || items.len() < 5 {
+        if let Ok(yt_items) = search_youtube_web_innertube(&client, trimmed).await {
+            items.extend(yt_items);
+        }
+    }
+
+    // Deduplicate by video_id preserving order
+    let mut seen = std::collections::HashSet::new();
+    items.retain(|i| seen.insert(i.video_id.clone()));
+    items.truncate(30);
+    Ok(items)
+}
+
+async fn search_ytmusic_innertube(
+    client: &reqwest::Client,
+    query: &str,
+    filter_lower: &str,
+    default_is_video: bool,
+) -> Result<Vec<YtMusicSearchItem>, String> {
+    let params_code = match filter_lower {
         "songs" | "song" | "audio" => Some("EgWKAQIIAWoMEAMQBBAJEAoQBRAV"),
         "videos" | "video" => Some("EgWKAQIQAWoMEAMQBBAJEAoQBRAV"),
         _ => None,
@@ -97,17 +134,12 @@ pub async fn search_ytmusic(query: &str, filter: &str) -> Result<Vec<YtMusicSear
                 "gl": "US"
             }
         },
-        "query": trimmed
+        "query": query
     });
 
     if let Some(p) = params_code {
         body["params"] = json!(p);
     }
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| e.to_string())?;
 
     let resp = client
         .post("https://music.youtube.com/youtubei/v1/search?prettyPrint=false")
@@ -129,14 +161,112 @@ pub async fn search_ytmusic(query: &str, filter: &str) -> Result<Vec<YtMusicSear
         .map_err(|e| format!("Failed to parse YTMusic JSON: {}", e))?;
 
     let mut items = Vec::new();
-    let default_is_video = matches!(filter.to_lowercase().as_str(), "videos" | "video");
     collect_music_renderers(&json_val, default_is_video, &mut items);
-
-    // Deduplicate by video_id preserving order
-    let mut seen = std::collections::HashSet::new();
-    items.retain(|i| seen.insert(i.video_id.clone()));
-    items.truncate(25);
     Ok(items)
+}
+
+async fn search_youtube_web_innertube(
+    client: &reqwest::Client,
+    query: &str,
+) -> Result<Vec<YtMusicSearchItem>, String> {
+    let body = json!({
+        "context": {
+            "client": {
+                "clientName": "WEB",
+                "clientVersion": "2.20241120.01.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "query": query
+    });
+
+    let resp = client
+        .post("https://www.youtube.com/youtubei/v1/search?prettyPrint=false")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        .header("Origin", "https://www.youtube.com")
+        .header("Referer", "https://www.youtube.com/")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("YouTube search request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("YouTube API returned HTTP {}", resp.status()));
+    }
+
+    let json_val: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse YouTube JSON: {}", e))?;
+
+    let mut items = Vec::new();
+    collect_youtube_video_renderers(&json_val, &mut items);
+    Ok(items)
+}
+
+fn collect_youtube_video_renderers(val: &Value, out: &mut Vec<YtMusicSearchItem>) {
+    match val {
+        Value::Object(map) => {
+            if let Some(vr) = map.get("videoRenderer") {
+                if let Some(video_id) = vr.get("videoId").and_then(|v| v.as_str()) {
+                    let title = vr
+                        .get("title")
+                        .map(extract_runs_text)
+                        .filter(|s| !s.is_empty())
+                        .or_else(|| {
+                            vr.pointer("/title/simpleText")
+                                .and_then(|t| t.as_str())
+                                .map(|s| s.to_string())
+                        })
+                        .unwrap_or_else(|| "YouTube Video".to_string());
+                    let artist = vr
+                        .get("ownerText")
+                        .map(extract_runs_text)
+                        .filter(|s| !s.is_empty())
+                        .or_else(|| {
+                            vr.get("longBylineText")
+                                .map(extract_runs_text)
+                                .filter(|s| !s.is_empty())
+                        })
+                        .unwrap_or_else(|| "YouTube".to_string());
+                    let duration_text = vr
+                        .pointer("/lengthText/simpleText")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let duration_secs = parse_duration_secs(&duration_text);
+                    let thumbnail_url = vr
+                        .pointer("/thumbnail/thumbnails")
+                        .and_then(|t| t.as_array())
+                        .and_then(|arr| arr.last())
+                        .and_then(|last| last.get("url"))
+                        .and_then(|u| u.as_str())
+                        .map(|s| s.to_string());
+
+                    out.push(YtMusicSearchItem {
+                        video_id: video_id.to_string(),
+                        title,
+                        artist,
+                        album: None,
+                        duration_text,
+                        duration_secs,
+                        thumbnail_url,
+                        is_video: true,
+                    });
+                }
+            }
+            for v in map.values() {
+                collect_youtube_video_renderers(v, out);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr {
+                collect_youtube_video_renderers(v, out);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn collect_music_renderers(val: &Value, default_is_video: bool, out: &mut Vec<YtMusicSearchItem>) {
@@ -431,53 +561,69 @@ pub async fn resolve_ytmusic_stream(
 
     let ytdlp_bin = ensure_ytdlp_installed(app).await?;
     let format_selector = if prefer_video {
-        "best[ext=mp4][acodec!=none][vcodec!=none]/best[acodec!=none][vcodec!=none]/best"
+        "best[acodec!=none][vcodec!=none]/best"
     } else {
-        "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
+        "bestaudio/best"
     };
     let url = format!("https://www.youtube.com/watch?v={}", vid);
 
-    let mut cmd = tokio::process::Command::new(&ytdlp_bin);
-    cmd.args([
-        "--no-playlist",
-        "--no-warnings",
-        "-f",
-        format_selector,
-        "-g",
-        &url,
-    ]);
+    // Attempt 1: with android/ios/web player_client & preferred format selector
+    let attempts: Vec<Vec<&str>> = vec![
+        vec![
+            "--no-playlist",
+            "--no-warnings",
+            "--extractor-args",
+            "youtube:player_client=android,ios,web",
+            "-f",
+            format_selector,
+            "-g",
+            &url,
+        ],
+        // Attempt 2: fallback without -f so yt-dlp picks any playable format available
+        vec![
+            "--no-playlist",
+            "--no-warnings",
+            "--extractor-args",
+            "youtube:player_client=android,ios,web",
+            "-g",
+            &url,
+        ],
+        // Attempt 3: plain default client without -f
+        vec!["--no-playlist", "--no-warnings", "-g", &url],
+    ];
 
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-
-    let output = cmd.output().await.map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            "yt-dlp is not installed or not in PATH. Install it first (Windows: `winget install yt-dlp`, macOS: `brew install yt-dlp`, Linux: `pip install yt-dlp`).".to_string()
-        } else {
-            format!("Failed to run yt-dlp: {}", e)
+    let mut last_err = String::new();
+    for args in attempts {
+        let mut cmd = tokio::process::Command::new(&ytdlp_bin);
+        cmd.args(&args);
+        #[cfg(target_os = "windows")]
+        {
+            cmd.creation_flags(0x08000000);
         }
-    })?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("yt-dlp error: {}", stderr.trim()));
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Some(stream_url) = stdout
+                .lines()
+                .map(str::trim)
+                .find(|l| l.starts_with("http"))
+            {
+                return Ok(ResolvedMediaStream {
+                    video_id: vid.to_string(),
+                    stream_url: stream_url.to_string(),
+                    is_video: prefer_video,
+                });
+            }
+        }
+        last_err = String::from_utf8_lossy(&output.stderr).trim().to_string();
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stream_url = stdout
-        .lines()
-        .map(str::trim)
-        .find(|l| l.starts_with("http"))
-        .ok_or_else(|| "yt-dlp did not return a valid stream URL".to_string())?
-        .to_string();
-
-    Ok(ResolvedMediaStream {
-        video_id: vid.to_string(),
-        stream_url,
-        is_video: prefer_video,
-    })
+    Err(format!("yt-dlp error: {}", last_err))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -521,6 +667,8 @@ pub async fn download_ytmusic_media(
     let mut args: Vec<String> = vec![
         "--no-playlist".into(),
         "--no-warnings".into(),
+        "--extractor-args".into(),
+        "youtube:player_client=android,ios,web".into(),
     ];
 
     if let Some(parent) = std::path::Path::new(&ffmpeg_bin).parent() {
@@ -549,35 +697,120 @@ pub async fn download_ytmusic_media(
     }
 
     args.extend([
+        "--newline".into(),
+        "--progress".into(),
+        "--progress-template".into(),
+        "download:RAYDROP_PROG:%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s".into(),
         "-o".into(),
         out_tmpl,
         "--print".into(),
-        "after_move:filepath".into(),
+        "after_move:RAYDROP_FILE:%(filepath)s".into(),
         url,
     ]);
 
+    if let Some(handle) = app {
+        let _ = handle.emit(
+            "media_ytdlp_download_progress",
+            json!({
+                "video_id": vid,
+                "format": target_ext,
+                "percent": 0.0,
+                "status_text": format!("Starting {} download...", target_ext.to_uppercase())
+            }),
+        );
+    }
+
     let mut cmd = tokio::process::Command::new(&ytdlp_bin);
-    cmd.args(&args);
+    cmd.args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
 
-    let output = cmd
-        .output()
-        .await
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("Failed to run yt-dlp download: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Download failed: {}", stderr.trim()));
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+
+    let app_out = app.cloned();
+    let vid_out = vid.to_string();
+    let ext_out = target_ext.to_string();
+
+    let stdout_task = tauri::async_runtime::spawn(async move {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let mut path_lines = Vec::new();
+        if let Some(out) = stdout_pipe {
+            let mut reader = BufReader::new(out).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                let trimmed = line.trim();
+                if let Some(prog) = trimmed.strip_prefix("RAYDROP_PROG:") {
+                    let parts: Vec<&str> = prog.split('|').collect();
+                    let pct_str = parts.first().copied().unwrap_or("0%").trim().trim_end_matches('%');
+                    let pct = pct_str.parse::<f64>().unwrap_or(0.0).clamp(0.0, 99.0);
+                    let speed = parts.get(1).copied().unwrap_or("").trim();
+                    let eta = parts.get(2).copied().unwrap_or("").trim();
+                    if let Some(ref handle) = app_out {
+                        let _ = handle.emit(
+                            "media_ytdlp_download_progress",
+                            json!({
+                                "video_id": vid_out,
+                                "format": ext_out,
+                                "percent": pct,
+                                "status_text": format!("Downloading {}: {:.0}% • {} • ETA {}", ext_out.to_uppercase(), pct, speed, eta)
+                            }),
+                        );
+                    }
+                } else if trimmed.starts_with("[ExtractAudio]") || trimmed.starts_with("[Merger]") {
+                    if let Some(ref handle) = app_out {
+                        let _ = handle.emit(
+                            "media_ytdlp_download_progress",
+                            json!({
+                                "video_id": vid_out,
+                                "format": ext_out,
+                                "percent": 99.0,
+                                "status_text": format!("Converting / merging {}...", ext_out.to_uppercase())
+                            }),
+                        );
+                    }
+                } else if let Some(fpath) = trimmed.strip_prefix("RAYDROP_FILE:") {
+                    path_lines.push(fpath.trim().to_string());
+                }
+            }
+        }
+        path_lines
+    });
+
+    let stderr_task = tauri::async_runtime::spawn(async move {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let mut errs = Vec::new();
+        if let Some(err) = stderr_pipe {
+            let mut reader = BufReader::new(err).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                if !line.trim().starts_with("RAYDROP_PROG:") {
+                    errs.push(line);
+                }
+            }
+        }
+        errs.join("\n")
+    });
+
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("Failed waiting for yt-dlp: {}", e))?;
+    let path_lines = stdout_task.await.unwrap_or_default();
+    let stderr_text = stderr_task.await.unwrap_or_default();
+
+    if !status.success() {
+        return Err(format!("Download failed: {}", stderr_text.trim()));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let saved_path = stdout
-        .lines()
-        .map(str::trim)
+    let saved_path = path_lines
+        .into_iter()
         .rfind(|l| !l.is_empty())
-        .ok_or_else(|| "Download completed but output path was not returned".to_string())?
-        .to_string();
+        .ok_or_else(|| "Download completed but output path was not returned".to_string())?;
 
     let size_bytes = tokio::fs::metadata(&saved_path)
         .await

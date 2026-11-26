@@ -88,10 +88,14 @@
     });
     unlistenFfmpegStatus = await raydropApi.listenEvent<{
       status: string;
+      percent?: number;
       message: string;
     }>("media_ffmpeg_status", (s) => {
-      if (s.status === "downloading" && s.message) {
+      if ((s.status === "downloading" || s.status === "extracting") && s.message) {
         mediaProgressText = s.message;
+        if (typeof s.percent === "number") {
+          mediaProgressPercent = Math.round(s.percent);
+        }
       }
     });
   });

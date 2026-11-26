@@ -74,7 +74,7 @@
 
   let config: AiMcpConfig = {
     mcp_enabled: true,
-    mcp_port: 8765,
+    mcp_port: 48765,
     mcp_auth_token: "",
     llm_provider: "openai",
     llm_base_url: "https://api.openai.com/v1",
@@ -82,6 +82,7 @@
     llm_model: "gpt-4o-mini",
     llm_temperature: 0.7,
     llm_max_tokens: 2048,
+    llm_prompt_tool_mode: false,
     persona_name: "RayBot",
     persona_preset: "assistant",
     persona_language: "auto",
@@ -193,11 +194,12 @@
   }
 
   function copyMcpClientConfig() {
+    const activePort = runtime?.mcp.running ? runtime.mcp.port : config.mcp_port || 48765;
     const snippet = JSON.stringify(
       {
         mcpServers: {
           raydrop: {
-            url: `http://127.0.0.1:${config.mcp_port || 8765}/mcp`,
+            url: `http://127.0.0.1:${activePort}/mcp`,
             headers: config.mcp_auth_token.trim()
               ? { Authorization: `Bearer ${config.mcp_auth_token.trim()}` }
               : undefined,
@@ -395,6 +397,11 @@
         />
       </div>
     </div>
+
+    <label class="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer pt-0.5">
+      <input type="checkbox" bind:checked={config.llm_prompt_tool_mode} class="accent-amber-500" />
+      <span>Prompt-Based Tool Mode (recommended for custom CLI/proxy endpoints without native OpenAI <code>tools</code>)</span>
+    </label>
   </div>
 
   <!-- 3. Bot Persona -->

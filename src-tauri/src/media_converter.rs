@@ -116,32 +116,106 @@ pub async fn ensure_ffmpeg_installed(app: Option<&AppHandle>) -> Result<String, 
         .map_err(|e| e.to_string())?;
 
     let os = std::env::consts::OS;
-    let url = match os {
-        "windows" => "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
-        "macos" => "https://evermeet.cx/ffmpeg/getrelease/zip",
-        _ => "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+    let urls: Vec<&str> = match os {
+        "windows" => vec![
+            "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v6.1/ffmpeg-6.1-win-64.zip",
+            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+        ],
+        "macos" => vec![
+            "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v6.1/ffmpeg-6.1-macos-64.zip",
+            "https://evermeet.cx/ffmpeg/getrelease/zip",
+        ],
+        _ => vec![
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+        ],
     };
 
-    let resp = client
-        .get(url)
-        .header("User-Agent", "Raydrop-Media-Converter")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to download FFmpeg: {}", e))?;
+    let mut downloaded_bytes: Option<Vec<u8>> = None;
+    let mut last_err = String::new();
 
-    if !resp.status().is_success() {
-        return Err(format!("Failed to download FFmpeg (HTTP {})", resp.status()));
+    for url in urls {
+        match client
+            .get(url)
+            .header("User-Agent", "Raydrop-Media-Converter")
+            .send()
+            .await
+        {
+            Ok(mut resp) if resp.status().is_success() => {
+                let total_len = resp.content_length().unwrap_or(0);
+                let mut buf = Vec::with_capacity(total_len as usize);
+                let mut last_emit = std::time::Instant::now();
+                let mut read_ok = true;
+
+                while let Some(chunk) = match resp.chunk().await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        last_err = format!("Failed reading FFmpeg stream: {}", e);
+                        read_ok = false;
+                        None
+                    }
+                } {
+                    buf.extend_from_slice(&chunk);
+                    if last_emit.elapsed().as_millis() >= 250 {
+                        last_emit = std::time::Instant::now();
+                        if let Some(handle) = app {
+                            let dl_mb = buf.len() as f64 / (1024.0 * 1024.0);
+                            let pct = if total_len > 0 {
+                                (buf.len() as f64 / total_len as f64 * 100.0).clamp(0.0, 99.0)
+                            } else {
+                                0.0
+                            };
+                            let msg = if total_len > 0 {
+                                let tot_mb = total_len as f64 / (1024.0 * 1024.0);
+                                format!(
+                                    "Downloading FFmpeg engine: {:.0}% ({:.1} / {:.1} MB)...",
+                                    pct, dl_mb, tot_mb
+                                )
+                            } else {
+                                format!("Downloading FFmpeg engine ({:.1} MB)...", dl_mb)
+                            };
+                            let _ = handle.emit(
+                                "media_ffmpeg_status",
+                                json!({
+                                    "status": "downloading",
+                                    "percent": pct,
+                                    "message": msg
+                                }),
+                            );
+                        }
+                    }
+                }
+
+                if read_ok && buf.len() > 1_000_000 {
+                    downloaded_bytes = Some(buf);
+                    break;
+                }
+            }
+            Ok(resp) => {
+                last_err = format!("HTTP {} from {}", resp.status(), url);
+            }
+            Err(e) => {
+                last_err = format!("Request error: {}", e);
+            }
+        }
     }
 
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed reading FFmpeg archive: {}", e))?;
+    let raw_vec = downloaded_bytes
+        .ok_or_else(|| format!("Failed to download FFmpeg: {}", last_err))?;
+
+    if let Some(handle) = app {
+        let _ = handle.emit(
+            "media_ffmpeg_status",
+            json!({
+                "status": "extracting",
+                "percent": 99.0,
+                "message": "Extracting FFmpeg engine..."
+            }),
+        );
+    }
 
     if os == "windows" || os == "macos" {
         let target_clone = target_path.clone();
         let wanted_name = if os == "windows" { "ffmpeg.exe" } else { "ffmpeg" };
-        let raw_vec = bytes.to_vec();
         tokio::task::spawn_blocking(move || -> Result<(), String> {
             let reader = std::io::Cursor::new(raw_vec);
             let mut archive = zip::ZipArchive::new(reader).map_err(|e| e.to_string())?;
@@ -175,7 +249,7 @@ pub async fn ensure_ffmpeg_installed(app: Option<&AppHandle>) -> Result<String, 
         let archive_path = target_path.with_extension("tar.xz");
         let extract_dir = target_path.parent().unwrap_or(Path::new(".")).join("ffmpeg_tmp");
         let _ = std::fs::create_dir_all(&extract_dir);
-        tokio::fs::write(&archive_path, &bytes)
+        tokio::fs::write(&archive_path, &raw_vec)
             .await
             .map_err(|e| e.to_string())?;
         let out = tokio::process::Command::new("tar")
