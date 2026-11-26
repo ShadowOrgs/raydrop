@@ -49,6 +49,9 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
+      - name: Setup Gradle & Cache
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Install frontend dependencies
         run: npm ci
 
@@ -66,10 +69,21 @@ jobs:
         run: python3 scripts/patch_android_manifest.py
 
       - name: Build Android APK (ARM64)
-        run: npx @tauri-apps/cli android build --apk --target aarch64 --ci
+        run: |
+          SUCCESS=0
+          for i in 1 2 3; do
+            if npx @tauri-apps/cli android build --apk --target aarch64 --ci; then
+              SUCCESS=1
+              break
+            fi
+            echo "Android build attempt $i failed (e.g. Maven 429 rate limit). Retrying in 15s..."
+            sleep 15
+          done
+          [ "$SUCCESS" -eq 1 ]
         env:
           NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_HOME: ${{ env.ANDROID_HOME || '/usr/local/lib/android/sdk' }}
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dhttp.keepAlive=false"
 
       - name: Sign and Align Android APK
         run: |
