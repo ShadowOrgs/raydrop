@@ -1041,6 +1041,7 @@ pub fn simulate_gamepad_input(
         if (buttons & (1 << 15)) != 0 { cur_mask |= 1 << 16; } // DPad Right
         if rt > 0.35 || (buttons & (1 << 7)) != 0 { cur_mask |= 1 << 17; } // RT -> LMB
         if lt > 0.35 || (buttons & (1 << 6)) != 0 { cur_mask |= 1 << 18; } // LT -> RMB
+        if (buttons & (1 << 16)) != 0 { cur_mask |= 1 << 19; } // Xbox / Guide Button -> Win + G
 
         let prev_mask = PREV_MASK.swap(cur_mask, Ordering::Relaxed);
         let changed = cur_mask ^ prev_mask;
@@ -1081,6 +1082,15 @@ pub fn simulate_gamepad_input(
             if (changed & (1 << 18)) != 0 {
                 let flags = if (cur_mask & (1 << 18)) != 0 { 0x0008 } else { 0x0010 }; // RMB down/up
                 win_user32::mouse_event(flags, 0, 0, 0, 0);
+            }
+            if (changed & (1 << 19)) != 0 && (cur_mask & (1 << 19)) != 0 {
+                // Trigger Win + G on Host to open Xbox Game Bar
+                let scan_win = win_user32::MapVirtualKeyA(0x5B, 0) as u8;
+                let scan_g = win_user32::MapVirtualKeyA(0x47, 0) as u8;
+                win_user32::keybd_event(0x5B, scan_win, 0, 0);
+                win_user32::keybd_event(0x47, scan_g, 0, 0);
+                win_user32::keybd_event(0x47, scan_g, 0x0002, 0);
+                win_user32::keybd_event(0x5B, scan_win, 0x0002, 0);
             }
 
             // Right stick smooth camera look

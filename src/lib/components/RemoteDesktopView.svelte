@@ -131,8 +131,24 @@
   }
   let isFullscreen = false;
   let showToolbar = false;
+  let showMonitorBar = true;
   let hideLocalCursor = false;
   let lockKeyboardToHost = true;
+  let touchpadMode =
+    typeof window !== "undefined" &&
+    ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+  let showVirtualTouchCursor = false;
+  let touchCursorX = 0.5;
+  let touchCursorY = 0.5;
+  let virtualCursorLeft = 0;
+  let virtualCursorTop = 0;
+  let touchStartTime = 0;
+  let touchMaxFingers = 0;
+  let touchMovedDist = 0;
+  let lastSingleTouchX = 0;
+  let lastSingleTouchY = 0;
+  let lastTapEndTime = 0;
+  let isTouchDraggingLeft = false;
   let isAudioMuted = false;
   let isPiP = false;
   let showAnnotation = false;
@@ -1006,43 +1022,155 @@
     return { x, y };
   }
 
+  function updateVirtualCursorScreenPos() {
+    if (!videoEl || !videoCanvasWrapEl) return;
+    const vRect = videoEl.getBoundingClientRect();
+    const wRect = videoCanvasWrapEl.getBoundingClientRect();
+    if (vRect.width <= 0 || vRect.height <= 0) return;
+    virtualCursorLeft = vRect.left - wRect.left + touchCursorX * vRect.width;
+    virtualCursorTop = vRect.top - wRect.top + touchCursorY * vRect.height;
+  }
+
   function handleTouchStart(e: TouchEvent) {
     if (!isClientConnected || !e.touches.length) return;
     resumeClientAudio();
-    if (e.touches.length === 2) {
-      lastTouchY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    touchMaxFingers = Math.max(touchMaxFingers, e.touches.length);
+
+    if (!touchpadMode) {
+      if (e.touches.length === 2) {
+        touchStartTime = performance.now();
+        touchMovedDist = 0;
+        lastTouchY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        // Release any left-down triggered by first finger before 2nd finger landed
+        sendInputToHost({ t: "mc", b: "left", a: "up", alt: false, ctrl: false, shift: false, meta: false });
+        return;
+      }
+      const coords = getNormalizedTouchCoords(e.touches[0]);
+      if (!coords) return;
+      sendInputToHost({ t: "mm", x: coords.x, y: coords.y });
+      sendInputToHost({ t: "mc", b: "left", a: "down", alt: false, ctrl: false, shift: false, meta: false });
       return;
     }
-    const coords = getNormalizedTouchCoords(e.touches[0]);
-    if (!coords) return;
-    sendInputToHost({ t: "mm", x: coords.x, y: coords.y });
-    sendInputToHost({ t: "mc", b: "left", a: "down", alt: false, ctrl: false, shift: false, meta: false });
+
+    // Touchpad Mode
+    showVirtualTouchCursor = true;
+    updateVirtualCursorScreenPos();
+
+    if (e.touches.length === 1) {
+      touchStartTime = performance.now();
+      touchMovedDist = 0;
+      lastSingleTouchX = e.touches[0].clientX;
+      lastSingleTouchY = e.touches[0].clientY;
+
+      // Double-tap-and-drag support (tap then immediately hold+drag within 260ms)
+      if (touchStartTime - lastTapEndTime < 260) {
+        isTouchDraggingLeft = true;
+        sendInputToHost({ t: "mc", b: "left", a: "down", alt: false, ctrl: false, shift: false, meta: false });
+      }
+    } else if (e.touches.length === 2) {
+      touchStartTime = performance.now();
+      touchMovedDist = 0;
+      lastTouchY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    }
   }
 
   function handleTouchMove(e: TouchEvent) {
     if (!isClientConnected || !e.touches.length) return;
     e.preventDefault();
+
+    if (!touchpadMode) {
+      if (e.touches.length === 2) {
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const diff = midY - lastTouchY;
+        touchMovedDist += Math.abs(diff);
+        if (Math.abs(diff) > 10) {
+          sendInputToHost({ t: "mw", dy: diff > 0 ? 120 : -120 });
+          lastTouchY = midY;
+        }
+        return;
+      }
+      const now = performance.now();
+      if (now - lastMouseMoveTime < 16) return;
+      lastMouseMoveTime = now;
+      const coords = getNormalizedTouchCoords(e.touches[0]);
+      if (!coords) return;
+      sendInputToHost({ t: "mm", x: coords.x, y: coords.y });
+      return;
+    }
+
+    // Touchpad Mode: 2-finger scroll
     if (e.touches.length === 2) {
       const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       const diff = midY - lastTouchY;
-      if (Math.abs(diff) > 12) {
-        sendInputToHost({ t: "mw", dy: diff > 0 ? -120 : 120 });
+      touchMovedDist += Math.abs(diff);
+      if (Math.abs(diff) > 10) {
+        sendInputToHost({ t: "mw", dy: diff > 0 ? 120 : -120 });
         lastTouchY = midY;
       }
       return;
     }
-    const now = performance.now();
-    if (now - lastMouseMoveTime < 16) return;
-    lastMouseMoveTime = now;
-    const coords = getNormalizedTouchCoords(e.touches[0]);
-    if (!coords) return;
-    sendInputToHost({ t: "mm", x: coords.x, y: coords.y });
+
+    // Touchpad Mode: 1-finger relative cursor movement
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      const dxPx = t.clientX - lastSingleTouchX;
+      const dyPx = t.clientY - lastSingleTouchY;
+      lastSingleTouchX = t.clientX;
+      lastSingleTouchY = t.clientY;
+      touchMovedDist += Math.hypot(dxPx, dyPx);
+
+      if ($remoteSessionMode === "game") {
+        sendInputToHost({ t: "mmr", dx: Math.round(dxPx * 1.5), dy: Math.round(dyPx * 1.5) });
+        return;
+      }
+
+      const rect = videoEl?.getBoundingClientRect();
+      const refW = rect && rect.width > 0 ? rect.width : window.innerWidth;
+      const refH = rect && rect.height > 0 ? rect.height : window.innerHeight;
+      const sensitivity = 1.35;
+      touchCursorX = Math.max(0, Math.min(1, touchCursorX + (dxPx * sensitivity) / refW));
+      touchCursorY = Math.max(0, Math.min(1, touchCursorY + (dyPx * sensitivity) / refH));
+      updateVirtualCursorScreenPos();
+
+      const now = performance.now();
+      if (now - lastMouseMoveTime < 16) return;
+      lastMouseMoveTime = now;
+      sendInputToHost({ t: "mm", x: touchCursorX, y: touchCursorY });
+    }
   }
 
   function handleTouchEnd(e: TouchEvent) {
     if (!isClientConnected) return;
+
+    if (!touchpadMode) {
+      if (e.touches.length === 0) {
+        const elapsed = performance.now() - touchStartTime;
+        if (touchMaxFingers === 2 && elapsed < 320 && touchMovedDist < 16) {
+          sendInputToHost({ t: "mc", b: "right", a: "click", alt: false, ctrl: false, shift: false, meta: false });
+        } else {
+          sendInputToHost({ t: "mc", b: "left", a: "up", alt: false, ctrl: false, shift: false, meta: false });
+        }
+        touchMaxFingers = 0;
+      }
+      return;
+    }
+
     if (e.touches.length === 0) {
-      sendInputToHost({ t: "mc", b: "left", a: "up", alt: false, ctrl: false, shift: false, meta: false });
+      const elapsed = performance.now() - touchStartTime;
+      if (isTouchDraggingLeft) {
+        isTouchDraggingLeft = false;
+        sendInputToHost({ t: "mc", b: "left", a: "up", alt: false, ctrl: false, shift: false, meta: false });
+      } else if (touchMaxFingers === 2 && elapsed < 320 && touchMovedDist < 16) {
+        // 2-finger tap -> Right Click
+        sendInputToHost({ t: "mm", x: touchCursorX, y: touchCursorY });
+        sendInputToHost({ t: "mc", b: "right", a: "click", alt: false, ctrl: false, shift: false, meta: false });
+      } else if (touchMaxFingers === 1 && elapsed < 260 && touchMovedDist < 10) {
+        // 1-finger tap -> Left Click
+        sendInputToHost({ t: "mm", x: touchCursorX, y: touchCursorY });
+        sendInputToHost({ t: "mc", b: "left", a: "click", alt: false, ctrl: false, shift: false, meta: false });
+        lastTapEndTime = performance.now();
+      }
+      touchMaxFingers = 0;
     }
   }
 
@@ -1059,6 +1187,7 @@
 
   function handleSelectGameMode() {
     autoFullscreenTriggered = true;
+    hideLocalCursor = false;
     setRemoteSessionMode("game");
     showToolbar = false;
     triggerGameModeHintToast();
@@ -1068,6 +1197,7 @@
   }
 
   function handleSelectDesktopMode() {
+    hideLocalCursor = false;
     setRemoteSessionMode("desktop");
     if (document.pointerLockElement) {
       document.exitPointerLock?.();
@@ -1176,8 +1306,8 @@
       }}
       on:drop|preventDefault
     >
-      <!-- Sleek Multi-Monitor Top Tab Bar (hidden in Game Mode; shown in Desktop Mode when host has multiple displays) -->
-      {#if $remoteHostMonitors.length > 1 && $remoteSessionMode !== "game"}
+      <!-- Sleek Multi-Monitor Top Tab Bar (hidden in Game Mode or when toggled off) -->
+      {#if $remoteHostMonitors.length > 1 && $remoteSessionMode !== "game" && showMonitorBar}
         <div
           class="w-full bg-[#090d16] border-b border-slate-800/90 px-2 pt-1.5 flex items-end gap-1 overflow-x-auto shrink-0 z-40 select-none"
         >
@@ -1279,7 +1409,7 @@
           : '-translate-y-16 opacity-0 pointer-events-none'}"
       >
         <div
-          class="flex flex-wrap sm:flex-nowrap items-center justify-center gap-1.5 sm:gap-3 px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs max-w-full"
+          class="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs max-w-full"
         >
           <!-- Host & Latency Info -->
           <div class="flex items-center gap-1.5 sm:gap-2 sm:pr-3 sm:border-r border-slate-800 shrink-0">
@@ -1334,37 +1464,9 @@
             </button>
           </div>
 
-          <!-- Shortcuts Dropdown / Quick Buttons -->
-          <div class="flex items-center gap-1 sm:pr-3 sm:border-r border-slate-800 shrink-0">
-            <button
-              type="button"
-              on:click={() => sendShortcutToHost("win_d")}
-              class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-mono transition"
-              title="Show Host Desktop (Win + D)"
-            >
-              Desktop
-            </button>
-            <button
-              type="button"
-              on:click={() => sendShortcutToHost("ctrl_shift_esc")}
-              class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-mono transition"
-              title="Open Task Manager on Host (Ctrl + Shift + Esc)"
-            >
-              TaskMgr
-            </button>
-            <button
-              type="button"
-              on:click={() => sendShortcutToHost("win_l")}
-              class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-rose-400 text-[11px] font-mono transition"
-              title="Lock Host PC (Win + L)"
-            >
-              Lock
-            </button>
-          </div>
-
           <!-- Display & Window Controls -->
-          <div class="flex items-center gap-1.5 shrink-0">
-            <!-- Multi-Monitor Switcher (when host has multiple displays) -->
+          <div class="flex flex-wrap items-center gap-1.5 shrink-0">
+            <!-- Multi-Monitor Switcher & Tab Bar Toggle (when host has multiple displays) -->
             {#if $remoteHostMonitors.length > 1}
               <div class="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-[11px]">
                 <Monitor class="w-3 h-3 text-cyan-400 shrink-0" />
@@ -1384,7 +1486,34 @@
                   </option>
                 </select>
               </div>
+              {#if $remoteSessionMode !== "game"}
+                <button
+                  type="button"
+                  on:click={() => (showMonitorBar = !showMonitorBar)}
+                  class="px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer border {showMonitorBar
+                    ? 'bg-sky-500/15 text-sky-300 border-sky-500/35 hover:bg-sky-500/25'
+                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'}"
+                  title={showMonitorBar ? "Sembunyikan Tab Monitor di atas" : "Tampilkan Tab Monitor di atas"}
+                >
+                  <Monitor class="w-3 h-3" />
+                  <span>{showMonitorBar ? "Tabs ON" : "Tabs OFF"}</span>
+                </button>
+              {/if}
             {/if}
+
+            <!-- Touchpad vs Direct Touch Mode Toggle (useful on mobile/touchscreens) -->
+            <button
+              type="button"
+              on:click={() => (touchpadMode = !touchpadMode)}
+              class="px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer border {touchpadMode
+                ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/35 hover:bg-cyan-500/25'
+                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'}"
+              title={touchpadMode
+                ? "Touchpad Mode: Geser 1 jari gerakkan kursor, 1-tap Klik Kiri, 2-tap Klik Kanan, 2-jari Scroll"
+                : "Direct Touch Mode: Sentuh langsung posisi layar"}
+            >
+              <span>{touchpadMode ? "Touchpad" : "Direct Touch"}</span>
+            </button>
 
             <!-- Keyboard Lock to Host Toggle (Default ON for Desktop & Game Mode) -->
             <button
@@ -1580,6 +1709,22 @@
           muted={isAudioMuted}
           class="{isSecondDisplayFill ? 'w-full h-full object-fill' : 'max-w-full max-h-full object-contain'} pointer-events-none select-none shadow-2xl"
         ></video>
+        {#if touchpadMode && showVirtualTouchCursor && $remoteSessionMode !== "game"}
+          <div
+            style="left: {virtualCursorLeft}px; top: {virtualCursorTop}px;"
+            class="pointer-events-none absolute z-30 -translate-x-[2px] -translate-y-[2px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.85)]"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M4 3L19 12L12 14L9 21L4 3Z"
+                fill="white"
+                stroke="#0f172a"
+                stroke-width="2"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </div>
+        {/if}
         <AnnotationOverlay active={showAnnotation} on:close={() => (showAnnotation = false)} />
       </div>
       </div>
