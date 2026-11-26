@@ -690,6 +690,7 @@ async function setupHostPeerConnection(
   stream: MediaStream
 ) {
   cleanupPeerConnection();
+  raydropApi.setHostCursorHidden(get(remoteSessionMode) !== 'game').catch(() => { });
 
   pendingIceCandidates = [];
   const pc = new RTCPeerConnection(ICE_SERVERS);
