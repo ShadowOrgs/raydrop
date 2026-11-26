@@ -167,6 +167,14 @@ export interface ResolvedMediaStream {
   is_video: boolean;
 }
 
+export interface MediaDownloadResult {
+  video_id: string;
+  title: string;
+  output_path: string;
+  format: string;
+  size_bytes: number;
+}
+
 export interface MediaPlaylist {
   id: string;
   name: string;
@@ -187,6 +195,20 @@ export interface MediaPlaylistItem {
   is_video: boolean;
   position: number;
   created_at: number;
+}
+
+export interface MediaEngineInfo {
+  has_ffmpeg: boolean;
+  ffmpeg_path?: string | null;
+}
+
+export interface MediaConvertResult {
+  input_path: string;
+  output_path: string;
+  original_bytes: number;
+  output_bytes: number;
+  format: string;
+  mode: string;
 }
 
 export interface AppSettings {
@@ -1003,6 +1025,18 @@ export const raydropApi = {
     invoke<YtMusicSearchItem[]>('media_search_ytmusic', { query, filter }),
   mediaResolveStream: (videoId: string, preferVideo = false) =>
     invoke<ResolvedMediaStream>('media_resolve_stream', { videoId, preferVideo }),
+  mediaDownloadYtmusic: (params: {
+    videoId: string;
+    title?: string | null;
+    format: 'mp3' | 'mp4';
+    outputDir?: string | null;
+  }) =>
+    invoke<MediaDownloadResult>('media_download_ytmusic', {
+      videoId: params.videoId,
+      title: params.title ?? null,
+      format: params.format,
+      outputDir: params.outputDir ?? null,
+    }),
   mediaGetState: () => invoke<MediaPlayerState>('media_get_state'),
   mediaSyncFrontendState: (playerState: MediaPlayerState) =>
     invoke<void>('media_sync_frontend_state', { playerState }),
@@ -1037,6 +1071,38 @@ export const raydropApi = {
     invoke<string>('test_llm_connection_cmd', { config }),
   verifyTelegramToken: (token: string) =>
     invoke<string>('verify_telegram_token_cmd', { token }),
+  sendWakeOnLanAuto: (params: {
+    targetDeviceId?: string | null;
+    macAddress: string;
+    targetHost?: string | null;
+    port?: number | null;
+  }) =>
+    invoke<string>('send_wake_on_lan_auto', {
+      targetDeviceId: params.targetDeviceId ?? null,
+      macAddress: params.macAddress,
+      targetHost: params.targetHost ?? null,
+      port: params.port ?? null,
+    }),
+  detectMediaConverterEngine: () =>
+    invoke<MediaEngineInfo>('detect_media_converter_engine'),
+  convertMediaFiles: (params: {
+    inputPaths: string[];
+    mode: 'video_to_video' | 'video_to_audio';
+    targetFormat: string;
+    qualityPreset: string;
+    resolution: string;
+    audioBitrate: string;
+    outputDir?: string | null;
+  }) =>
+    invoke<MediaConvertResult[]>('convert_media_files', {
+      inputPaths: params.inputPaths,
+      mode: params.mode,
+      targetFormat: params.targetFormat,
+      qualityPreset: params.qualityPreset,
+      resolution: params.resolution,
+      audioBitrate: params.audioBitrate,
+      outputDir: params.outputDir || null,
+    }),
   listenEvent: <T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> =>
     listen<T>(event, (e) => handler(e.payload)),
 };

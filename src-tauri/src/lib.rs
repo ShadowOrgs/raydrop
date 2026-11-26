@@ -7,6 +7,7 @@ pub mod folder_sync;
 pub mod http_downloader;
 pub mod image_tools;
 pub mod mcp_server;
+pub mod media_converter;
 pub mod media_player;
 pub mod network;
 pub mod os;
@@ -551,11 +552,14 @@ pub fn run() {
                     ai_cfg.mcp_auth_token.clone(),
                 );
                 crate::telegram_bot::restart_telegram_bot(handle.clone(), state_for_setup.clone());
-                let handle_ytdlp = handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    let _ = crate::media_player::ensure_ytdlp_installed(Some(&handle_ytdlp)).await;
-                });
+                #[cfg(desktop)]
+                {
+                    let handle_ytdlp = handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        let _ = crate::media_player::ensure_ytdlp_installed(Some(&handle_ytdlp)).await;
+                    });
+                }
                 browser_bridge::start_browser_bridge_daemon(handle, state_for_setup);
             }
 
@@ -693,6 +697,7 @@ pub fn run() {
             commands::disable_linux_virtual_display,
             commands::execute_remote_power_action,
             commands::send_wake_on_lan,
+            commands::send_wake_on_lan_auto,
             commands::start_host_audio_loopback,
             commands::stop_host_audio_loopback,
             commands::start_second_screen_server,
@@ -719,6 +724,7 @@ pub fn run() {
             commands::convert_documents,
             commands::media_search_ytmusic,
             commands::media_resolve_stream,
+            commands::media_download_ytmusic,
             commands::media_get_state,
             commands::media_sync_frontend_state,
             commands::media_dispatch_command,
@@ -734,6 +740,8 @@ pub fn run() {
             commands::get_ai_mcp_runtime_status,
             commands::test_llm_connection_cmd,
             commands::verify_telegram_token_cmd,
+            commands::detect_media_converter_engine,
+            commands::convert_media_files,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Raydrop Tauri application")

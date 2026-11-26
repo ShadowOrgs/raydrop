@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import {
     Wand2,
     Image as ImageIcon,
     Smartphone,
     FileText,
+    Film,
+    Music,
     Plus,
     Trash2,
     FolderOpen,
@@ -24,9 +26,11 @@
     type MobileIconZipResult,
     type DocumentEnginesInfo,
     type DocumentConvertResult,
+    type MediaEngineInfo,
+    type MediaConvertResult,
   } from "../utils/tauri-ipc";
 
-  let mode: "convert" | "document" | "mobile_icons" = "convert";
+  let mode: "convert" | "document" | "media" | "mobile_icons" = "convert";
 
   // Convert / Resize / Compress state
   let selectedFiles: ImageMeta[] = [];
@@ -50,11 +54,126 @@
   let docResults: DocumentConvertResult[] = [];
   let docErrorMsg = "";
 
+  // Video / Audio Media Converter state
+  let mediaPaths: string[] = [];
+  let mediaSubMode: "video_to_video" | "video_to_audio" = "video_to_audio";
+  let mediaTargetFormat = "mp3";
+  let mediaQualityPreset = "balanced";
+  let mediaResolution = "original";
+  let mediaAudioBitrate = "192k";
+  let mediaOutputDir = "";
+  let mediaEngine: MediaEngineInfo | null = null;
+  let mediaProcessing = false;
+  let mediaResults: MediaConvertResult[] = [];
+  let mediaErrorMsg = "";
+  let mediaProgressText = "";
+  let mediaProgressPercent = 0;
+  let unlistenMediaProgress: (() => void) | null = null;
+  let unlistenFfmpegStatus: (() => void) | null = null;
+
   onMount(async () => {
     try {
       docEngines = await raydropApi.detectDocumentEngines();
+      mediaEngine = await raydropApi.detectMediaConverterEngine();
     } catch (_) {}
+    unlistenMediaProgress = await raydropApi.listenEvent<{
+      file_index: number;
+      total_files: number;
+      filename: string;
+      percent: number;
+      status: string;
+    }>("media_convert_progress", (p) => {
+      mediaProgressPercent = Math.round(p.percent);
+      mediaProgressText = `(${p.file_index + 1}/${p.total_files}) ${p.filename} — ${mediaProgressPercent}%`;
+    });
+    unlistenFfmpegStatus = await raydropApi.listenEvent<{
+      status: string;
+      message: string;
+    }>("media_ffmpeg_status", (s) => {
+      if (s.status === "downloading" && s.message) {
+        mediaProgressText = s.message;
+      }
+    });
   });
+
+  onDestroy(() => {
+    if (unlistenMediaProgress) unlistenMediaProgress();
+    if (unlistenFfmpegStatus) unlistenFfmpegStatus();
+  });
+
+  function switchMediaSubMode(sub: "video_to_video" | "video_to_audio") {
+    mediaSubMode = sub;
+    mediaTargetFormat = sub === "video_to_video" ? "mp4" : "mp3";
+  }
+
+  async function pickMediaFiles() {
+    mediaErrorMsg = "";
+    const picked = await openWithLastDir("converter_media_files", {
+      multiple: true,
+      title: "Select Video or Audio Files",
+      filters: [
+        {
+          name: "Video & Audio",
+          extensions: [
+            "mp4",
+            "mkv",
+            "webm",
+            "mov",
+            "avi",
+            "flv",
+            "wmv",
+            "m4v",
+            "ts",
+            "mp3",
+            "wav",
+            "flac",
+            "m4a",
+            "ogg",
+          ],
+        },
+      ],
+    });
+    if (!picked) return;
+    const paths = Array.isArray(picked) ? picked : [picked];
+    const set = new Set([...mediaPaths, ...paths]);
+    mediaPaths = Array.from(set);
+  }
+
+  async function pickMediaOutputFolder() {
+    const picked = await openWithLastDir("converter_media_out", {
+      directory: true,
+      multiple: false,
+      title: "Choose Output Folder",
+    });
+    if (typeof picked === "string") {
+      mediaOutputDir = picked;
+    }
+  }
+
+  async function runMediaConvert() {
+    if (mediaPaths.length === 0 || mediaProcessing) return;
+    mediaProcessing = true;
+    mediaErrorMsg = "";
+    mediaResults = [];
+    mediaProgressPercent = 0;
+    mediaProgressText = "Preparing FFmpeg...";
+    try {
+      mediaResults = await raydropApi.convertMediaFiles({
+        inputPaths: mediaPaths,
+        mode: mediaSubMode,
+        targetFormat: mediaTargetFormat,
+        qualityPreset: mediaQualityPreset,
+        resolution: mediaResolution,
+        audioBitrate: mediaAudioBitrate,
+        outputDir: mediaOutputDir.trim() || null,
+      });
+      mediaEngine = await raydropApi.detectMediaConverterEngine().catch(() => mediaEngine);
+    } catch (err: any) {
+      mediaErrorMsg = err?.message || String(err);
+    } finally {
+      mediaProcessing = false;
+    }
+  }
 
   // Mobile Icon Generator state
   let iconSource: ImageMeta | null = null;
@@ -276,6 +395,17 @@
       >
         <FileText class="w-3.5 h-3.5" />
         <span>DOCX ↔ PDF</span>
+      </button>
+      <button
+        type="button"
+        on:click={() => (mode = "media")}
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer {mode ===
+        'media'
+          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+          : 'text-slate-400 hover:text-slate-200'}"
+      >
+        <Film class="w-3.5 h-3.5" />
+        <span>Video / Audio</span>
       </button>
       <button
         type="button"
@@ -703,7 +833,7 @@
         </button>
       </div>
     </div>
-  {:else}
+  {:else if mode === "mobile_icons"}
     <!-- Mobile Icon Pack Generator (Android + iOS ZIP) -->
     <div class="max-w-2xl w-full mx-auto bg-slate-900/80 border border-slate-800/80 rounded-2xl p-5 space-y-4">
       <div class="flex items-start justify-between gap-3">
@@ -794,6 +924,273 @@
         <Archive class="w-4 h-4" />
         <span>{generatingIcons ? "Generating ZIP..." : "Generate Mobile Icons (.zip)"}</span>
       </button>
+    </div>
+  {:else if mode === "media"}
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2 bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 space-y-3">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Selected Video / Audio Files ({mediaPaths.length})
+          </h3>
+          <div class="flex items-center gap-2">
+            {#if mediaPaths.length > 0}
+              <button
+                type="button"
+                on:click={() => {
+                  mediaPaths = [];
+                  mediaResults = [];
+                }}
+                class="text-xs text-slate-400 hover:text-rose-300 cursor-pointer"
+              >
+                Clear
+              </button>
+            {/if}
+            <button
+              type="button"
+              on:click={pickMediaFiles}
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold cursor-pointer"
+            >
+              <Plus class="w-3.5 h-3.5" />
+              <span>Add Video / Audio</span>
+            </button>
+          </div>
+        </div>
+
+        {#if mediaPaths.length === 0}
+          <div class="border border-dashed border-slate-700/80 rounded-xl p-8 text-center space-y-2">
+            <Film class="w-8 h-8 text-slate-600 mx-auto" />
+            <p class="text-xs text-slate-400">
+              Select video or audio files to convert (Video → Video or Video → MP3/Audio).
+            </p>
+            <p class="text-[11px] text-slate-500">
+              FFmpeg engine is auto-detected or auto-downloaded on first conversion.
+            </p>
+          </div>
+        {:else}
+          <div class="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+            {#each mediaPaths as p, idx (p)}
+              <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-xs">
+                <span class="font-mono text-slate-200 truncate" title={p}>
+                  {p.split(/[/\\]/).pop()}
+                </span>
+                <button
+                  type="button"
+                  on:click={() => (mediaPaths = mediaPaths.filter((_, i) => i !== idx))}
+                  class="p-1 text-slate-500 hover:text-rose-400 cursor-pointer shrink-0"
+                >
+                  <Trash2 class="w-3.5 h-3.5" />
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        {#if mediaProcessing}
+          <div class="p-3 rounded-xl bg-slate-950/80 border border-cyan-500/30 space-y-2">
+            <div class="flex items-center justify-between text-xs text-cyan-300 font-medium">
+              <span class="truncate">{mediaProgressText}</span>
+              <span>{mediaProgressPercent}%</span>
+            </div>
+            <div class="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+              <div
+                class="h-full bg-cyan-400 transition-all duration-200"
+                style="width: {mediaProgressPercent}%"
+              ></div>
+            </div>
+          </div>
+        {/if}
+
+        {#if mediaErrorMsg}
+          <div class="flex items-center gap-2 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 px-3 py-2 rounded-xl">
+            <AlertCircle class="w-4 h-4 shrink-0" />
+            <span class="break-words">{mediaErrorMsg}</span>
+          </div>
+        {/if}
+
+        {#if mediaResults.length > 0}
+          <div class="space-y-2 pt-2 border-t border-slate-800">
+            <p class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+              <CheckCircle2 class="w-4 h-4" />
+              <span>Converted {mediaResults.length} file(s)</span>
+            </p>
+            {#each mediaResults as res (res.output_path)}
+              <div class="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-xs">
+                <div class="min-w-0">
+                  <p class="font-mono text-white truncate" title={res.output_path}>
+                    {res.output_path.split(/[/\\]/).pop()}
+                  </p>
+                  <p class="text-[10px] text-slate-400">
+                    {formatBytes(res.original_bytes)} → <span class="text-emerald-300 font-semibold">{formatBytes(res.output_bytes)}</span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  on:click={() => raydropApi.openFolderPath(res.output_path)}
+                  class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] text-white flex items-center gap-1 shrink-0 cursor-pointer"
+                >
+                  <FolderOpen class="w-3 h-3" />
+                  <span>Open</span>
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <!-- Right: Conversion Settings -->
+      <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 space-y-4">
+        <div class="space-y-1.5">
+          <span class="block text-xs font-semibold text-slate-300">Conversion Mode</span>
+          <div class="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              on:click={() => switchMediaSubMode("video_to_audio")}
+              class="py-2 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 cursor-pointer {mediaSubMode ===
+              'video_to_audio'
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+                : 'bg-slate-950/60 text-slate-400 border-slate-800'}"
+            >
+              <Music class="w-3.5 h-3.5" />
+              <span>Video → Audio</span>
+            </button>
+            <button
+              type="button"
+              on:click={() => switchMediaSubMode("video_to_video")}
+              class="py-2 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 cursor-pointer {mediaSubMode ===
+              'video_to_video'
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+                : 'bg-slate-950/60 text-slate-400 border-slate-800'}"
+            >
+              <Film class="w-3.5 h-3.5" />
+              <span>Video → Video</span>
+            </button>
+          </div>
+        </div>
+
+        {#if mediaSubMode === "video_to_audio"}
+          <div>
+            <label for="media-audio-fmt" class="block text-xs font-semibold text-slate-300 mb-1">
+              Target Audio Format
+            </label>
+            <select
+              id="media-audio-fmt"
+              bind:value={mediaTargetFormat}
+              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+            >
+              <option value="mp3">MP3 (Universal)</option>
+              <option value="m4a">M4A (AAC)</option>
+              <option value="wav">WAV (Lossless PCM)</option>
+              <option value="flac">FLAC (Lossless)</option>
+              <option value="ogg">OGG (Vorbis)</option>
+              <option value="opus">OPUS</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="media-audio-br" class="block text-xs font-semibold text-slate-300 mb-1">
+              Audio Bitrate
+            </label>
+            <select
+              id="media-audio-br"
+              bind:value={mediaAudioBitrate}
+              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+            >
+              <option value="128k">128 kbps</option>
+              <option value="192k">192 kbps (Recommended)</option>
+              <option value="256k">256 kbps</option>
+              <option value="320k">320 kbps (Max)</option>
+            </select>
+          </div>
+        {:else}
+          <div>
+            <label for="media-video-fmt" class="block text-xs font-semibold text-slate-300 mb-1">
+              Target Video Format
+            </label>
+            <select
+              id="media-video-fmt"
+              bind:value={mediaTargetFormat}
+              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+            >
+              <option value="mp4">MP4 (H.264 + AAC)</option>
+              <option value="mkv">MKV</option>
+              <option value="webm">WEBM (VP9 + Opus)</option>
+              <option value="mov">MOV</option>
+              <option value="avi">AVI</option>
+              <option value="gif">GIF (Animated)</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="media-video-q" class="block text-xs font-semibold text-slate-300 mb-1">
+              Quality Preset
+            </label>
+            <select
+              id="media-video-q"
+              bind:value={mediaQualityPreset}
+              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+            >
+              <option value="balanced">Balanced (CRF 23)</option>
+              <option value="high">High Quality (CRF 18)</option>
+              <option value="compact">Small File Size (CRF 28)</option>
+              <option value="copy">Fast Remux (Copy Codec)</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="media-video-res" class="block text-xs font-semibold text-slate-300 mb-1">
+              Resolution
+            </label>
+            <select
+              id="media-video-res"
+              bind:value={mediaResolution}
+              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+            >
+              <option value="original">Original</option>
+              <option value="1080p">1080p (Full HD)</option>
+              <option value="720p">720p (HD)</option>
+              <option value="480p">480p (SD)</option>
+            </select>
+          </div>
+        {/if}
+
+        <div>
+          <span class="block text-xs font-semibold text-slate-300 mb-1">Output Folder</span>
+          <div class="flex items-center gap-1.5">
+            <input
+              type="text"
+              readonly
+              value={mediaOutputDir || "Same as source file"}
+              class="flex-1 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300 truncate"
+            />
+            <button
+              type="button"
+              on:click={pickMediaOutputFolder}
+              class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-white cursor-pointer"
+            >
+              Browse
+            </button>
+          </div>
+        </div>
+
+        <p class="text-[10px] text-slate-400">
+          FFmpeg Engine:
+          {#if mediaEngine?.has_ffmpeg}
+            <span class="text-emerald-400 font-semibold">Ready</span>
+          {:else}
+            <span class="text-amber-300">Auto-downloads on first convert</span>
+          {/if}
+        </p>
+
+        <button
+          type="button"
+          on:click={runMediaConvert}
+          disabled={mediaPaths.length === 0 || mediaProcessing}
+          class="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 disabled:opacity-40 cursor-pointer"
+        >
+          <Wand2 class="w-4 h-4" />
+          <span>{mediaProcessing ? "Converting..." : "Start Media Conversion"}</span>
+        </button>
+      </div>
     </div>
   {/if}
 </div>

@@ -70,6 +70,19 @@ pub fn get_mcp_tool_definitions() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "media_download_ytmusic",
+            "description": "Search YouTube Music and download the top matching song or video directly as MP3 (audio) or MP4 (video) to RayDrop's downloads folder.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Song or video search query" },
+                    "video_id": { "type": "string", "description": "Optional exact YouTube videoId if already known" },
+                    "format": { "type": "string", "enum": ["mp3", "mp4"], "description": "Download format: mp3 (audio) or mp4 (video)" }
+                },
+                "required": ["format"]
+            }
+        }),
+        json!({
             "name": "media_control",
             "description": "Control RayAmp playback: toggle, pause, resume, stop, next, prev, set_volume, or set_video_mode.",
             "inputSchema": {
@@ -279,6 +292,39 @@ pub async fn execute_mcp_tool(
             })
             .to_string())
         }
+        "media_download_ytmusic" => {
+            let fmt = args["format"].as_str().unwrap_or("mp3");
+            let mut video_id = args["video_id"].as_str().unwrap_or("").trim().to_string();
+            let mut title_hint = None;
+            if video_id.is_empty() {
+                let query = args["query"].as_str().unwrap_or("").trim();
+                if query.is_empty() {
+                    return Err("Provide either `query` or `video_id`".to_string());
+                }
+                let filter = if fmt == "mp4" { "videos" } else { "all" };
+                let results = crate::media_player::search_ytmusic(query, filter).await?;
+                let first = results
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| format!("No YouTube Music results found for '{}'", query))?;
+                video_id = first.video_id;
+                title_hint = Some(first.title);
+            }
+            let dir = state
+                .settings
+                .lock()
+                .map(|s| s.download_dir.clone())
+                .map_err(|e| e.to_string())?;
+            let res = crate::media_player::download_ytmusic_media(
+                Some(app),
+                &video_id,
+                title_hint.as_deref(),
+                fmt,
+                &dir,
+            )
+            .await?;
+            serde_json::to_string_pretty(&res).map_err(|e| e.to_string())
+        }
         "media_control" => {
             let action = args["action"].as_str().unwrap_or("toggle");
             let _ = app.emit(
@@ -369,9 +415,18 @@ pub async fn execute_mcp_tool(
             let mac = args["mac_address"].as_str().unwrap_or("").to_string();
             let wan = args["wan_host"].as_str().map(|s| s.to_string());
             let port = args["port"].as_u64().map(|p| p as u16);
-            crate::commands::send_wake_on_lan(mac.clone(), wan.clone(), port).await?;
+            let target_id = args["target_device_id"].as_str().map(|s| s.to_string());
+            let msg = crate::commands::send_wake_on_lan_auto_inner(
+                state,
+                target_id,
+                mac.clone(),
+                wan.clone(),
+                port,
+            )
+            .await?;
             Ok(json!({
                 "status": "magic_packet_sent",
+                "message": msg,
                 "mac_address": mac,
                 "wan_host": wan,
                 "port": port.unwrap_or(9)
@@ -570,6 +625,11 @@ async fn run_mcp_http_loop(
             };
 
             let first_line = head.lines().next().unwrap_or("");
+            if first_line.starts_with("OPTIONS ") {
+                let resp = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nConnection: close\r\n\r\n";
+                let _ = socket.write_all(resp.as_bytes()).await;
+                return;
+            }
             if first_line.starts_with("GET /health") {
                 let resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"ok\":true,\"server\":\"raydrop-mcp\"}";
                 let _ = socket.write_all(resp.as_bytes()).await;

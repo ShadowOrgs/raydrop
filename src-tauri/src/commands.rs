@@ -4439,6 +4439,135 @@ pub async fn send_wake_on_lan(
     Ok(())
 }
 
+fn ip_subnet_prefix(ip: &str) -> Option<String> {
+    let parts: Vec<&str> = ip.trim().split('.').collect();
+    if parts.len() == 4 {
+        Some(format!("{}.{}.{}", parts[0], parts[1], parts[2]))
+    } else {
+        None
+    }
+}
+
+/// Sends WoL locally/WAN, and when WAN host is omitted, automatically relays the Magic Packet
+/// through any online non-blocked contact on the same LAN (or own online devices).
+#[tauri::command]
+pub async fn send_wake_on_lan_auto(
+    state: State<'_, Arc<AppState>>,
+    target_device_id: Option<String>,
+    mac_address: String,
+    target_host: Option<String>,
+    port: Option<u16>,
+) -> Result<String, String> {
+    send_wake_on_lan_auto_inner(&state, target_device_id, mac_address, target_host, port).await
+}
+
+pub async fn send_wake_on_lan_auto_inner(
+    state: &Arc<AppState>,
+    target_device_id: Option<String>,
+    mac_address: String,
+    target_host: Option<String>,
+    port: Option<u16>,
+) -> Result<String, String> {
+    let has_wan_host = target_host
+        .as_ref()
+        .map(|h| !h.trim().is_empty())
+        .unwrap_or(false);
+    let local_res = send_wake_on_lan(mac_address.clone(), target_host.clone(), port).await;
+    if has_wan_host {
+        local_res?;
+        return Ok(format!(
+            "WAN Magic Packet sent to {}",
+            target_host.unwrap_or_default().trim()
+        ));
+    }
+    // Validate MAC even if local UDP broadcast fails on restricted mobile/VPN interfaces
+    if let Err(ref e) = local_res {
+        if e.contains("Invalid MAC") || e.contains("Invalid hex") {
+            return Err(e.clone());
+        }
+    }
+
+    let my_device_id = state
+        .settings
+        .lock()
+        .map(|s| s.device_id.clone())
+        .unwrap_or_default();
+
+    let mut relayed_names: Vec<String> = Vec::new();
+    let tx_opt = state
+        .signaling_tx
+        .lock()
+        .ok()
+        .and_then(|g| g.clone());
+
+    if let Some(tx) = tx_opt {
+        if let Ok(contacts) = state.db.list_contacts() {
+            let target_subnet = target_device_id
+                .as_deref()
+                .and_then(|tid| contacts.iter().find(|c| c.device_id == tid))
+                .and_then(|c| c.last_known_ip.as_deref())
+                .and_then(ip_subnet_prefix);
+
+            let mut candidates: Vec<(u8, crate::db::storage::Contact)> = contacts
+                .into_iter()
+                .filter(|c| {
+                    c.is_online
+                        && c.device_id != my_device_id
+                        && c.trust_level != "blocked"
+                        && Some(c.device_id.as_str()) != target_device_id.as_deref()
+                })
+                .map(|c| {
+                    let same_subnet = target_subnet.as_ref().is_some_and(|sub| {
+                        c.last_known_ip
+                            .as_deref()
+                            .and_then(ip_subnet_prefix)
+                            .as_ref()
+                            == Some(sub)
+                    });
+                    let score = if same_subnet {
+                        0
+                    } else if c.is_own_device {
+                        1
+                    } else {
+                        2
+                    };
+                    (score, c)
+                })
+                .collect();
+
+            candidates.sort_by_key(|(score, _)| *score);
+
+            let payload = serde_json::json!({
+                "mac_address": mac_address,
+                "port": port.unwrap_or(9),
+            });
+            let payload_hex = hex::encode(payload.to_string().as_bytes());
+
+            for (_, peer) in candidates.into_iter().take(3) {
+                let msg = serde_json::json!({
+                    "type": "RELAY_CONTROL",
+                    "session_id": format!("wol_ctl:{}", uuid::Uuid::new_v4()),
+                    "target_device_id": peer.device_id,
+                    "from_device_id": my_device_id,
+                    "payload_json": payload_hex,
+                });
+                if tx.send(msg.to_string()).is_ok() {
+                    relayed_names.push(peer.custom_name.unwrap_or(peer.alias_name));
+                }
+            }
+        }
+    }
+
+    if relayed_names.is_empty() {
+        Ok("LAN Magic Packet broadcast sent locally.".to_string())
+    } else {
+        Ok(format!(
+            "LAN Magic Packet sent locally & relayed via: {}",
+            relayed_names.join(", ")
+        ))
+    }
+}
+
 #[tauri::command]
 pub async fn start_host_audio_loopback(app: AppHandle) -> Result<(), String> {
     crate::remote_audio::start_host_audio_loopback(app)
@@ -4725,6 +4854,33 @@ pub async fn media_resolve_stream(
 }
 
 #[tauri::command]
+pub async fn media_download_ytmusic(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    video_id: String,
+    title: Option<String>,
+    format: String,
+    output_dir: Option<String>,
+) -> Result<crate::media_player::MediaDownloadResult, String> {
+    let dir = match output_dir.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+        Some(d) => d,
+        None => state
+            .settings
+            .lock()
+            .map(|s| s.download_dir.clone())
+            .map_err(|e| e.to_string())?,
+    };
+    crate::media_player::download_ytmusic_media(
+        Some(&app),
+        &video_id,
+        title.as_deref(),
+        &format,
+        &dir,
+    )
+    .await
+}
+
+#[tauri::command]
 pub fn media_get_state(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::media_player::MediaPlayerState, String> {
@@ -4896,5 +5052,37 @@ pub async fn test_llm_connection_cmd(
 #[tauri::command]
 pub async fn verify_telegram_token_cmd(token: String) -> Result<String, String> {
     crate::telegram_bot::verify_telegram_token(&token).await
+}
+
+// ── Video / Audio Media Converter (FFmpeg) ──
+
+#[tauri::command]
+pub async fn detect_media_converter_engine() -> Result<crate::media_converter::MediaEngineInfo, String> {
+    Ok(crate::media_converter::detect_media_engine().await)
+}
+
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn convert_media_files(
+    app: AppHandle,
+    input_paths: Vec<String>,
+    mode: String,
+    target_format: String,
+    quality_preset: String,
+    resolution: String,
+    audio_bitrate: String,
+    output_dir: Option<String>,
+) -> Result<Vec<crate::media_converter::MediaConvertResult>, String> {
+    crate::media_converter::convert_media_files(
+        &app,
+        input_paths,
+        mode,
+        target_format,
+        quality_preset,
+        resolution,
+        audio_bitrate,
+        output_dir,
+    )
+    .await
 }
 

@@ -81,18 +81,30 @@ pub fn restart_telegram_bot(app: AppHandle, state: Arc<AppState>) {
     }
 }
 
+fn split_utf8_chunks(text: &str, max_bytes: usize) -> Vec<&str> {
+    if text.len() <= max_bytes {
+        return vec![text];
+    }
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    while start < text.len() {
+        let mut end = (start + max_bytes).min(text.len());
+        while end > start && !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        if end == start {
+            end = text.len();
+        }
+        chunks.push(&text[start..end]);
+        start = end;
+    }
+    chunks
+}
+
 async fn send_telegram_message(client: &reqwest::Client, token: &str, chat_id: i64, text: &str) {
     let url = format!("https://api.telegram.org/bot{}/sendMessage", token);
-    // Telegram max message length is 4096 chars
-    let chunks: Vec<&str> = if text.len() > 3900 {
-        text.as_bytes()
-            .chunks(3900)
-            .map(|c| std::str::from_utf8(c).unwrap_or(""))
-            .collect()
-    } else {
-        vec![text]
-    };
-    for chunk in chunks {
+    // Telegram max message length is 4096 chars; split on valid UTF-8 char boundaries
+    for chunk in split_utf8_chunks(text, 3900) {
         if chunk.is_empty() {
             continue;
         }

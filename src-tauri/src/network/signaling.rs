@@ -340,6 +340,37 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 return;
             }
 
+            // LAN Peer Wake-on-LAN Relay Handler (allows any non-blocked contact to wake a PC on this LAN)
+            if session_id.starts_with("wol_ctl:") {
+                let is_allowed_sender = state
+                    .db
+                    .list_contacts()
+                    .map(|list| {
+                        list.into_iter()
+                            .any(|c| c.device_id == from_device_id && c.trust_level != "blocked")
+                    })
+                    .unwrap_or(false);
+                if is_allowed_sender {
+                    if let Ok(bytes) = hex::decode(payload_json) {
+                        if let Ok(ctl_val) = serde_json::from_slice::<Value>(&bytes) {
+                            let mac = ctl_val
+                                .get("mac_address")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let port = ctl_val.get("port").and_then(|v| v.as_u64()).map(|p| p as u16);
+                            if !mac.is_empty() {
+                                info!("Executing LAN WoL relay for MAC {} requested by {}", mac, from_device_id);
+                                tokio::spawn(async move {
+                                    let _ = crate::commands::send_wake_on_lan(mac, None, port).await;
+                                });
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+
             // Direct Mesh Virtual LAN Approval & Sync Handler
             if session_id.starts_with("mesh_ctl:") {
                 if let Ok(bytes) = hex::decode(payload_json) {

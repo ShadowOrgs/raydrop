@@ -27,6 +27,9 @@
     Loader2,
     Disc3,
     AlertCircle,
+    Download,
+    FolderOpen,
+    CheckCircle2,
   } from "lucide-svelte";
   import {
     raydropApi,
@@ -69,11 +72,13 @@
   let newPlaylistName = "";
   let addTargetPlaylistId = "";
 
-  // YTMusic search
+  // YTMusic search & download
   let ytQuery = "";
   let ytFilter: "all" | "songs" | "videos" = "all";
   let ytResults: YtMusicSearchItem[] = [];
   let ytSearching = false;
+  let ytDownloadingKey = "";
+  let ytLastDownloaded: { title: string; output_path: string; format: string } | null = null;
 
   let unlistenRemote: (() => void) | null = null;
   let unlistenYtdlp: (() => void) | null = null;
@@ -462,6 +467,29 @@
       playerError = err?.message || String(err);
     } finally {
       ytSearching = false;
+    }
+  }
+
+  async function handleYtDownload(item: YtMusicSearchItem, format: "mp3" | "mp4") {
+    if (ytDownloadingKey) return;
+    ytDownloadingKey = `${item.video_id}-${format}`;
+    playerError = "";
+    ytLastDownloaded = null;
+    try {
+      const res = await raydropApi.mediaDownloadYtmusic({
+        videoId: item.video_id,
+        title: item.title,
+        format,
+      });
+      ytLastDownloaded = {
+        title: res.title,
+        output_path: res.output_path,
+        format: res.format,
+      };
+    } catch (err: any) {
+      playerError = err?.message || String(err);
+    } finally {
+      ytDownloadingKey = "";
     }
   }
 
@@ -1081,6 +1109,25 @@
               </div>
             {/if}
 
+            {#if ytLastDownloaded}
+              <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px]">
+                <div class="flex items-center gap-1.5 min-w-0 text-emerald-300">
+                  <CheckCircle2 class="w-3.5 h-3.5 shrink-0" />
+                  <span class="truncate">
+                    Saved {ytLastDownloaded.format.toUpperCase()}: {ytLastDownloaded.title}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  on:click={() => ytLastDownloaded && raydropApi.openFolderPath(ytLastDownloaded.output_path)}
+                  class="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white flex items-center gap-1 shrink-0 cursor-pointer"
+                >
+                  <FolderOpen class="w-3 h-3" />
+                  <span>Open</span>
+                </button>
+              </div>
+            {/if}
+
             <div class="space-y-1.5">
               {#each ytResults as item (item.video_id)}
                 <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-900/80 border border-slate-800">
@@ -1107,6 +1154,34 @@
                       title="Play Now"
                     >
                       <Play class="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!!ytDownloadingKey}
+                      on:click={() => handleYtDownload(item, "mp3")}
+                      class="px-1.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold flex items-center gap-0.5 cursor-pointer disabled:opacity-40"
+                      title="Download Audio (MP3)"
+                    >
+                      {#if ytDownloadingKey === `${item.video_id}-mp3`}
+                        <Loader2 class="w-3 h-3 animate-spin" />
+                      {:else}
+                        <Download class="w-2.5 h-2.5" />
+                      {/if}
+                      <span>MP3</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!!ytDownloadingKey}
+                      on:click={() => handleYtDownload(item, "mp4")}
+                      class="px-1.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-[10px] font-bold flex items-center gap-0.5 cursor-pointer disabled:opacity-40"
+                      title="Download Video (MP4)"
+                    >
+                      {#if ytDownloadingKey === `${item.video_id}-mp4`}
+                        <Loader2 class="w-3 h-3 animate-spin" />
+                      {:else}
+                        <Download class="w-2.5 h-2.5" />
+                      {/if}
+                      <span>MP4</span>
                     </button>
                     <button
                       type="button"

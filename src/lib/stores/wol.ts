@@ -59,9 +59,14 @@ export async function executeWakeOnLan(
   deviceId: string,
   _deviceName: string,
   cfg: WolConfig
-): Promise<void> {
+): Promise<string> {
   saveWolConfig(deviceId, cfg);
-  await raydropApi.sendWakeOnLan(cfg.mac.trim(), cfg.wanHost.trim(), cfg.port || 9);
+  return await raydropApi.sendWakeOnLanAuto({
+    targetDeviceId: deviceId,
+    macAddress: cfg.mac.trim(),
+    targetHost: cfg.wanHost.trim() || null,
+    port: cfg.port || 9,
+  });
 }
 
 export function triggerWakeOnLan(deviceId: string, deviceName: string): void {

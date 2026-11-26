@@ -315,6 +315,14 @@ async fn find_existing_ytdlp() -> Option<String> {
 
 /// Automatically downloads the official yt-dlp binary into RayDrop's data folder if not installed.
 pub async fn ensure_ytdlp_installed(app: Option<&AppHandle>) -> Result<String, String> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = app;
+        return Err("yt-dlp auto-download is only supported on Desktop (Windows/macOS/Linux).".to_string());
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
     if let Some(existing) = find_existing_ytdlp().await {
         return Ok(existing);
     }
@@ -406,6 +414,7 @@ pub async fn ensure_ytdlp_installed(app: Option<&AppHandle>) -> Result<String, S
     }
 
     Ok(target_path.to_string_lossy().to_string())
+    }
 }
 
 /// Resolve a direct playable audio/video stream URL using yt-dlp (auto-downloads yt-dlp if missing).
@@ -467,5 +476,130 @@ pub async fn resolve_ytmusic_stream(
         video_id: vid.to_string(),
         stream_url,
         is_video: prefer_video,
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaDownloadResult {
+    pub video_id: String,
+    pub title: String,
+    pub output_path: String,
+    pub format: String,
+    pub size_bytes: u64,
+}
+
+/// Download a YouTube / YouTube Music item directly as MP3 (audio) or MP4 (video).
+pub async fn download_ytmusic_media(
+    app: Option<&AppHandle>,
+    video_id: &str,
+    title_hint: Option<&str>,
+    format: &str, // "mp3" | "mp4"
+    output_dir: &str,
+) -> Result<MediaDownloadResult, String> {
+    let vid = video_id.trim();
+    if vid.is_empty() {
+        return Err("Missing video ID".to_string());
+    }
+
+    let ytdlp_bin = ensure_ytdlp_installed(app).await?;
+    let ffmpeg_bin = crate::media_converter::ensure_ffmpeg_installed(app).await?;
+
+    let out_dir_path = std::path::Path::new(output_dir);
+    let _ = std::fs::create_dir_all(out_dir_path);
+
+    let url = format!("https://www.youtube.com/watch?v={}", vid);
+    let out_tmpl = out_dir_path
+        .join("%(title)s.%(ext)s")
+        .to_string_lossy()
+        .to_string();
+
+    let fmt_lower = format.trim().to_lowercase();
+    let is_video = fmt_lower == "mp4" || fmt_lower == "video";
+    let target_ext = if is_video { "mp4" } else { "mp3" };
+
+    let mut args: Vec<String> = vec![
+        "--no-playlist".into(),
+        "--no-warnings".into(),
+    ];
+
+    if let Some(parent) = std::path::Path::new(&ffmpeg_bin).parent() {
+        if !parent.as_os_str().is_empty() {
+            args.push("--ffmpeg-location".into());
+            args.push(parent.to_string_lossy().to_string());
+        }
+    }
+
+    if is_video {
+        args.extend([
+            "-f".into(),
+            "bv*+ba/b".into(),
+            "--merge-output-format".into(),
+            "mp4".into(),
+        ]);
+    } else {
+        args.extend([
+            "-x".into(),
+            "--audio-format".into(),
+            "mp3".into(),
+            "--audio-quality".into(),
+            "0".into(),
+            "--add-metadata".into(),
+        ]);
+    }
+
+    args.extend([
+        "-o".into(),
+        out_tmpl,
+        "--print".into(),
+        "after_move:filepath".into(),
+        url,
+    ]);
+
+    let mut cmd = tokio::process::Command::new(&ytdlp_bin);
+    cmd.args(&args);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run yt-dlp download: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Download failed: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let saved_path = stdout
+        .lines()
+        .map(str::trim)
+        .rfind(|l| !l.is_empty())
+        .ok_or_else(|| "Download completed but output path was not returned".to_string())?
+        .to_string();
+
+    let size_bytes = tokio::fs::metadata(&saved_path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    let final_title = title_hint
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            std::path::Path::new(&saved_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Downloaded Media")
+                .to_string()
+        });
+
+    Ok(MediaDownloadResult {
+        video_id: vid.to_string(),
+        title: final_title,
+        output_path: saved_path,
+        format: target_ext.to_string(),
+        size_bytes,
     })
 }
