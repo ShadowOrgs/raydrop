@@ -5,6 +5,7 @@ import {
   type HttpDownloadTaskInfo,
 } from '../utils/tauri-ipc';
 import { playAppSound, playTransferSound } from './presence';
+import { activeMainTab } from './state';
 
 export const torrentTasks = writable<TorrentTaskInfo[]>([]);
 export const httpTasks = writable<HttpDownloadTaskInfo[]>([]);
@@ -80,10 +81,31 @@ export async function initDownloadStore() {
     console.warn('Failed to register http_download_stats_update listener:', err);
   }
 
-  // 6. Listen for external browser magnet clicks received by secondary instance
+  // 6. Listen for browser extension HTTP downloads and switch directly to Transfers page
+  try {
+    await raydropApi.listenEvent<HttpDownloadTaskInfo>('http_download_added', (task) => {
+      if (task && task.id) {
+        httpTasks.update((list) => {
+          const idx = list.findIndex((t) => t.id === task.id);
+          if (idx >= 0) {
+            const copy = [...list];
+            copy[idx] = task;
+            return copy;
+          }
+          return [task, ...list];
+        });
+      }
+      activeMainTab.set('transfers');
+    });
+  } catch (err) {
+    console.warn('Failed to register http_download_added listener:', err);
+  }
+
+  // 7. Listen for external browser magnet clicks received by secondary instance
   try {
     await raydropApi.listenEvent<string>('open_magnet_link', (magnetUrl) => {
       if (magnetUrl) {
+        activeMainTab.set('transfers');
         prefilledDownloadUrl.set(magnetUrl);
         downloadModalOpen.set(true);
       }

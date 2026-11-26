@@ -454,19 +454,33 @@
         ) {
           await markChatRead(msg.peer_device_id);
         } else {
+          const isGroup = msg.peer_device_id?.startsWith("group_");
+          const grp = isGroup
+            ? get(chatGroups).find((g) => g.id === msg.peer_device_id)
+            : null;
           const contactList = get(contacts);
-          const peer = contactList.find(
-            (c) => c.device_id === msg.peer_device_id,
-          );
+          const peer = !isGroup
+            ? contactList.find((c) => c.device_id === msg.peer_device_id)
+            : null;
           const peerName =
+            grp?.name ||
             peer?.custom_name ||
             peer?.alias_name ||
             peer?.user_name ||
+            msg.sender_alias ||
             msg.peer_device_id.slice(0, 14);
           addChatToast(msg, peerName);
 
           try {
             const win = getCurrentWindow();
+            const [isVis, isMin] = await Promise.all([
+              win.isVisible().catch(() => true),
+              win.isMinimized().catch(() => false),
+            ]);
+            if (!isVis || isMin) {
+              activeMainTab.set("chat");
+              activeChatPeerId.set(msg.peer_device_id);
+            }
             await win.requestUserAttention(UserAttentionType.Informational);
           } catch (_) {}
         }
@@ -1190,12 +1204,14 @@
           on:click={() => {
             activeMainTab.set("chat");
             activeChatPeerId.set(toast.peerDeviceId);
+            markChatRead(toast.peerDeviceId);
             removeChatToast(toast.id);
           }}
           on:keydown={(e) => {
             if (e.key === "Enter") {
               activeMainTab.set("chat");
               activeChatPeerId.set(toast.peerDeviceId);
+              markChatRead(toast.peerDeviceId);
               removeChatToast(toast.id);
             }
           }}
