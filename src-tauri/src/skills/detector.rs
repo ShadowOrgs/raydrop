@@ -17,6 +17,16 @@ pub struct AgentDefinition {
 
 pub const AGENT_DEFINITIONS: &[AgentDefinition] = &[
     AgentDefinition {
+        id: "antigravity",
+        agent_type: "antigravity",
+        display_name: "Antigravity IDE",
+        executables: &["agy", "agy.exe", "agy.cmd"],
+        home_config_dirs: &[".gemini/antigravity", ".gemini/antigravity-ide", ".gemini/config"],
+        default_global_rel: ".gemini/config/skills",
+        default_project_rel: ".agent/skills",
+        compatibility: CompatibilityLevel::Native,
+    },
+    AgentDefinition {
         id: "codex",
         agent_type: "codex",
         display_name: "OpenAI Codex",

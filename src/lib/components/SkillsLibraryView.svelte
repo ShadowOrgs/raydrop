@@ -22,6 +22,8 @@
     AlertTriangle,
     Settings,
     History,
+    Loader2,
+    Share2,
   } from "lucide-svelte";
   import {
     skillsApi,
@@ -39,11 +41,13 @@
   } from "../utils/tauri-ipc";
   import SkillDetailModal from "./skills/SkillDetailModal.svelte";
   import SkillInstallModal from "./skills/SkillInstallModal.svelte";
+  import SkillShareModal from "./skills/SkillShareModal.svelte";
 
   type SubTab = "discover" | "installed" | "agents" | "sources" | "presets";
   let activeSubTab: SubTab = "discover";
 
   let loading = false;
+  let busyKey: string | null = null;
   let statusBanner = "";
   let errorBanner = "";
 
@@ -63,10 +67,11 @@
   let ghBranch = "";
   let ghCommit = "";
 
-  // Detail & Install modals
+  // Detail, Install & Share modals
   let activeDetail: SkillDetailResponse | null = null;
   let activeCompatibility: SkillCompatibilityEntry[] = [];
   let installSkillId: string | null = null;
+  let shareSkill: SkillRecord | null = null;
 
   // Installed / Updates / History
   let installations: SkillInstallationRecord[] = [];
@@ -194,6 +199,7 @@
   async function handleImportFolder() {
     errorBanner = "";
     statusBanner = "";
+    busyKey = "import-folder";
     try {
       const picked = await open({
         directory: true,
@@ -207,12 +213,15 @@
       }
     } catch (e) {
       errorBanner = String(e);
+    } finally {
+      busyKey = null;
     }
   }
 
   async function handleImportZip() {
     errorBanner = "";
     statusBanner = "";
+    busyKey = "import-zip";
     try {
       const picked = await open({
         directory: false,
@@ -227,6 +236,8 @@
       }
     } catch (e) {
       errorBanner = String(e);
+    } finally {
+      busyKey = null;
     }
   }
 
@@ -251,10 +262,11 @@
     }
   }
 
-  async function handleImportGithub(url: string, subpath?: string | null) {
+  async function handleImportGithub(url: string, subpath?: string | null, keyOverride?: string) {
     errorBanner = "";
     statusBanner = "";
     importingGh = true;
+    if (keyOverride) busyKey = keyOverride;
     try {
       const rec = await skillsApi.importGithub(url, subpath);
       statusBanner = `Imported '${rec.name}' (pinned ${rec.commit_sha?.slice(0, 8) || ""}).`;
@@ -267,16 +279,20 @@
       errorBanner = String(e);
     } finally {
       importingGh = false;
+      if (keyOverride && busyKey === keyOverride) busyKey = null;
     }
   }
 
   async function openDetail(skillId: string) {
     errorBanner = "";
+    busyKey = `inspect:${skillId}`;
     try {
       activeDetail = await skillsApi.getDetail(skillId);
       activeCompatibility = await skillsApi.getCompatibility(skillId);
     } catch (e) {
       errorBanner = String(e);
+    } finally {
+      if (busyKey === `inspect:${skillId}`) busyKey = null;
     }
   }
 
@@ -343,6 +359,7 @@
 
   async function handleUninstall(instId: string, force = false) {
     errorBanner = "";
+    busyKey = `uninstall:${instId}`;
     try {
       await skillsApi.uninstall(instId, force);
       statusBanner = "Skill uninstalled cleanly.";
@@ -356,31 +373,40 @@
       } else {
         errorBanner = msg;
       }
+    } finally {
+      if (busyKey === `uninstall:${instId}`) busyKey = null;
     }
   }
 
   async function handleCheckUpdates() {
+    busyKey = "check-updates";
     try {
       updateChecks = await skillsApi.checkUpdates();
       const count = updateChecks.filter((u) => u.has_update).length;
       statusBanner = `Update check complete: ${count} update(s) available.`;
     } catch (e) {
       errorBanner = String(e);
+    } finally {
+      busyKey = null;
     }
   }
 
   async function handleRollback(historyId: string) {
+    busyKey = `rollback:${historyId}`;
     try {
       const dest = await skillsApi.rollback(historyId);
       statusBanner = `Rolled back backup to ${dest}.`;
       await loadInstalled();
     } catch (e) {
       errorBanner = String(e);
+    } finally {
+      busyKey = null;
     }
   }
 
   async function handleAddSource() {
     if (!newSourceName.trim() || !newSourceUrl.trim()) return;
+    busyKey = "add-source";
     try {
       await skillsApi.addSource(newSourceName.trim(), newSourceType, newSourceUrl.trim());
       newSourceName = "";
@@ -388,11 +414,14 @@
       await loadSources();
     } catch (e) {
       errorBanner = String(e);
+    } finally {
+      busyKey = null;
     }
   }
 
   async function handleRefreshSource(id: string) {
     errorBanner = "";
+    busyKey = `sync:${id}`;
     try {
       const n = await skillsApi.refreshSource(id);
       statusBanner = `Source synced (${n} entries).`;
@@ -400,11 +429,14 @@
     } catch (e) {
       errorBanner = String(e);
       await loadSources();
+    } finally {
+      busyKey = null;
     }
   }
 
   async function handleSavePreset() {
     if (!newPresetName.trim()) return;
+    busyKey = "save-preset";
     try {
       await skillsApi.savePreset(
         null,
@@ -420,15 +452,20 @@
       statusBanner = "Preset saved.";
     } catch (e) {
       errorBanner = String(e);
+    } finally {
+      busyKey = null;
     }
   }
 
   async function handleSaveSettings() {
+    busyKey = "save-settings";
     try {
       skillsSettings = await skillsApi.updateSettings(skillsSettings);
       statusBanner = "Skills Library settings saved.";
     } catch (e) {
       errorBanner = String(e);
+    } finally {
+      busyKey = null;
     }
   }
 </script>
@@ -537,18 +574,28 @@
           <button
             type="button"
             on:click={handleImportFolder}
-            class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 flex items-center gap-1.5 cursor-pointer"
+            disabled={busyKey === "import-folder"}
+            class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-semibold border border-slate-700 flex items-center gap-1.5 cursor-pointer"
           >
-            <FolderOpen class="w-3.5 h-3.5 text-amber-400" />
-            Local Folder
+            {#if busyKey === "import-folder"}
+              <Loader2 class="w-3.5 h-3.5 text-amber-400 animate-spin" />
+            {:else}
+              <FolderOpen class="w-3.5 h-3.5 text-amber-400" />
+            {/if}
+            <span>Local Folder</span>
           </button>
           <button
             type="button"
             on:click={handleImportZip}
-            class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 flex items-center gap-1.5 cursor-pointer"
+            disabled={busyKey === "import-zip"}
+            class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-semibold border border-slate-700 flex items-center gap-1.5 cursor-pointer"
           >
-            <FileArchive class="w-3.5 h-3.5 text-indigo-400" />
-            ZIP Archive
+            {#if busyKey === "import-zip"}
+              <Loader2 class="w-3.5 h-3.5 text-indigo-400 animate-spin" />
+            {:else}
+              <FileArchive class="w-3.5 h-3.5 text-indigo-400" />
+            {/if}
+            <span>ZIP Archive</span>
           </button>
         </div>
 
@@ -700,12 +747,24 @@
                 <div class="flex items-center gap-1.5">
                   <button
                     type="button"
+                    disabled={busyKey === `inspect:${skill.id}`}
                     on:click={() => openDetail(skill.id)}
-                    class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold cursor-pointer"
+                    class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-semibold flex items-center gap-1 cursor-pointer"
                   >
-                    Inspect
+                    {#if busyKey === `inspect:${skill.id}`}
+                      <Loader2 class="w-3 h-3 animate-spin" />
+                    {/if}
+                    <span>Inspect</span>
                   </button>
                   {#if skill.local_package_path}
+                    <button
+                      type="button"
+                      on:click={() => (shareSkill = skill)}
+                      class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 cursor-pointer"
+                      title="Share Skill via P2P"
+                    >
+                      <Share2 class="w-3.5 h-3.5" />
+                    </button>
                     <button
                       type="button"
                       on:click={() => (installSkillId = skill.id)}
@@ -717,10 +776,15 @@
                     <button
                       type="button"
                       disabled={importingGh}
-                      on:click={() => handleImportGithub(skill.source_url, skill.source_path ?? null)}
-                      class="px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold cursor-pointer"
+                      on:click={() => handleImportGithub(skill.source_url, skill.source_path ?? null, `fetch:${skill.id}`)}
+                      class="px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold flex items-center gap-1 cursor-pointer"
                     >
-                      Fetch
+                      {#if busyKey === `fetch:${skill.id}`}
+                        <Loader2 class="w-3 h-3 animate-spin" />
+                        <span>Fetching...</span>
+                      {:else}
+                        <span>Fetch</span>
+                      {/if}
                     </button>
                   {/if}
                 </div>
@@ -771,11 +835,12 @@
           </button>
           <button
             type="button"
+            disabled={busyKey === "check-updates"}
             on:click={handleCheckUpdates}
-            class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
+            class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
           >
-            <RefreshCw class="w-3.5 h-3.5 text-cyan-400" />
-            Check Updates
+            <RefreshCw class="w-3.5 h-3.5 text-cyan-400 {busyKey === 'check-updates' ? 'animate-spin' : ''}" />
+            <span>{busyKey === "check-updates" ? "Checking..." : "Check Updates"}</span>
           </button>
           <button
             type="button"
@@ -875,11 +940,17 @@
                 {/if}
                 <button
                   type="button"
+                  disabled={busyKey === `uninstall:${inst.id}`}
                   on:click={() => handleUninstall(inst.id, false)}
-                  class="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                  class="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 disabled:opacity-50 text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center gap-1 cursor-pointer"
                 >
-                  <Trash2 class="w-3.5 h-3.5" />
-                  Uninstall
+                  {#if busyKey === `uninstall:${inst.id}`}
+                    <Loader2 class="w-3.5 h-3.5 animate-spin" />
+                    <span>Removing...</span>
+                  {:else}
+                    <Trash2 class="w-3.5 h-3.5" />
+                    <span>Uninstall</span>
+                  {/if}
                 </button>
               </div>
             </div>
@@ -986,11 +1057,12 @@
             <div class="flex items-center gap-2">
               <button
                 type="button"
+                disabled={busyKey === `sync:${src.id}`}
                 on:click={() => handleRefreshSource(src.id)}
-                class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white flex items-center gap-1 cursor-pointer"
+                class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-xs font-semibold text-white flex items-center gap-1 cursor-pointer"
               >
-                <RefreshCw class="w-3.5 h-3.5 text-cyan-400" />
-                Sync
+                <RefreshCw class="w-3.5 h-3.5 text-cyan-400 {busyKey === `sync:${src.id}` ? 'animate-spin' : ''}" />
+                <span>{busyKey === `sync:${src.id}` ? "Syncing..." : "Sync"}</span>
               </button>
             </div>
           </div>
@@ -1065,11 +1137,17 @@
           </label>
           <button
             type="button"
+            disabled={busyKey === "save-settings"}
             on:click={handleSaveSettings}
-            class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+            class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
           >
-            <CheckCircle2 class="w-3.5 h-3.5" />
-            Save Policy
+            {#if busyKey === "save-settings"}
+              <Loader2 class="w-3.5 h-3.5 animate-spin" />
+              <span>Saving...</span>
+            {:else}
+              <CheckCircle2 class="w-3.5 h-3.5" />
+              <span>Save Policy</span>
+            {/if}
           </button>
         </div>
       </div>
@@ -1085,6 +1163,10 @@
     on:install={(e) => {
       activeDetail = null;
       installSkillId = e.detail;
+    }}
+    on:share={(e) => {
+      activeDetail = null;
+      shareSkill = e.detail;
     }}
     on:toggleFavorite={(e) => handleToggleFavorite(e.detail)}
     on:deleteSkill={(e) => handleDeleteSkill(e.detail)}
@@ -1102,3 +1184,19 @@
     }}
   />
 {/if}
+
+{#if shareSkill}
+  <SkillShareModal
+    skill={shareSkill}
+    on:close={() => (shareSkill = null)}
+  />
+{/if}
+
+<style>
+  button {
+    transition: transform 0.12s ease, background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  button:active:not(:disabled) {
+    transform: scale(0.94);
+  }
+</style>

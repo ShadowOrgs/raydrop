@@ -12,9 +12,12 @@
     Trash2,
     Cpu,
     GitCommit,
+    Loader2,
+    Share2,
   } from "lucide-svelte";
   import {
     skillsApi,
+    type SkillRecord,
     type SkillDetailResponse,
     type SkillFilePreview,
     type SkillCompatibilityEntry,
@@ -26,6 +29,7 @@
   const dispatch = createEventDispatcher<{
     close: void;
     install: string;
+    share: SkillRecord;
     toggleFavorite: string;
     deleteSkill: string;
     fetchCatalogSkill: { url: string; subpath?: string | null };
@@ -34,6 +38,7 @@
   let selectedFilePath: string | null = null;
   let filePreview: SkillFilePreview | null = null;
   let loadingFile = false;
+  let fetchingPkg = false;
 
   $: if (detail && !selectedFilePath && detail.files.length > 0) {
     const md =
@@ -135,17 +140,33 @@
         {#if detail.files.length === 0 && detail.skill.source_url.startsWith("http")}
           <button
             type="button"
-            on:click={() =>
+            disabled={fetchingPkg}
+            on:click={() => {
+              fetchingPkg = true;
               dispatch("fetchCatalogSkill", {
                 url: detail.skill.source_url,
                 subpath: detail.skill.source_path ?? null,
-              })}
-            class="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+              });
+            }}
+            class="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
           >
-            <Download class="w-3.5 h-3.5" />
-            Fetch Package from GitHub
+            {#if fetchingPkg}
+              <Loader2 class="w-3.5 h-3.5 animate-spin" />
+              <span>Fetching...</span>
+            {:else}
+              <Download class="w-3.5 h-3.5" />
+              <span>Fetch Package from GitHub</span>
+            {/if}
           </button>
         {:else}
+          <button
+            type="button"
+            on:click={() => dispatch("share", detail.skill)}
+            class="p-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 cursor-pointer"
+            title="Share Skill to Contacts / Devices via P2P"
+          >
+            <Share2 class="w-4 h-4" />
+          </button>
           <button
             type="button"
             on:click={() => dispatch("install", detail.skill.id)}
@@ -295,3 +316,12 @@
     </div>
   </div>
 </div>
+
+<style>
+  button {
+    transition: transform 0.12s ease, background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  button:active:not(:disabled) {
+    transform: scale(0.94);
+  }
+</style>

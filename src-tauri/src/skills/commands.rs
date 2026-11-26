@@ -15,7 +15,7 @@ use super::presets::ensure_builtin_presets;
 use super::sources::catalog::{ensure_default_sources_and_catalog, refresh_source};
 use super::sources::github::{discover_github_skills, import_github_skill};
 use super::sources::local::import_local_folder;
-use super::sources::zip::import_zip_archive;
+use super::sources::zip::{export_skill_to_zip, import_zip_archive};
 use super::storage::{
     delete_preset, delete_skill, get_skill_by_id, get_skill_detail, get_skill_files,
     get_skills_settings, list_agents, list_install_history, list_sources, read_skill_file_preview,
@@ -31,10 +31,7 @@ use tauri::State;
 pub async fn skills_init_library(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     ensure_default_sources_and_catalog(&state.db)?;
     let _ = ensure_builtin_presets(&state.db)?;
-    let agents = list_agents(&state.db)?;
-    if agents.is_empty() {
-        let _ = detect_all_agents(&state.db)?;
-    }
+    let _ = detect_all_agents(&state.db)?;
     Ok(())
 }
 
@@ -86,6 +83,14 @@ pub async fn skills_import_zip(
     zip_path: String,
 ) -> Result<SkillRecord, String> {
     import_zip_archive(&state.db, &zip_path)
+}
+
+#[tauri::command]
+pub async fn skills_export_zip(
+    state: State<'_, Arc<AppState>>,
+    skill_id: String,
+) -> Result<String, String> {
+    export_skill_to_zip(&state.db, &skill_id)
 }
 
 #[tauri::command]

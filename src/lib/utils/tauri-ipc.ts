@@ -1523,6 +1523,8 @@ export const skillsApi = {
     invoke<SkillRecord>('skills_import_local_folder', { folderPath }),
   importZip: (zipPath: string) =>
     invoke<SkillRecord>('skills_import_zip', { zipPath }),
+  exportZip: (skillId: string) =>
+    invoke<string>('skills_export_zip', { skillId }),
   discoverGithub: (url: string) =>
     invoke<[string, string, DiscoveredRepoSkill[]]>('skills_discover_github', { url }),
   importGithub: (url: string, subpath?: string | null) =>

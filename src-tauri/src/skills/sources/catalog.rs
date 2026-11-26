@@ -1,3 +1,4 @@
+use super::{ingest_skill_package, PackageIngestInput, RawSkillFile};
 use crate::db::storage::{now_unix_secs, Database};
 use crate::skills::models::{
     SecurityReport, SkillRecord, SkillSourceRecord, SkillsSearchQuery,
@@ -114,6 +115,186 @@ const CURATED_SEEDS: &[CuratedSeed] = &[
         tags: &["react", "nextjs", "performance", "typescript"],
         popularity: 910,
     },
+    CuratedSeed {
+        name: "Web Design Guidelines",
+        description: "Audit UI/UX accessibility, typography, contrast, layout spacing, and responsive design.",
+        author: "Vercel Labs",
+        license: "MIT",
+        repository_url: "https://github.com/vercel-labs/agent-skills",
+        source_url: "https://github.com/vercel-labs/agent-skills/tree/main/skills/web-design-guidelines",
+        source_path: "skills/web-design-guidelines",
+        categories: &["Design", "Frontend"],
+        tags: &["ui", "ux", "accessibility", "audit"],
+        popularity: 880,
+    },
+    CuratedSeed {
+        name: "Composition Patterns",
+        description: "Scalable component composition patterns, slots, and state isolation for modern web apps.",
+        author: "Vercel Labs",
+        license: "MIT",
+        repository_url: "https://github.com/vercel-labs/agent-skills",
+        source_url: "https://github.com/vercel-labs/agent-skills/tree/main/skills/composition-patterns",
+        source_path: "skills/composition-patterns",
+        categories: &["Frontend", "Architecture"],
+        tags: &["components", "patterns", "react", "architecture"],
+        popularity: 820,
+    },
+    CuratedSeed {
+        name: "DOCX Document Processing",
+        description: "Create, edit, format, and extract structured content from Microsoft Word (.docx) files.",
+        author: "Anthropic",
+        license: "Apache-2.0",
+        repository_url: "https://github.com/anthropics/skills",
+        source_url: "https://github.com/anthropics/skills/tree/main/skills/docx",
+        source_path: "skills/docx",
+        categories: &["Documents", "Automation"],
+        tags: &["docx", "word", "documents", "python"],
+        popularity: 850,
+    },
+    CuratedSeed {
+        name: "XLSX Spreadsheet Automation",
+        description: "Generate, analyze, and format Excel spreadsheets (.xlsx) with formulas and charts.",
+        author: "Anthropic",
+        license: "Apache-2.0",
+        repository_url: "https://github.com/anthropics/skills",
+        source_url: "https://github.com/anthropics/skills/tree/main/skills/xlsx",
+        source_path: "skills/xlsx",
+        categories: &["Documents", "Data"],
+        tags: &["excel", "xlsx", "spreadsheets", "data"],
+        popularity: 845,
+    },
+    CuratedSeed {
+        name: "PPTX Presentation Builder",
+        description: "Build clean, structured PowerPoint (.pptx) decks programmatically with layouts and visuals.",
+        author: "Anthropic",
+        license: "Apache-2.0",
+        repository_url: "https://github.com/anthropics/skills",
+        source_url: "https://github.com/anthropics/skills/tree/main/skills/pptx",
+        source_path: "skills/pptx",
+        categories: &["Documents", "Design"],
+        tags: &["pptx", "slides", "presentations"],
+        popularity: 810,
+    },
+    CuratedSeed {
+        name: "Canvas Design",
+        description: "Generate high-craft posters, editorial visuals, and vector/canvas artwork.",
+        author: "Anthropic",
+        license: "Apache-2.0",
+        repository_url: "https://github.com/anthropics/skills",
+        source_url: "https://github.com/anthropics/skills/tree/main/skills/canvas-design",
+        source_path: "skills/canvas-design",
+        categories: &["Design", "Creative"],
+        tags: &["canvas", "design", "visual", "art"],
+        popularity: 795,
+    },
+    CuratedSeed {
+        name: "Theme Factory",
+        description: "Apply cohesive color palettes, typography pairings, and visual themes to artifacts and UIs.",
+        author: "Anthropic",
+        license: "Apache-2.0",
+        repository_url: "https://github.com/anthropics/skills",
+        source_url: "https://github.com/anthropics/skills/tree/main/skills/theme-factory",
+        source_path: "skills/theme-factory",
+        categories: &["Design", "Frontend"],
+        tags: &["theme", "colors", "typography", "css"],
+        popularity: 770,
+    },
+    CuratedSeed {
+        name: "Doc Coauthoring",
+        description: "Structured workflow for co-authoring specs, RFCs, technical docs, and proposals.",
+        author: "Anthropic",
+        license: "Apache-2.0",
+        repository_url: "https://github.com/anthropics/skills",
+        source_url: "https://github.com/anthropics/skills/tree/main/skills/doc-coauthoring",
+        source_path: "skills/doc-coauthoring",
+        categories: &["Documents", "Productivity"],
+        tags: &["docs", "rfc", "writing", "workflow"],
+        popularity: 760,
+    },
+    CuratedSeed {
+        name: "Internal Comms",
+        description: "Draft crisp status updates, incident reports, newsletters, and leadership memos.",
+        author: "Anthropic",
+        license: "Apache-2.0",
+        repository_url: "https://github.com/anthropics/skills",
+        source_url: "https://github.com/anthropics/skills/tree/main/skills/internal-comms",
+        source_path: "skills/internal-comms",
+        categories: &["Productivity", "Documents"],
+        tags: &["comms", "reports", "writing"],
+        popularity: 730,
+    },
+    CuratedSeed {
+        name: "Brand Guidelines",
+        description: "Enforce consistent brand colors, typography, tone of voice, and visual identity.",
+        author: "Anthropic",
+        license: "Apache-2.0",
+        repository_url: "https://github.com/anthropics/skills",
+        source_url: "https://github.com/anthropics/skills/tree/main/skills/brand-guidelines",
+        source_path: "skills/brand-guidelines",
+        categories: &["Design", "Marketing"],
+        tags: &["brand", "identity", "guidelines"],
+        popularity: 740,
+    },
+    CuratedSeed {
+        name: "Algorithmic Art",
+        description: "Create generative p5.js and algorithmic art with deterministic seeded randomness.",
+        author: "Anthropic",
+        license: "Apache-2.0",
+        repository_url: "https://github.com/anthropics/skills",
+        source_url: "https://github.com/anthropics/skills/tree/main/skills/algorithmic-art",
+        source_path: "skills/algorithmic-art",
+        categories: &["Creative", "Frontend"],
+        tags: &["p5js", "generative", "art", "canvas"],
+        popularity: 755,
+    },
+    CuratedSeed {
+        name: "Claude API Integration",
+        description: "Best practices for Anthropic SDKs, tool use, streaming, structured outputs, and caching.",
+        author: "Anthropic",
+        license: "Apache-2.0",
+        repository_url: "https://github.com/anthropics/skills",
+        source_url: "https://github.com/anthropics/skills/tree/main/skills/claude-api",
+        source_path: "skills/claude-api",
+        categories: &["AI Engineering", "Backend"],
+        tags: &["claude", "llm", "sdk", "streaming"],
+        popularity: 875,
+    },
+    CuratedSeed {
+        name: "React Native Skills",
+        description: "Mobile performance, navigation, native modules, and animation patterns for React Native.",
+        author: "Vercel Labs",
+        license: "MIT",
+        repository_url: "https://github.com/vercel-labs/agent-skills",
+        source_url: "https://github.com/vercel-labs/agent-skills/tree/main/skills/react-native-skills",
+        source_path: "skills/react-native-skills",
+        categories: &["Mobile", "Frontend"],
+        tags: &["react-native", "mobile", "ios", "android"],
+        popularity: 805,
+    },
+    CuratedSeed {
+        name: "Web Artifacts Builder",
+        description: "Build self-contained multi-component interactive HTML/React/Tailwind web artifacts.",
+        author: "Anthropic",
+        license: "Apache-2.0",
+        repository_url: "https://github.com/anthropics/skills",
+        source_url: "https://github.com/anthropics/skills/tree/main/skills/web-artifacts-builder",
+        source_path: "skills/web-artifacts-builder",
+        categories: &["Frontend", "Tooling"],
+        tags: &["html", "tailwind", "react", "artifacts"],
+        popularity: 815,
+    },
+    CuratedSeed {
+        name: "Slack GIF Creator",
+        description: "Create crisp, optimized animated GIFs tailored for team chat and Slack reactions.",
+        author: "Anthropic",
+        license: "Apache-2.0",
+        repository_url: "https://github.com/anthropics/skills",
+        source_url: "https://github.com/anthropics/skills/tree/main/skills/slack-gif-creator",
+        source_path: "skills/slack-gif-creator",
+        categories: &["Creative", "Tooling"],
+        tags: &["gif", "animation", "slack"],
+        popularity: 710,
+    },
 ];
 
 /// Ensures default sources exist and seeds the curated catalog if empty.
@@ -156,41 +337,181 @@ pub fn ensure_default_sources_and_catalog(db: &Database) -> Result<(), String> {
         },
     )?;
 
-    if existing_curated.is_empty() {
-        for seed in CURATED_SEEDS {
-            let slug = slugify_skill_name(seed.name);
-            let id = stable_skill_id("src_curated", &slug);
-            let rec = SkillRecord {
-                id,
-                source_id: "src_curated".to_string(),
-                name: seed.name.to_string(),
-                slug,
-                description: seed.description.to_string(),
-                author: Some(seed.author.to_string()),
-                license: Some(seed.license.to_string()),
-                repository_url: Some(seed.repository_url.to_string()),
-                source_url: seed.source_url.to_string(),
-                source_path: Some(seed.source_path.to_string()),
-                version: Some("catalog-ref".to_string()),
-                branch: Some("main".to_string()),
-                commit_sha: None,
-                categories: seed.categories.iter().map(|s| s.to_string()).collect(),
-                tags: seed.tags.iter().map(|s| s.to_string()).collect(),
-                compatibility: Vec::new(),
-                security_status: "unscanned".to_string(),
-                security_report: SecurityReport::default(),
-                popularity: Some(seed.popularity),
-                local_package_path: None,
-                last_updated: Some(now),
-                created_at: now,
-                updated_at: now,
-                is_favorite: false,
-                installed_agents: Vec::new(),
-            };
-            upsert_skill_with_files(db, &rec, &[])?;
+    for seed in CURATED_SEEDS {
+        let slug = slugify_skill_name(seed.name);
+        let id = stable_skill_id("src_curated", &slug);
+        if existing_curated.iter().any(|s| s.id == id) {
+            continue;
         }
+        let rec = SkillRecord {
+            id,
+            source_id: "src_curated".to_string(),
+            name: seed.name.to_string(),
+            slug,
+            description: seed.description.to_string(),
+            author: Some(seed.author.to_string()),
+            license: Some(seed.license.to_string()),
+            repository_url: Some(seed.repository_url.to_string()),
+            source_url: seed.source_url.to_string(),
+            source_path: Some(seed.source_path.to_string()),
+            version: Some("catalog-ref".to_string()),
+            branch: Some("main".to_string()),
+            commit_sha: None,
+            categories: seed.categories.iter().map(|s| s.to_string()).collect(),
+            tags: seed.tags.iter().map(|s| s.to_string()).collect(),
+            compatibility: Vec::new(),
+            security_status: "unscanned".to_string(),
+            security_report: SecurityReport::default(),
+            popularity: Some(seed.popularity),
+            local_package_path: None,
+            last_updated: Some(now),
+            created_at: now,
+            updated_at: now,
+            is_favorite: false,
+            installed_agents: Vec::new(),
+        };
+        upsert_skill_with_files(db, &rec, &[])?;
     }
 
+    ensure_builtin_context_skills(db)?;
+    Ok(())
+}
+
+struct BuiltinSkillPackage {
+    slug: &'static str,
+    skill_md: &'static str,
+}
+
+const BUILTIN_CONTEXT_SKILLS: &[BuiltinSkillPackage] = &[
+    BuiltinSkillPackage {
+        slug: "codebase-context-mapper",
+        skill_md: r#"---
+name: Codebase Context Mapper
+description: Efficiently map repository architecture, entrypoints, data flow, and conventions without wasting context window.
+author: Raydrop
+license: MIT
+version: 1.0.0
+categories:
+  - Context
+  - Architecture
+tags: [context, architecture, codebase, navigation, efficiency]
+---
+
+# Codebase Context Mapper
+
+Use this workflow before editing an unfamiliar or large repository so you build accurate mental models with minimal token/context waste.
+
+## 1. Locate Before Reading
+1. List top-level manifests (`package.json`, `Cargo.toml`, `pyproject.toml`, `go.mod`, `tauri.conf.json`) and directory layout first.
+2. Search for exact symbol names, routes, IPC commands, or error strings before opening files.
+3. Read only the relevant line ranges (50-150 lines) around call sites and definitions instead of dumping entire large files.
+
+## 2. Map the Core Spine
+Trace and record:
+- **Entrypoints**: main binary/app bootstrap, router, and UI shell.
+- **State & Persistence**: stores, database schemas, migrations, and cache keys.
+- **Boundaries**: IPC/HTTP/RPC contracts, auth/permission checks, and external providers.
+- **Build & Test Commands**: exact scripts from manifests and CI workflows.
+
+## 3. Rules for Context Discipline
+- Never guess unverified file paths, function signatures, or config keys.
+- Re-read a file only after it changes.
+- Batch independent searches and reads in parallel before planning edits.
+"#,
+    },
+    BuiltinSkillPackage {
+        slug: "session-context-handoff",
+        skill_md: r#"---
+name: Session Context & Handoff
+description: Preserve coding task state, verified facts, changed files, and exact next steps across long sessions or agent handoffs.
+author: Raydrop
+license: MIT
+version: 1.0.0
+categories:
+  - Context
+  - Productivity
+tags: [context, handoff, memory, workflow, continuity]
+---
+
+# Session Context & Handoff
+
+Keep multi-step engineering sessions reliable when context grows large or work is handed off between coding agents.
+
+## What to Track Continuously
+1. **User Goal & Constraints**: exact requirements, non-goals, and environment constraints.
+2. **Files Touched**: exact file paths and what changed in each.
+3. **Verified State**: only commands, tests, and builds actually executed after the latest edit (never assume passing status from earlier runs).
+4. **Open Risks & Next Steps**: concrete, ordered remaining actions with exact symbol/file targets.
+
+## Anti-Drift Rules
+- Separate **observed facts** (read from files/tool output) from **inferences**.
+- Do not re-audit already completed work unless new regressions or requirements appear.
+- Before finishing, re-verify the build/tests after the final edit and report exact scope and results.
+"#,
+    },
+    BuiltinSkillPackage {
+        slug: "api-context-verification",
+        skill_md: r#"---
+name: API & Library Context Verification
+description: Verify exact library versions, types, and APIs from local manifests and source before writing integration code.
+author: Raydrop
+license: MIT
+version: 1.0.0
+categories:
+  - Context
+  - Tooling
+tags: [context, api, versions, types, verification]
+---
+
+# API & Library Context Verification
+
+Prevent version-drift bugs and hallucinated APIs by anchoring every library call to actual project context.
+
+## Checklist Before Writing Integration Code
+1. **Check Exact Installed Versions**: inspect `package.json` / `package-lock.json` / `Cargo.toml` / `Cargo.lock` (e.g., Svelte 4 vs Svelte 5, Tauri v1 vs v2, Reqwest 0.12 vs 0.13).
+2. **Match Repo Patterns**: inspect 1-2 existing callers in the repository to match error handling, IPC wrappers, and store conventions.
+3. **Verify Schema & Types**: check TypeScript interfaces and Rust `#[derive(Serialize, Deserialize)]` DTOs side-by-side so field names and optionality match 100%.
+4. **Validate Edge Cases**: check platform guards (`#[cfg(target_os = ...)]`), nullability, and async error propagation.
+"#,
+    },
+];
+
+pub fn ensure_builtin_context_skills(db: &Database) -> Result<(), String> {
+    let existing = search_skills(
+        db,
+        &SkillsSearchQuery {
+            source_id: Some("src_curated".to_string()),
+            ..Default::default()
+        },
+    )?;
+
+    for pkg in BUILTIN_CONTEXT_SKILLS {
+        let source_url = format!("builtin://curated/{}", pkg.slug);
+        let id = stable_skill_id(&source_url, pkg.slug);
+        if existing.iter().any(|s| s.id == id && s.local_package_path.is_some()) {
+            continue;
+        }
+        let _ = ingest_skill_package(
+            db,
+            PackageIngestInput {
+                source_id: "src_curated".to_string(),
+                source_name: "Raydrop Curated Catalog".to_string(),
+                provider_type: "curated".to_string(),
+                source_url,
+                source_path: None,
+                repository_url: None,
+                branch: None,
+                commit_sha: None,
+                license_hint: Some("MIT".to_string()),
+                fallback_name: pkg.slug.to_string(),
+                files: vec![RawSkillFile {
+                    relative_path: "SKILL.md".to_string(),
+                    bytes: pkg.skill_md.as_bytes().to_vec(),
+                    is_executable: false,
+                }],
+            },
+        )?;
+    }
     Ok(())
 }
 

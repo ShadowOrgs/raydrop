@@ -5,8 +5,10 @@ use super::{
 use crate::db::storage::Database;
 use crate::skills::models::SkillRecord;
 use crate::skills::parser::validate_relative_path;
-use std::io::Read;
+use crate::skills::storage::{get_skill_by_id, get_skill_files};
+use std::io::{Read, Write};
 use std::path::Path;
+use zip::write::SimpleFileOptions;
 
 pub fn import_zip_archive(db: &Database, zip_path: &str) -> Result<SkillRecord, String> {
     let path = Path::new(zip_path);
@@ -141,6 +143,50 @@ pub fn import_zip_archive(db: &Database, zip_path: &str) -> Result<SkillRecord, 
             files: stripped_entries,
         },
     )
+}
+
+/// Packages a managed skill into a portable `.zip` archive ready for P2P sharing.
+pub fn export_skill_to_zip(db: &Database, skill_id: &str) -> Result<String, String> {
+    let skill = get_skill_by_id(db, skill_id)?
+        .ok_or_else(|| format!("Skill not found: {}", skill_id))?;
+    let files = get_skill_files(db, skill_id)?;
+    if files.is_empty() {
+        return Err("Skill package has no local files yet. Fetch or import it first before sharing.".to_string());
+    }
+
+    let shared_dir = db.data_dir().join("skills_shared");
+    std::fs::create_dir_all(&shared_dir)
+        .map_err(|e| format!("Failed creating skills_shared dir: {}", e))?;
+
+    let zip_path = shared_dir.join(format!("{}-skill.zip", skill.slug));
+    let file = std::fs::File::create(&zip_path)
+        .map_err(|e| format!("Failed creating ZIP file: {}", e))?;
+    let mut writer = zip::ZipWriter::new(file);
+    let options = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    for f in &files {
+        let clean_rel = validate_relative_path(&f.relative_path)?;
+        let entry_name = format!(
+            "{}/{}",
+            skill.slug,
+            clean_rel.to_string_lossy().replace('\\', "/")
+        );
+        let bytes = std::fs::read(&f.storage_path)
+            .map_err(|e| format!("Failed reading '{}': {}", f.relative_path, e))?;
+        writer
+            .start_file(&entry_name, options)
+            .map_err(|e| format!("Failed starting ZIP entry '{}': {}", entry_name, e))?;
+        writer
+            .write_all(&bytes)
+            .map_err(|e| format!("Failed writing ZIP entry '{}': {}", entry_name, e))?;
+    }
+
+    writer
+        .finish()
+        .map_err(|e| format!("Failed finalizing ZIP archive: {}", e))?;
+
+    Ok(zip_path.to_string_lossy().to_string())
 }
 
 #[cfg(test)]

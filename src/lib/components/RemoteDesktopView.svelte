@@ -441,7 +441,7 @@
   });
 
   function syncKeyboardLockState() {
-    const shouldLock = isClientConnected && lockKeyboardToHost;
+    const shouldLock = isClientConnected && (lockKeyboardToHost || $remoteSessionMode === "game");
     raydropApi.setClientKeyboardLock(shouldLock).catch(() => {});
     if (shouldLock && isFullscreen) {
       if (typeof navigator !== "undefined" && (navigator as any).keyboard?.lock) {
@@ -454,7 +454,7 @@
     }
   }
 
-  $: if (isClientConnected || !isClientConnected || lockKeyboardToHost || !lockKeyboardToHost) {
+  $: if (isClientConnected || !isClientConnected || lockKeyboardToHost || !lockKeyboardToHost || $remoteSessionMode) {
     syncKeyboardLockState();
   }
 
@@ -2303,8 +2303,14 @@
           </div>
           <button
             type="button"
-            on:click={() => (isConnectPinModalOpen = false)}
-            class="p-1 rounded text-slate-400 hover:text-white"
+            on:click={() => {
+              if ($remoteConnectionStatus === "verifying_pin" || $remoteConnectionStatus === "connecting") {
+                disconnectRemoteSession();
+              }
+              remoteErrorMessage.set(null);
+              isConnectPinModalOpen = false;
+            }}
+            class="p-1 rounded text-slate-400 hover:text-white cursor-pointer"
           >
             <X class="w-4 h-4" />
           </button>
@@ -2404,7 +2410,13 @@
               </button>
               <button
                 type="button"
-                on:click={() => (isConnectPinModalOpen = false)}
+                on:click={() => {
+                  if ($remoteConnectionStatus === "verifying_pin" || $remoteConnectionStatus === "connecting") {
+                    disconnectRemoteSession();
+                  }
+                  remoteErrorMessage.set(null);
+                  isConnectPinModalOpen = false;
+                }}
                 class="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white text-xs border border-slate-800 transition cursor-pointer"
               >
                 Cancel

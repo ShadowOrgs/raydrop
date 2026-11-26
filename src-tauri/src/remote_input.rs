@@ -259,9 +259,65 @@ mod client_kbd_hook {
     }
 }
 
+#[cfg(target_os = "windows")]
+mod client_gamebar_guard {
+    use std::sync::Mutex;
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE};
+    use winreg::RegKey;
+
+    static PREV_USE_NEXUS: Mutex<Option<Option<u32>>> = Mutex::new(None);
+
+    pub fn set_suppressed(suppress: bool) {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        if suppress {
+            if let Ok(mut guard) = PREV_USE_NEXUS.lock() {
+                if guard.is_none() {
+                    let prev_val = hkcu
+                        .open_subkey_with_flags("Software\\Microsoft\\GameBar", KEY_READ)
+                        .ok()
+                        .and_then(|k| k.get_value::<u32, _>("UseNexusForGameBarEnabled").ok());
+                    *guard = Some(prev_val);
+                }
+            }
+            if let Ok((key, _)) = hkcu.create_subkey_with_flags("Software\\Microsoft\\GameBar", KEY_WRITE) {
+                let _ = key.set_value("UseNexusForGameBarEnabled", &0u32);
+            }
+        } else {
+            restore();
+        }
+    }
+
+    pub fn restore() {
+        if let Ok(mut guard) = PREV_USE_NEXUS.lock() {
+            if let Some(prev_opt) = guard.take() {
+                if let Ok(key) = hkcu_gamebar_write() {
+                    match prev_opt {
+                        Some(v) => {
+                            let _ = key.set_value("UseNexusForGameBarEnabled", &v);
+                        }
+                        None => {
+                            let _ = key.delete_value("UseNexusForGameBarEnabled");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn hkcu_gamebar_write() -> std::io::Result<RegKey> {
+        RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags("Software\\Microsoft\\GameBar", KEY_WRITE)
+    }
+}
+
+pub fn restore_client_gamebar_setting() {
+    #[cfg(target_os = "windows")]
+    client_gamebar_guard::restore();
+}
+
 pub fn set_client_keyboard_lock(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        client_gamebar_guard::set_suppressed(enabled);
         client_kbd_hook::set_enabled(app, enabled)
     }
     #[cfg(not(target_os = "windows"))]
@@ -1126,6 +1182,10 @@ pub fn release_all_modifiers() {
 /// Sets whether the host system cursor is hidden (transparent) during remote desktop sessions,
 /// completely preventing the host cursor from being baked into the screen capture video stream.
 pub fn set_host_cursor_hidden(hidden: bool) {
+    #[cfg(target_os = "windows")]
+    {
+        crate::remote_capture::DRAW_HOST_CURSOR.store(!hidden, std::sync::atomic::Ordering::Release);
+    }
     #[cfg(target_os = "windows")]
     unsafe {
         if hidden {

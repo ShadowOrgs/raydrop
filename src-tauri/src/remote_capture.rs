@@ -10,6 +10,7 @@ static CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
 static FRAME_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static RESET_FRAME_HASH: AtomicBool = AtomicBool::new(false);
 static LAST_EMIT_EPOCH_MS: AtomicU64 = AtomicU64::new(0);
+pub static DRAW_HOST_CURSOR: AtomicBool = AtomicBool::new(false);
 static CAPTURE_BOUNDS: Mutex<Option<(i32, i32, i32, i32)>> = Mutex::new(None);
 
 fn now_epoch_ms() -> u64 {
@@ -404,6 +405,59 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
                     };
 
                     if ok != 0 {
+                        if DRAW_HOST_CURSOR.load(Ordering::Acquire) {
+                            let mut ci = win_gdi::CURSORINFO {
+                                cb_size: std::mem::size_of::<win_gdi::CURSORINFO>() as u32,
+                                flags: 0,
+                                h_cursor: 0,
+                                pt_screen_pos: win_gdi::POINT { x: 0, y: 0 },
+                            };
+                            if win_gdi::GetCursorInfo(&mut ci) != 0
+                                && (ci.flags & 0x0000_0001) != 0
+                                && ci.h_cursor != 0
+                            {
+                                let cx = ci.pt_screen_pos.x;
+                                let cy = ci.pt_screen_pos.y;
+                                if cx >= src_x
+                                    && cx < src_x + src_w
+                                    && cy >= src_y
+                                    && cy < src_y + src_h
+                                {
+                                    let mut ii = win_gdi::ICONINFO {
+                                        f_icon: 0,
+                                        x_hotspot: 0,
+                                        y_hotspot: 0,
+                                        hbm_mask: 0,
+                                        hbm_color: 0,
+                                    };
+                                    let (hx, hy) = if win_gdi::GetIconInfo(ci.h_cursor, &mut ii) != 0 {
+                                        if ii.hbm_mask != 0 {
+                                            win_gdi::DeleteObject(ii.hbm_mask);
+                                        }
+                                        if ii.hbm_color != 0 {
+                                            win_gdi::DeleteObject(ii.hbm_color);
+                                        }
+                                        (ii.x_hotspot as i32, ii.y_hotspot as i32)
+                                    } else {
+                                        (0, 0)
+                                    };
+                                    let draw_x = ((cx - hx - src_x) * dst_w) / src_w.max(1);
+                                    let draw_y = ((cy - hy - src_y) * dst_h) / src_h.max(1);
+                                    win_gdi::DrawIconEx(
+                                        hdc_mem,
+                                        draw_x,
+                                        draw_y,
+                                        ci.h_cursor,
+                                        0,
+                                        0,
+                                        0,
+                                        0,
+                                        0x0003,
+                                    );
+                                }
+                            }
+                        }
+
                         let mut bmi = win_gdi::BITMAPINFO {
                             bmi_header: win_gdi::BITMAPINFOHEADER {
                                 bi_size: std::mem::size_of::<win_gdi::BITMAPINFOHEADER>() as u32,

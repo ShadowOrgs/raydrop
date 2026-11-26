@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { X, FolderOpen, ShieldAlert, CheckCircle2, AlertTriangle, Download } from "lucide-svelte";
+  import { X, FolderOpen, ShieldAlert, CheckCircle2, AlertTriangle, Download, Loader2 } from "lucide-svelte";
   import {
     skillsApi,
     type SkillAgentRecord,
@@ -296,9 +296,23 @@
         on:click={runInstall}
         class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
       >
-        <Download class="w-3.5 h-3.5" />
-        {installing ? "Installing..." : "Confirm Install"}
+        {#if installing}
+          <Loader2 class="w-3.5 h-3.5 animate-spin" />
+          <span>Installing...</span>
+        {:else}
+          <Download class="w-3.5 h-3.5" />
+          <span>Confirm Install</span>
+        {/if}
       </button>
     </div>
   </div>
 </div>
+
+<style>
+  button {
+    transition: transform 0.12s ease, background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  button:active:not(:disabled) {
+    transform: scale(0.94);
+  }
+</style>

@@ -65,6 +65,7 @@ let authRetryTimer: any = null;
 let pendingIceCandidates: RTCIceCandidateInit[] = [];
 let isListenerInitialized = false;
 let authTimeoutTimer: any = null;
+let authRetryTimer2: any = null;
 const recentSignalKeys = new Set<string>();
 
 function isDuplicateSignal(sessionId: string, type: string): boolean {
@@ -84,6 +85,10 @@ function clearAuthTimer() {
   if (authRetryTimer) {
     clearTimeout(authRetryTimer);
     authRetryTimer = null;
+  }
+  if (authRetryTimer2) {
+    clearTimeout(authRetryTimer2);
+    authRetryTimer2 = null;
   }
 }
 
@@ -567,8 +572,9 @@ async function proceedHostAcceptRemote(
   });
   remoteConnectionStatus.set('connected');
 
-  // Hide host OS cursor so screen capture frames have zero baked cursor (no double cursor on client)
-  raydropApi.setHostCursorHidden(true).catch(() => { });
+  // In Desktop Mode, hide host OS cursor so screen capture frames have zero baked cursor (no double cursor).
+  // In Game Mode, client uses pointer lock (hides local cursor), so keep Host OS cursor visible!
+  raydropApi.setHostCursorHidden(get(remoteSessionMode) !== 'game').catch(() => { });
 
   // Reset any stuck modifier keys from previous session
   raydropApi.releaseRemoteModifiers().catch(() => { });
@@ -1172,7 +1178,7 @@ export async function connectToRemoteHost(targetDeviceId: string, pin: string) {
     const sess = get(activeRemoteSession);
     if (sess?.sessionId === sessionId && get(remoteConnectionStatus) === 'verifying_pin') {
       sendRemoteSignal(targetDeviceId, sessionId, authPayload);
-      setTimeout(() => {
+      authRetryTimer2 = setTimeout(() => {
         const sess2 = get(activeRemoteSession);
         if (sess2?.sessionId === sessionId && get(remoteConnectionStatus) === 'verifying_pin') {
           sendRemoteSignal(targetDeviceId, sessionId, authPayload);
@@ -1682,9 +1688,12 @@ export function disconnectRemoteSession() {
     });
   }
 
+  const prevStatus = get(remoteConnectionStatus);
   cleanupPeerConnection();
   activeRemoteSession.set(null);
-  remoteConnectionStatus.set('disconnected');
+  remoteConnectionStatus.set(
+    prevStatus === 'verifying_pin' || prevStatus === 'connecting' ? 'idle' : 'disconnected'
+  );
   remoteLatencyMs.set(0);
   remoteStreamFps.set(0);
   remoteStreamMbps.set(0);

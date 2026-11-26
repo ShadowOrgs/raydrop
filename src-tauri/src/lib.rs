@@ -772,6 +772,7 @@ pub fn run() {
             skills::commands::skills_preview_file,
             skills::commands::skills_import_local_folder,
             skills::commands::skills_import_zip,
+            skills::commands::skills_export_zip,
             skills::commands::skills_discover_github,
             skills::commands::skills_import_github,
             skills::commands::skills_delete,
@@ -807,6 +808,7 @@ pub fn run() {
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 crate::remote_input::set_host_cursor_hidden(false);
+                crate::remote_input::restore_client_gamebar_setting();
                 crate::remote_audio::stop_host_audio_loopback();
                 crate::remote_capture::stop_native_screen_capture();
                 if let Some(state_ref) = app_handle.try_state::<Arc<AppState>>() {
