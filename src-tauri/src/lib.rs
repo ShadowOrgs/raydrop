@@ -533,8 +533,10 @@ pub fn run() {
                 fsm.init_all_auto_tasks(handle_sync, state_sync);
             });
 
-            // Start Local Loopback Server for Chrome/Edge Browser Extension (IDM mode)
-            browser_bridge::start_browser_bridge_daemon(handle, state_for_setup);
+            // Start Local Loopback Server for Chrome/Edge Browser Extension (IDM mode, user session only)
+            if !is_system_agent {
+                browser_bridge::start_browser_bridge_daemon(handle, state_for_setup);
+            }
 
             Ok(())
         })

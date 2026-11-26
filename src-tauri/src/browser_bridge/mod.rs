@@ -54,31 +54,35 @@ pub struct ExtensionDownloadRequest {
 pub fn start_browser_bridge_daemon(app: AppHandle, state: Arc<AppState>) {
     tauri::async_runtime::spawn(async move {
         let addr = format!("127.0.0.1:{}", BROWSER_BRIDGE_PORT);
-        let listener = match TcpListener::bind(&addr).await {
-            Ok(l) => {
-                info!("Raydrop Browser Extension Bridge listening on http://{}", addr);
-                l
-            }
-            Err(e) => {
-                warn!("Could not bind Browser Extension Bridge on {}: {}", addr, e);
-                return;
-            }
-        };
-
         loop {
-            match listener.accept().await {
-                Ok((mut socket, _)) => {
-                    let app_c = app.clone();
-                    let state_c = state.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = handle_extension_client(&mut socket, app_c, state_c).await;
-                    });
+            let listener = match TcpListener::bind(&addr).await {
+                Ok(l) => {
+                    info!("Raydrop Browser Extension Bridge listening on http://{}", addr);
+                    l
                 }
                 Err(e) => {
-                    warn!("Browser Extension Bridge accept error: {}", e);
-                    break;
+                    warn!("Could not bind Browser Extension Bridge on {} (retrying in 2s): {}", addr, e);
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    continue;
+                }
+            };
+
+            loop {
+                match listener.accept().await {
+                    Ok((mut socket, _)) => {
+                        let app_c = app.clone();
+                        let state_c = state.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = handle_extension_client(&mut socket, app_c, state_c).await;
+                        });
+                    }
+                    Err(e) => {
+                        warn!("Browser Extension Bridge accept error (re-binding): {}", e);
+                        break;
+                    }
                 }
             }
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     });
 }

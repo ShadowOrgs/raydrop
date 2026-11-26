@@ -323,6 +323,7 @@ async function startNativeCanvasStream(): Promise<MediaStream | null> {
     }
 
     pendingFrameDraw = false;
+    await raydropApi.stopNativeScreenCapture().catch(() => { });
     await raydropApi.startNativeScreenCapture();
     const stream = nativeCanvasEl.captureStream(24);
     return stream;
@@ -531,6 +532,12 @@ async function proceedHostAcceptRemote(
   sessionId: string,
   clientAlias: string
 ) {
+  // Clean up any stale/lingering previous session before starting a new one
+  if (activePeerConnection || get(activeRemoteSession)) {
+    cleanupPeerConnection();
+    stopHostScreenCapture();
+  }
+
   // Ensure host screen stream is ready (auto-selects screen with cursor: 'never')
   const stream = await acquireHostScreenStream();
   if (!stream) {
@@ -670,6 +677,7 @@ async function setupHostPeerConnection(
 ) {
   cleanupPeerConnection();
 
+  pendingIceCandidates = [];
   const pc = new RTCPeerConnection(ICE_SERVERS);
   activePeerConnection = pc;
 

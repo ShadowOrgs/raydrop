@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter};
 
 static CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
 static FRAME_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+static RESET_FRAME_HASH: AtomicBool = AtomicBool::new(false);
 static LAST_EMIT_EPOCH_MS: AtomicU64 = AtomicU64::new(0);
 static CAPTURE_BOUNDS: Mutex<Option<(i32, i32, i32, i32)>> = Mutex::new(None);
 
@@ -34,6 +35,7 @@ pub fn is_native_capture_active() -> bool {
 
 pub fn start_native_screen_capture(app: AppHandle) -> Result<(), String> {
     FRAME_IN_FLIGHT.store(false, Ordering::Release);
+    RESET_FRAME_HASH.store(true, Ordering::Release);
     if CAPTURE_ACTIVE.swap(true, Ordering::SeqCst) {
         return Ok(()); // Already running
     }
@@ -202,8 +204,8 @@ fn detect_cursor_css_shape() -> &'static str {
 #[cfg(target_os = "windows")]
 fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
     use base64::Engine;
-    use image::codecs::png::{CompressionType, FilterType, PngEncoder};
-    use image::{ExtendedColorType, ImageEncoder};
+    use image::codecs::jpeg::JpegEncoder;
+    use image::ExtendedColorType;
 
     const SRCCOPY: u32 = 0x00CC0020;
     const HALFTONE: i32 = 4;
@@ -218,6 +220,9 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
 
     while CAPTURE_ACTIVE.load(Ordering::Relaxed) {
         let loop_start = std::time::Instant::now();
+        if RESET_FRAME_HASH.swap(false, Ordering::AcqRel) {
+            last_frame_hash = 0;
+        }
 
         let cursor_shape = detect_cursor_css_shape();
         if cursor_shape != last_cursor_shape {
@@ -341,13 +346,9 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
                                 }
 
                                 jpeg_buf.clear();
-                                let encoder = PngEncoder::new_with_quality(
-                                    &mut jpeg_buf,
-                                    CompressionType::Fast,
-                                    FilterType::NoFilter,
-                                );
+                                let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buf, 94);
                                 if encoder
-                                    .write_image(&rgb, dst_w as u32, dst_h as u32, ExtendedColorType::Rgb8)
+                                    .encode(&rgb, dst_w as u32, dst_h as u32, ExtendedColorType::Rgb8)
                                     .is_ok()
                                 {
                                     let b64 = base64::engine::general_purpose::STANDARD.encode(&jpeg_buf);
@@ -359,6 +360,10 @@ fn run_windows_capture_loop(app: AppHandle) -> Result<(), String> {
                                 }
                             }
                         }
+                    } else {
+                        // Desktop transition (Winlogon <-> Default) or UAC prompt: switch desktop immediately
+                        crate::win_service::switch_to_active_input_desktop();
+                        last_frame_hash = 0;
                     }
 
                     win_gdi::SelectObject(hdc_mem, old_obj);
@@ -418,6 +423,9 @@ pub fn spawn_second_screen_gdi_capture(
                 }
 
                 let loop_start = std::time::Instant::now();
+        if RESET_FRAME_HASH.swap(false, Ordering::AcqRel) {
+            last_frame_hash = 0;
+        }
                 let idx = monitor_index.load(Ordering::Relaxed);
                 if idx != last_monitor_idx {
                     last_monitor_idx = idx;
