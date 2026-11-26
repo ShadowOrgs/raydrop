@@ -4365,7 +4365,7 @@ pub fn get_local_mac_address(_local_ip: &str) -> Option<String> {
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
-        let _ = local_ip;
+        let _ = _local_ip;
         None
     }
 }
