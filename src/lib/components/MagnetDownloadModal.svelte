@@ -208,7 +208,7 @@
     on:click|self={handleClose}
   >
     <div
-      class="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-5 sm:p-6 space-y-5 text-white animate-in zoom-in-95 duration-200"
+      class="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-5 sm:p-6 space-y-5 text-white animate-in zoom-in-95 duration-200"
     >
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-slate-800/80 pb-3.5">

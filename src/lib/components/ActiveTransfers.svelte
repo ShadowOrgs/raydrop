@@ -2118,7 +2118,7 @@
       on:click|self={() => (selectedStatusDetail = null)}
     >
       <div
-        class="w-full max-w-md bg-slate-900 border {isFailed
+        class="w-full max-w-md max-h-[90vh] overflow-y-auto bg-slate-900 border {isFailed
           ? 'border-rose-500/40'
           : isRejected
             ? 'border-amber-500/40'

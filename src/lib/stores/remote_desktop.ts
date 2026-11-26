@@ -8,6 +8,7 @@ import { playAppSound } from './presence';
 // ICE Servers for WebRTC peer connection (lean pool for fast startup)
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
+    { urls: 'stun:stun.raydrop.web.id:3478' },
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
   ],
@@ -66,6 +67,7 @@ let pendingIceCandidates: RTCIceCandidateInit[] = [];
 let isListenerInitialized = false;
 let authTimeoutTimer: any = null;
 let authRetryTimer2: any = null;
+let iceWatchdogTimer: any = null;
 const recentSignalKeys = new Set<string>();
 
 function isDuplicateSignal(sessionId: string, type: string): boolean {
@@ -755,9 +757,33 @@ async function setupHostPeerConnection(
     }
   };
 
+  pc.oniceconnectionstatechange = () => {
+    if (activePeerConnection !== pc) return;
+    if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+      if (iceWatchdogTimer) {
+        clearTimeout(iceWatchdogTimer);
+        iceWatchdogTimer = null;
+      }
+    } else if (pc.iceConnectionState === 'failed') {
+      disconnectRemoteSession();
+    }
+  };
+
+  if (iceWatchdogTimer) clearTimeout(iceWatchdogTimer);
+  iceWatchdogTimer = setTimeout(() => {
+    if (activePeerConnection === pc && pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed' && pc.connectionState !== 'connected') {
+      disconnectRemoteSession();
+    }
+  }, 15000);
+
   pc.onconnectionstatechange = () => {
     if (activePeerConnection !== pc) return;
-    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+    if (pc.connectionState === 'connected') {
+      if (iceWatchdogTimer) {
+        clearTimeout(iceWatchdogTimer);
+        iceWatchdogTimer = null;
+      }
+    } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       disconnectRemoteSession();
     } else if (pc.connectionState === 'disconnected') {
       // Restore host cursor immediately on connection drop so host isn't stuck with hidden cursor
@@ -1229,9 +1255,44 @@ async function handleIncomingOffer(
     }
   };
 
+  pc.oniceconnectionstatechange = () => {
+    if (activePeerConnection !== pc) return;
+    if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+      if (iceWatchdogTimer) {
+        clearTimeout(iceWatchdogTimer);
+        iceWatchdogTimer = null;
+      }
+    } else if (pc.iceConnectionState === 'failed') {
+      if (iceWatchdogTimer) {
+        clearTimeout(iceWatchdogTimer);
+        iceWatchdogTimer = null;
+      }
+      cleanupPeerConnection();
+      activeRemoteSession.set(null);
+      remoteConnectionStatus.set('error');
+      remoteErrorMessage.set('P2P WebRTC ICE connection failed. Check firewall or Tailscale/NAT connectivity between host and client.');
+    }
+  };
+
+  if (iceWatchdogTimer) clearTimeout(iceWatchdogTimer);
+  iceWatchdogTimer = setTimeout(() => {
+    if (activePeerConnection === pc && pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed' && pc.connectionState !== 'connected') {
+      const state = pc.iceConnectionState || pc.connectionState;
+      cleanupPeerConnection();
+      activeRemoteSession.set(null);
+      remoteConnectionStatus.set('error');
+      remoteErrorMessage.set(`P2P video handshake timed out (ICE: ${state}). Ensure both devices are updated and UDP/Tailscale is reachable.`);
+    }
+  }, 15000);
+
   pc.onconnectionstatechange = () => {
     if (activePeerConnection !== pc) return;
-    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+    if (pc.connectionState === 'connected') {
+      if (iceWatchdogTimer) {
+        clearTimeout(iceWatchdogTimer);
+        iceWatchdogTimer = null;
+      }
+    } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       const wasConnected = get(remoteConnectionStatus) === 'connected';
       cleanupPeerConnection();
       activeRemoteSession.set(null);
@@ -1638,6 +1699,10 @@ export function stopHostScreenCapture() {
 
 function cleanupPeerConnection() {
   clearAuthTimer();
+  if (iceWatchdogTimer) {
+    clearTimeout(iceWatchdogTimer);
+    iceWatchdogTimer = null;
+  }
   stopClientGamepadPolling();
   raydropApi.setHostCursorHidden(false).catch(() => { });
   raydropApi.releaseRemoteModifiers().catch(() => { });

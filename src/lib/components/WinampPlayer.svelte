@@ -86,7 +86,9 @@
   let ytLastDownloaded: { title: string; output_path: string; format: string } | null = null;
   let addedYtIds: Record<string, boolean> = {};
   let dragQueueIdx: number | null = null;
+  let dragQueueOverIdx: number | null = null;
   let dragPlaylistIdx: number | null = null;
+  let dragPlaylistOverIdx: number | null = null;
 
   let unlistenRemote: (() => void) | null = null;
   let unlistenYtdlp: (() => void) | null = null;
@@ -585,6 +587,66 @@
       delete next[item.video_id];
       addedYtIds = next;
     }, 2000);
+  }
+
+  function startQueueDrag(e: PointerEvent, idx: number) {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    e.preventDefault();
+    dragQueueIdx = idx;
+    dragQueueOverIdx = idx;
+
+    const onMove = (ev: PointerEvent) => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('[data-queue-idx]');
+      if (el) {
+        const target = Number(el.getAttribute('data-queue-idx'));
+        if (!Number.isNaN(target)) dragQueueOverIdx = target;
+      }
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      if (dragQueueIdx !== null && dragQueueOverIdx !== null && dragQueueIdx !== dragQueueOverIdx) {
+        reorderQueue(dragQueueIdx, dragQueueOverIdx);
+      }
+      dragQueueIdx = null;
+      dragQueueOverIdx = null;
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }
+
+  function startPlaylistDrag(e: PointerEvent, pIdx: number) {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    e.preventDefault();
+    dragPlaylistIdx = pIdx;
+    dragPlaylistOverIdx = pIdx;
+
+    const onMove = (ev: PointerEvent) => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('[data-playlist-idx]');
+      if (el) {
+        const target = Number(el.getAttribute('data-playlist-idx'));
+        if (!Number.isNaN(target)) dragPlaylistOverIdx = target;
+      }
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      if (dragPlaylistIdx !== null && dragPlaylistOverIdx !== null && dragPlaylistIdx !== dragPlaylistOverIdx) {
+        reorderPlaylist(dragPlaylistIdx, dragPlaylistOverIdx);
+      }
+      dragPlaylistIdx = null;
+      dragPlaylistOverIdx = null;
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   }
 
   function reorderQueue(fromIdx: number, toIdx: number) {
@@ -1137,19 +1199,16 @@
                 {#each $mediaPlayerState.queue as track, idx (track.id)}
                   <!-- svelte-ignore a11y-no-static-element-interactions -->
                   <div
-                    draggable="true"
-                    on:dragstart={() => (dragQueueIdx = idx)}
-                    on:dragover|preventDefault
-                    on:drop|preventDefault={() => {
-                      if (dragQueueIdx !== null) reorderQueue(dragQueueIdx, idx);
-                      dragQueueIdx = null;
-                    }}
-                    on:dragend={() => (dragQueueIdx = null)}
+                    data-queue-idx={idx}
                     class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg border text-xs transition active:scale-[0.99] {$mediaPlayerState.current_index === idx
                       ? 'bg-cyan-500/15 border-cyan-500/40 text-white'
-                      : 'bg-slate-900/70 border-slate-800/80 text-slate-300 hover:bg-slate-800/70'} {dragQueueIdx === idx ? 'opacity-50 border-amber-400' : ''}"
+                      : 'bg-slate-900/70 border-slate-800/80 text-slate-300 hover:bg-slate-800/70'} {dragQueueIdx === idx ? 'opacity-50 border-amber-400' : dragQueueIdx !== null && dragQueueOverIdx === idx ? 'border-cyan-400 ring-1 ring-cyan-400/50' : ''}"
                   >
-                    <span class="text-slate-500 cursor-grab active:cursor-grabbing shrink-0" title="Drag to reorder">
+                    <span
+                      on:pointerdown={(e) => startQueueDrag(e, idx)}
+                      class="text-slate-500 hover:text-slate-300 cursor-grab active:cursor-grabbing shrink-0 touch-none py-1 px-0.5"
+                      title="Drag to reorder"
+                    >
                       <GripVertical class="w-3.5 h-3.5" />
                     </span>
                     <button
@@ -1269,17 +1328,14 @@
                   {#each $selectedPlaylistItems as item, pIdx (item.id)}
                     <!-- svelte-ignore a11y-no-static-element-interactions -->
                     <div
-                      draggable="true"
-                      on:dragstart={() => (dragPlaylistIdx = pIdx)}
-                      on:dragover|preventDefault
-                      on:drop|preventDefault={() => {
-                        if (dragPlaylistIdx !== null) reorderPlaylist(dragPlaylistIdx, pIdx);
-                        dragPlaylistIdx = null;
-                      }}
-                      on:dragend={() => (dragPlaylistIdx = null)}
-                      class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs transition active:scale-[0.99] {dragPlaylistIdx === pIdx ? 'opacity-50 border-amber-400' : ''}"
+                      data-playlist-idx={pIdx}
+                      class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs transition active:scale-[0.99] {dragPlaylistIdx === pIdx ? 'opacity-50 border-amber-400' : dragPlaylistIdx !== null && dragPlaylistOverIdx === pIdx ? 'border-cyan-400 ring-1 ring-cyan-400/50' : ''}"
                     >
-                      <span class="text-slate-500 cursor-grab active:cursor-grabbing shrink-0" title="Drag to reorder">
+                      <span
+                        on:pointerdown={(e) => startPlaylistDrag(e, pIdx)}
+                        class="text-slate-500 hover:text-slate-300 cursor-grab active:cursor-grabbing shrink-0 touch-none py-1 px-0.5"
+                        title="Drag to reorder"
+                      >
                         <GripVertical class="w-3.5 h-3.5" />
                       </span>
                       <button

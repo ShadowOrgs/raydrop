@@ -15,7 +15,7 @@
   on:click|self={onClose}
 >
   <div
-    class="w-full max-w-sm bg-slate-900 border border-slate-700/80 rounded-2xl p-5 shadow-2xl space-y-4"
+    class="w-full max-w-sm max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700/80 rounded-2xl p-5 shadow-2xl space-y-4"
   >
     <div class="flex items-start justify-between gap-3">
       <div class="flex items-center gap-2.5 min-w-0">

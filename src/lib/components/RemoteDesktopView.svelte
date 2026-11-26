@@ -474,9 +474,7 @@
       saveSuccess = true;
       setTimeout(() => (saveSuccess = false), 2500);
 
-      if (hostEnabled && !$isHostSharingScreen) {
-        await startHostScreenCapture();
-      } else if (!hostEnabled && $isHostSharingScreen) {
+      if (!hostEnabled && $isHostSharingScreen) {
         stopHostScreenCapture();
       }
     } catch (err: any) {
@@ -1709,6 +1707,14 @@
           muted={isAudioMuted}
           class="{isSecondDisplayFill ? 'w-full h-full object-fill' : 'max-w-full max-h-full object-contain'} pointer-events-none select-none shadow-2xl"
         ></video>
+        {#if $remoteLatencyMs === 0 && $remoteStreamFps === 0}
+          <div class="pointer-events-none absolute inset-0 flex items-center justify-center z-20">
+            <div class="px-4 py-2.5 rounded-2xl bg-slate-900/90 border border-cyan-500/30 shadow-2xl flex items-center gap-2.5 text-xs text-slate-200 backdrop-blur-md">
+              <RefreshCw class="w-4 h-4 text-cyan-400 animate-spin" />
+              <span>Connecting P2P video stream...</span>
+            </div>
+          </div>
+        {/if}
         {#if touchpadMode && showVirtualTouchCursor && $remoteSessionMode !== "game"}
           <div
             style="left: {virtualCursorLeft}px; top: {virtualCursorTop}px;"
@@ -2553,19 +2559,23 @@
           <div>
             <div class="flex items-center justify-between mb-1">
               <span class="text-xs font-semibold text-slate-300"
-                >Host Screen Sharing:</span
+                >Host Screen Capture:</span
               >
               <span
                 class="text-[11px] {$isHostSharingScreen
                   ? 'text-emerald-400'
-                  : 'text-slate-400'} flex items-center gap-1"
+                  : hostEnabled
+                    ? 'text-cyan-400'
+                    : 'text-slate-400'} flex items-center gap-1"
               >
                 <span
                   class="w-2 h-2 rounded-full {$isHostSharingScreen
                     ? 'bg-emerald-400 animate-pulse'
-                    : 'bg-slate-600'}"
+                    : hostEnabled
+                      ? 'bg-cyan-400'
+                      : 'bg-slate-600'}"
                 ></span>
-                {$isHostSharingScreen ? "Active & Ready" : "Standby"}
+                {$isHostSharingScreen ? "Streaming" : hostEnabled ? "Auto-Start Ready" : "Disabled"}
               </span>
             </div>
             <div
@@ -2573,26 +2583,13 @@
             >
               <div class="text-[11px] text-slate-400">
                 {#if $isHostSharingScreen}
-                  Screen capture active. Clients connect seamlessly.
+                  Screen capture is actively streaming to the connected client.
+                {:else if hostEnabled}
+                  Screen capture starts automatically when a client connects.
                 {:else}
-                  Warm up capture for instant unattended remote control.
+                  Enable Allow Remote Access above to accept remote connections.
                 {/if}
               </div>
-              <button
-                type="button"
-                on:click={handleToggleScreenCapture}
-                class="ml-2 px-2.5 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1.5 cursor-pointer {$isHostSharingScreen
-                  ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border-rose-500/40'
-                  : 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border-cyan-500/40'}"
-              >
-                {#if $isHostSharingScreen}
-                  <Square class="w-3 h-3 fill-rose-300" />
-                  <span>Stop Capture</span>
-                {:else}
-                  <MonitorPlay class="w-3.5 h-3.5 text-cyan-300" />
-                  <span>Start Capture</span>
-                {/if}
-              </button>
             </div>
           </div>
 

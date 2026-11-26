@@ -1443,7 +1443,7 @@
     class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
   >
     <div
-      class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl"
+      class="w-full max-w-md max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl"
     >
       <h3 class="text-base font-bold text-white">Add Contact by Email</h3>
       <p class="text-xs text-slate-400 mt-1">
@@ -1494,7 +1494,7 @@
     class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 select-none"
   >
     <div
-      class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
+      class="w-full max-w-md max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
     >
       <div class="flex items-center justify-between pb-3 border-b border-slate-800">
         <div class="flex items-center gap-2">
