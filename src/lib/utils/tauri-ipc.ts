@@ -1064,6 +1064,8 @@ export const raydropApi = {
   }) => invoke<MediaPlaylistItem>('media_add_playlist_item', params),
   mediaRemovePlaylistItem: (itemId: string) =>
     invoke<void>('media_remove_playlist_item', { itemId }),
+  mediaReorderPlaylistItems: (playlistId: string, itemIds: string[]) =>
+    invoke<void>('media_reorder_playlist_items', { playlistId, itemIds }),
   getAiMcpConfig: () => invoke<AiMcpConfig>('get_ai_mcp_config'),
   saveAiMcpConfig: (config: AiMcpConfig) =>
     invoke<AiMcpConfig>('save_ai_mcp_config', { config }),

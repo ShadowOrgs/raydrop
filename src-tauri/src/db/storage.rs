@@ -2156,6 +2156,27 @@ impl Database {
             .map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    pub fn reorder_media_playlist_items(
+        &self,
+        playlist_id: &str,
+        ordered_item_ids: &[String],
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        for (pos, item_id) in ordered_item_ids.iter().enumerate() {
+            conn.execute(
+                "UPDATE media_playlist_items SET position = ?1 WHERE id = ?2 AND playlist_id = ?3",
+                params![pos as i64, item_id, playlist_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        let now = now_unix_secs();
+        let _ = conn.execute(
+            "UPDATE media_playlists SET updated_at = ?1 WHERE id = ?2",
+            params![now as i64, playlist_id],
+        );
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

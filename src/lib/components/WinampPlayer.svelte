@@ -30,6 +30,8 @@
     Download,
     FolderOpen,
     CheckCircle2,
+    Check,
+    GripVertical,
   } from "lucide-svelte";
   import {
     raydropApi,
@@ -82,6 +84,9 @@
   let ytDownloadPercent = 0;
   let ytDownloadStatusText = "";
   let ytLastDownloaded: { title: string; output_path: string; format: string } | null = null;
+  let addedYtIds: Record<string, boolean> = {};
+  let dragQueueIdx: number | null = null;
+  let dragPlaylistIdx: number | null = null;
 
   let unlistenRemote: (() => void) | null = null;
   let unlistenYtdlp: (() => void) | null = null;
@@ -567,6 +572,46 @@
     if (get(selectedPlaylistId) === pid) {
       await loadPlaylistItems(pid);
     }
+    addedYtIds = { ...addedYtIds, [item.video_id]: true };
+    setTimeout(() => {
+      const next = { ...addedYtIds };
+      delete next[item.video_id];
+      addedYtIds = next;
+    }, 2000);
+  }
+
+  function reorderQueue(fromIdx: number, toIdx: number) {
+    if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
+    mediaPlayerState.update((s) => {
+      const nextQueue = [...s.queue];
+      if (fromIdx >= nextQueue.length || toIdx >= nextQueue.length) return s;
+      const [moved] = nextQueue.splice(fromIdx, 1);
+      nextQueue.splice(toIdx, 0, moved);
+      const curId = s.current_track?.id;
+      const newCurIdx = curId ? nextQueue.findIndex((t) => t.id === curId) : s.current_index;
+      return {
+        ...s,
+        queue: nextQueue,
+        current_index: newCurIdx !== null && newCurIdx >= 0 ? newCurIdx : s.current_index,
+      };
+    });
+    syncBackend(true);
+  }
+
+  async function reorderPlaylist(fromIdx: number, toIdx: number) {
+    const pid = get(selectedPlaylistId);
+    if (!pid || fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
+    const items = [...get(selectedPlaylistItems)];
+    if (fromIdx >= items.length || toIdx >= items.length) return;
+    const [moved] = items.splice(fromIdx, 1);
+    items.splice(toIdx, 0, moved);
+    selectedPlaylistItems.set(items);
+    await raydropApi
+      .mediaReorderPlaylistItems(
+        pid,
+        items.map((i) => i.id),
+      )
+      .catch(() => {});
   }
 
   async function handleCreatePlaylist() {
@@ -715,7 +760,7 @@
 <div
   style="left: {posX}px; top: {posY}px;"
   class:hidden={!$winampPlayerOpen}
-  class="fixed z-[75] w-[420px] max-w-[calc(100vw-16px)] rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-cyan-500/35 shadow-2xl shadow-black/70 overflow-hidden select-none text-slate-100"
+  class="fixed z-[75] w-[420px] max-w-[calc(100vw-16px)] max-h-[calc(100vh-24px)] flex flex-col rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-cyan-500/35 shadow-2xl shadow-black/70 overflow-hidden select-none text-slate-100"
 >
     <!-- Winamp Title Bar (Draggable) -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -771,7 +816,7 @@
     >
       <video
         bind:this={mediaEl}
-        class="w-full aspect-video bg-black cursor-pointer"
+        class="w-full max-h-52 aspect-video bg-black cursor-pointer object-contain"
         playsinline
         controls={$mediaPlayerState.video_mode}
         on:dblclick={toggleVideoFullscreen}
@@ -972,7 +1017,7 @@
 
     <!-- Drawer Tabs: Queue | Playlists | YouTube Music -->
     {#if !minimizedBar}
-      <div class="border-t border-slate-800 bg-slate-900/60">
+      <div class="border-t border-slate-800 bg-slate-900/60 min-h-0 flex-1 flex flex-col overflow-hidden">
         <!-- Quick YTMusic Search + Add Local always accessible at the top -->
         <div class="px-3 pt-2.5 pb-2 border-b border-slate-800/80 flex items-center gap-1.5">
           <div class="flex-1 flex items-center gap-1 bg-slate-950 border border-slate-700/90 rounded-lg px-2 py-1 focus-within:border-amber-500">
@@ -1045,7 +1090,7 @@
           </button>
         </div>
 
-        <div class="p-3 max-h-60 overflow-y-auto space-y-2">
+        <div class="p-3 flex-1 min-h-0 max-h-60 overflow-y-auto space-y-2">
           {#if activeTab === "queue"}
             <div class="flex items-center justify-between gap-2">
               <button
@@ -1083,15 +1128,27 @@
             {:else}
               <div class="space-y-1">
                 {#each $mediaPlayerState.queue as track, idx (track.id)}
+                  <!-- svelte-ignore a11y-no-static-element-interactions -->
                   <div
-                    class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg border text-xs {$mediaPlayerState.current_index === idx
+                    draggable="true"
+                    on:dragstart={() => (dragQueueIdx = idx)}
+                    on:dragover|preventDefault
+                    on:drop|preventDefault={() => {
+                      if (dragQueueIdx !== null) reorderQueue(dragQueueIdx, idx);
+                      dragQueueIdx = null;
+                    }}
+                    on:dragend={() => (dragQueueIdx = null)}
+                    class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg border text-xs transition active:scale-[0.99] {$mediaPlayerState.current_index === idx
                       ? 'bg-cyan-500/15 border-cyan-500/40 text-white'
-                      : 'bg-slate-900/70 border-slate-800/80 text-slate-300 hover:bg-slate-800/70'}"
+                      : 'bg-slate-900/70 border-slate-800/80 text-slate-300 hover:bg-slate-800/70'} {dragQueueIdx === idx ? 'opacity-50 border-amber-400' : ''}"
                   >
+                    <span class="text-slate-500 cursor-grab active:cursor-grabbing shrink-0" title="Drag to reorder">
+                      <GripVertical class="w-3.5 h-3.5" />
+                    </span>
                     <button
                       type="button"
                       on:click={() => playTrack(track, idx)}
-                      class="flex-1 min-w-0 text-left flex items-center gap-2 cursor-pointer"
+                      class="flex-1 min-w-0 text-left flex items-center gap-2 cursor-pointer active:scale-[0.98] transition-transform"
                     >
                       <span class="text-[10px] font-mono text-slate-500 w-4 shrink-0">{idx + 1}.</span>
                       {#if track.thumbnail_url}
@@ -1202,12 +1259,26 @@
                 </div>
 
                 <div class="space-y-1">
-                  {#each $selectedPlaylistItems as item (item.id)}
-                    <div class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs">
+                  {#each $selectedPlaylistItems as item, pIdx (item.id)}
+                    <!-- svelte-ignore a11y-no-static-element-interactions -->
+                    <div
+                      draggable="true"
+                      on:dragstart={() => (dragPlaylistIdx = pIdx)}
+                      on:dragover|preventDefault
+                      on:drop|preventDefault={() => {
+                        if (dragPlaylistIdx !== null) reorderPlaylist(dragPlaylistIdx, pIdx);
+                        dragPlaylistIdx = null;
+                      }}
+                      on:dragend={() => (dragPlaylistIdx = null)}
+                      class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs transition active:scale-[0.99] {dragPlaylistIdx === pIdx ? 'opacity-50 border-amber-400' : ''}"
+                    >
+                      <span class="text-slate-500 cursor-grab active:cursor-grabbing shrink-0" title="Drag to reorder">
+                        <GripVertical class="w-3.5 h-3.5" />
+                      </span>
                       <button
                         type="button"
                         on:click={() => playTrack(playlistItemToTrack(item))}
-                        class="flex-1 min-w-0 text-left flex items-center gap-2 text-slate-200 hover:text-cyan-300 cursor-pointer"
+                        class="flex-1 min-w-0 text-left flex items-center gap-2 text-slate-200 hover:text-cyan-300 cursor-pointer active:scale-[0.98] transition-transform"
                       >
                         {#if item.thumbnail_url}
                           <img
@@ -1317,7 +1388,7 @@
                     <button
                       type="button"
                       on:click={() => playTrack(ytItemToTrack(item))}
-                      class="p-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 cursor-pointer"
+                      class="p-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 cursor-pointer active:scale-90 transition-all"
                       title="Play Now"
                     >
                       <Play class="w-3 h-3" />
@@ -1326,7 +1397,7 @@
                       type="button"
                       disabled={!!ytDownloadingKey}
                       on:click={() => handleYtDownload(item, "mp3")}
-                      class="px-1.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold flex items-center gap-0.5 cursor-pointer disabled:opacity-40"
+                      class="px-1.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold flex items-center gap-0.5 cursor-pointer active:scale-90 transition-all disabled:opacity-40"
                       title="Download Audio (MP3)"
                     >
                       {#if ytDownloadingKey === `${item.video_id}-mp3`}
@@ -1340,7 +1411,7 @@
                       type="button"
                       disabled={!!ytDownloadingKey}
                       on:click={() => handleYtDownload(item, "mp4")}
-                      class="px-1.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-[10px] font-bold flex items-center gap-0.5 cursor-pointer disabled:opacity-40"
+                      class="px-1.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-[10px] font-bold flex items-center gap-0.5 cursor-pointer active:scale-90 transition-all disabled:opacity-40"
                       title="Download Video (MP4)"
                     >
                       {#if ytDownloadingKey === `${item.video_id}-mp4`}
@@ -1353,10 +1424,16 @@
                     <button
                       type="button"
                       on:click={() => handleAddYtToPlaylist(item)}
-                      class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
-                      title="Add to Playlist"
+                      class="p-1.5 rounded-lg border cursor-pointer active:scale-90 transition-all {addedYtIds[item.video_id]
+                        ? 'bg-emerald-500/25 border-emerald-500/50 text-emerald-300'
+                        : 'bg-slate-800 hover:bg-slate-700 border-transparent text-slate-300'}"
+                      title={addedYtIds[item.video_id] ? "Added to Playlist!" : "Add to Playlist"}
                     >
-                      <Plus class="w-3 h-3" />
+                      {#if addedYtIds[item.video_id]}
+                        <Check class="w-3 h-3" />
+                      {:else}
+                        <Plus class="w-3 h-3" />
+                      {/if}
                     </button>
                   </div>
                 </div>

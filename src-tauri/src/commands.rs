@@ -4990,6 +4990,15 @@ pub fn media_remove_playlist_item(
     state.db.remove_media_playlist_item(&item_id)
 }
 
+#[tauri::command]
+pub fn media_reorder_playlist_items(
+    state: State<'_, Arc<AppState>>,
+    playlist_id: String,
+    item_ids: Vec<String>,
+) -> Result<(), String> {
+    state.db.reorder_media_playlist_items(&playlist_id, &item_ids)
+}
+
 // ── AI Agent, MCP Server & Telegram Bot Settings ──
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

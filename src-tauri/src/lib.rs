@@ -735,6 +735,7 @@ pub fn run() {
             commands::media_list_playlist_items,
             commands::media_add_playlist_item,
             commands::media_remove_playlist_item,
+            commands::media_reorder_playlist_items,
             commands::get_ai_mcp_config,
             commands::save_ai_mcp_config,
             commands::get_ai_mcp_runtime_status,
