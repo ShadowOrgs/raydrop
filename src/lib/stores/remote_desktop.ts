@@ -1194,7 +1194,10 @@ async function handleIncomingOffer(
   sessionId: string,
   sdp: RTCSessionDescriptionInit
 ) {
+  const earlyCandidates =
+    get(activeRemoteSession)?.sessionId === sessionId ? [...pendingIceCandidates] : [];
   cleanupPeerConnection();
+  pendingIceCandidates = earlyCandidates;
 
   const pc = new RTCPeerConnection(ICE_SERVERS);
   activePeerConnection = pc;
