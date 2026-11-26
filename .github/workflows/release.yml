@@ -52,6 +52,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Disable Spotlight on macOS (prevents hdiutil Resource busy)
+        if: matrix.platform == 'macos-latest'
+        run: sudo mdutil -a -i off || true
+
       - name: Build and Publish Tauri Release
         uses: tauri-apps/tauri-action@v0
         env:

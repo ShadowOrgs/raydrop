@@ -2,10 +2,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-
     #[cfg(target_os = "windows")]
     {
+        let args: Vec<String> = std::env::args().collect();
         if args.iter().any(|a| a == "--service") {
             raydrop_lib::win_service::run_windows_service();
             return;

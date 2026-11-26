@@ -4308,14 +4308,14 @@ pub async fn execute_remote_power_action(action: String) -> Result<(), String> {
     crate::remote_input::execute_power_action(&action)
 }
 
-pub fn get_local_mac_address(local_ip: &str) -> Option<String> {
+pub fn get_local_mac_address(_local_ip: &str) -> Option<String> {
     #[cfg(target_os = "windows")]
     {
         #[link(name = "iphlpapi")]
         extern "system" {
             fn SendARP(dest_ip: u32, src_ip: u32, mac_addr: *mut u8, phy_addr_len: *mut u32) -> u32;
         }
-        if let Ok(ipv4) = local_ip.trim().parse::<std::net::Ipv4Addr>() {
+        if let Ok(ipv4) = _local_ip.trim().parse::<std::net::Ipv4Addr>() {
             let dest = u32::from_ne_bytes(ipv4.octets());
             let mut mac = [0u8; 6];
             let mut len = 6u32;

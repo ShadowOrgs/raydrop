@@ -4,16 +4,20 @@
 
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
+#[cfg(target_os = "windows")]
+use tauri::Emitter;
 
 static CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
 static CAPTURE_GEN: AtomicU64 = AtomicU64::new(0);
 static FRAME_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static RESET_FRAME_HASH: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "windows")]
 static LAST_EMIT_EPOCH_MS: AtomicU64 = AtomicU64::new(0);
 pub static DRAW_HOST_CURSOR: AtomicBool = AtomicBool::new(false);
 static CAPTURE_BOUNDS: Mutex<Option<(i32, i32, i32, i32)>> = Mutex::new(None);
 
+#[cfg(target_os = "windows")]
 fn now_epoch_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

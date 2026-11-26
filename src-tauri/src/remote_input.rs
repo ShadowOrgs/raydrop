@@ -1182,6 +1182,8 @@ pub fn release_all_modifiers() {
 /// Sets whether the host system cursor is hidden (transparent) during remote desktop sessions,
 /// completely preventing the host cursor from being baked into the screen capture video stream.
 pub fn set_host_cursor_hidden(hidden: bool) {
+    #[cfg(not(target_os = "windows"))]
+    let _ = hidden;
     #[cfg(target_os = "windows")]
     {
         crate::remote_capture::DRAW_HOST_CURSOR.store(!hidden, std::sync::atomic::Ordering::Release);
@@ -1286,6 +1288,7 @@ pub fn simulate_mouse_wheel(delta_y: i32) -> Result<(), String> {
 }
 
 /// Maps common JavaScript key and code names to Windows Virtual Key codes (VK)
+#[cfg(target_os = "windows")]
 fn map_key_to_vk(key: &str, code: &str) -> Option<u8> {
     // 1. Check physical code first (immune to layout shifts)
     match code {
