@@ -26,7 +26,7 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
         print("ERROR: GitHub token not found in git credentials.", file=sys.stderr)
         sys.exit(1)
 
-    repo = "asepindrak/raydrop"
+    repo = "ShadowOrgs/raydrop"
     url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     title = f"Raydrop {tag}: Pre-Login Windows Service, Native Zero-Prompt Capture & Auto-Minimize"
     
     body = f"""<p align="center">
-  <img src="https://raw.githubusercontent.com/asepindrak/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
+  <img src="https://raw.githubusercontent.com/ShadowOrgs/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
 <h2 align="center">Raydrop {tag}: Pre-Login Windows Service, Native Zero-Prompt Capture & Auto-Minimize</h2>
@@ -116,11 +116,11 @@ if __name__ == "__main__":
 
 | Operating System | Package | Architecture | Download Link |
 | :--- | :---: | :---: | :--- |
-| **Windows** | `.msi` | x64 (64-bit) | [**Raydrop_{ver}_x64_en-US.msi**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_{ver}_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | [**Raydrop_{ver}_universal.dmg**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_{ver}_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | [**raydrop_{ver}_amd64.deb**](https://github.com/asepindrak/raydrop/releases/download/{tag}/raydrop_{ver}_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | [**Raydrop_{ver}_amd64.AppImage**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop_{ver}_amd64.AppImage) |
-| **Android** | `.apk` | ARM64 (`arm64-v8a`) | [**Raydrop-arm64-v8a.apk**](https://github.com/asepindrak/raydrop/releases/download/{tag}/Raydrop-arm64-v8a.apk) |
+| **Windows** | `.msi` | x64 (64-bit) | [**Raydrop_{ver}_x64_en-US.msi**](https://github.com/ShadowOrgs/raydrop/releases/download/{tag}/Raydrop_{ver}_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | [**Raydrop_{ver}_universal.dmg**](https://github.com/ShadowOrgs/raydrop/releases/download/{tag}/Raydrop_{ver}_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | [**raydrop_{ver}_amd64.deb**](https://github.com/ShadowOrgs/raydrop/releases/download/{tag}/raydrop_{ver}_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | [**Raydrop_{ver}_amd64.AppImage**](https://github.com/ShadowOrgs/raydrop/releases/download/{tag}/Raydrop_{ver}_amd64.AppImage) |
+| **Android** | `.apk` | ARM64 (`arm64-v8a`) | [**Raydrop-arm64-v8a.apk**](https://github.com/ShadowOrgs/raydrop/releases/download/{tag}/Raydrop-arm64-v8a.apk) |
 
 ---
 
