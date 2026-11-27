@@ -132,7 +132,7 @@ pub struct AppSettings {
 }
 
 pub struct Database {
-    conn: Mutex<Connection>,
+    pub(crate) conn: Mutex<Connection>,
     data_dir: PathBuf,
 }
 

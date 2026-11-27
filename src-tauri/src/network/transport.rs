@@ -895,11 +895,11 @@ where
             .to_string();
         let payload = raw_val.get("payload").cloned().unwrap_or(serde_json::Value::Null);
 
-        if crate::network::signaling::handle_emergency_power_signal(state, &from_dev_id, &payload) {
+        if crate::network::signaling::handle_emergency_power_signal(&state, &from_dev_id, &payload) {
             let _ = writer.write_all(b"OK").await;
             return Ok(());
         }
-        if crate::llm_bridge::handle_llm_bridge_relay_signal(app, state, &from_dev_id, &session_id, &payload) {
+        if crate::llm_bridge::handle_llm_bridge_relay_signal(&app, &state, &from_dev_id, &session_id, &payload) {
             let _ = writer.write_all(b"OK").await;
             return Ok(());
         }

@@ -706,14 +706,14 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
             if session_id.starts_with("meeting:") || session_id.starts_with("remote:") || session_id.starts_with("llm_bridge:") {
                 if let Ok(bytes) = hex::decode(payload_json) {
                     if let Ok(signal_val) = serde_json::from_slice::<Value>(&bytes) {
-                        if handle_emergency_power_signal(&state, from_device_id, &signal_val) {
+                        if handle_emergency_power_signal(&state, &from_device_id, &signal_val) {
                             return;
                         }
                         if crate::llm_bridge::handle_llm_bridge_relay_signal(
                             &app,
                             &state,
-                            from_device_id,
-                            session_id,
+                            &from_device_id,
+                            &session_id,
                             &signal_val,
                         ) {
                             return;
