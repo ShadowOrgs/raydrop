@@ -9,6 +9,22 @@
   h1, h2, h3, h4 {
     font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
   }
+  button,
+  [role="button"] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: scale 0.1s ease, opacity 0.15s ease;
+  }
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active {
+    scale: 0.96;
+    opacity: 0.88;
+  }
+  button:disabled {
+    cursor: not-allowed !important;
+    opacity: 0.52;
+    scale: 1 !important;
+  }
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;

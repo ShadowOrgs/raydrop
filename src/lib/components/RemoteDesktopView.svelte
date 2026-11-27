@@ -516,6 +516,8 @@
   });
 
   onDestroy(() => {
+    for (const t of autoKeyboardCheckTimers) clearTimeout(t);
+    autoKeyboardCheckTimers = [];
     raydropApi.setClientKeyboardLock(false).catch(() => {});
     stopSecondScreenSharing();
     document.removeEventListener("fullscreenchange", handleFullscreenChange);
@@ -535,6 +537,17 @@
       if (typeof navigator !== "undefined" && (navigator as any).keyboard?.unlock) {
         (navigator as any).keyboard.unlock();
       }
+    }
+  }
+
+  $: if (!isClientConnected) {
+    if (zoomScale !== 1 || panX !== 0 || panY !== 0) {
+      zoomScale = 1;
+      panX = 0;
+      panY = 0;
+    }
+    if (showMobileKeyboard) {
+      showMobileKeyboard = false;
     }
   }
 
@@ -1005,8 +1018,14 @@
   }
 
   // Mouse & Keyboard Input Event Handlers on Remote Video Canvas
+  let lastTouchInteractionAt = 0;
+
+  function isSyntheticMouseAfterTouch(): boolean {
+    return performance.now() - lastTouchInteractionAt < 650;
+  }
+
   function handleMouseMove(e: MouseEvent) {
-    if (!videoEl || !isClientConnected) return;
+    if (!videoEl || !isClientConnected || isSyntheticMouseAfterTouch()) return;
 
     if ($remoteSessionMode === "game" && document.pointerLockElement === videoCanvasWrapEl) {
       if (e.movementX !== 0 || e.movementY !== 0) {
@@ -1036,7 +1055,7 @@
   }
 
   function handleMouseDown(e: MouseEvent) {
-    if (!isClientConnected) return;
+    if (!isClientConnected || isSyntheticMouseAfterTouch()) return;
     resumeClientAudio();
     if ($remoteSessionMode === "game" && videoCanvasWrapEl && document.pointerLockElement !== videoCanvasWrapEl) {
       showToolbar = false;
@@ -1056,7 +1075,7 @@
   }
 
   function handleMouseUp(e: MouseEvent) {
-    if (!isClientConnected) return;
+    if (!isClientConnected || isSyntheticMouseAfterTouch()) return;
     const button =
       e.button === 0 ? "left" : e.button === 2 ? "right" : "middle";
     sendInputToHost({
@@ -1094,6 +1113,69 @@
   }
 
   let lastTouchY = 0;
+  let zoomScale = 1;
+  let panX = 0;
+  let panY = 0;
+  let pinchStartDist = 0;
+  let pinchStartScale = 1;
+  let pinchDidZoom = false;
+  let pinchLastMidX = 0;
+  let pinchLastMidY = 0;
+
+  function resetMobileZoom() {
+    zoomScale = 1;
+    panX = 0;
+    panY = 0;
+    setTimeout(updateVirtualCursorScreenPos, 20);
+  }
+
+  function initPinchGesture(e: TouchEvent) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    pinchStartDist = Math.hypot(dx, dy);
+    pinchStartScale = zoomScale;
+    pinchDidZoom = false;
+    pinchLastMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    pinchLastMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    lastTouchY = pinchLastMidY;
+  }
+
+  function handleTwoFingerMove(e: TouchEvent): boolean {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.hypot(dx, dy);
+    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+
+    if (Math.abs(dist - pinchStartDist) > 12 || zoomScale > 1.02 || pinchDidZoom) {
+      pinchDidZoom = true;
+      const nextScale = Math.max(1, Math.min(4, pinchStartScale * (dist / (pinchStartDist || 1))));
+      zoomScale = nextScale;
+      if (zoomScale <= 1.02) {
+        zoomScale = 1;
+        panX = 0;
+        panY = 0;
+      } else {
+        const maxPanX = (zoomScale - 1) * (videoCanvasWrapEl?.clientWidth || window.innerWidth) * 0.55;
+        const maxPanY = (zoomScale - 1) * (videoCanvasWrapEl?.clientHeight || window.innerHeight) * 0.55;
+        panX = Math.max(-maxPanX, Math.min(maxPanX, panX + (midX - pinchLastMidX)));
+        panY = Math.max(-maxPanY, Math.min(maxPanY, panY + (midY - pinchLastMidY)));
+      }
+      pinchLastMidX = midX;
+      pinchLastMidY = midY;
+      touchMovedDist += Math.abs(dist - pinchStartDist);
+      updateVirtualCursorScreenPos();
+      return true;
+    }
+
+    const diff = midY - lastTouchY;
+    touchMovedDist += Math.abs(diff);
+    if (Math.abs(diff) > 10) {
+      sendInputToHost({ t: "mw", dy: diff > 0 ? 120 : -120 });
+      lastTouchY = midY;
+    }
+    return true;
+  }
 
   function getNormalizedTouchCoords(touch: Touch): { x: number; y: number } | null {
     if (!videoEl) return null;
@@ -1115,6 +1197,7 @@
 
   function handleTouchStart(e: TouchEvent) {
     if (!isClientConnected || !e.touches.length) return;
+    lastTouchInteractionAt = performance.now();
     resumeClientAudio();
     touchMaxFingers = Math.max(touchMaxFingers, e.touches.length);
 
@@ -1122,7 +1205,7 @@
       if (e.touches.length === 2) {
         touchStartTime = performance.now();
         touchMovedDist = 0;
-        lastTouchY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        initPinchGesture(e);
         // Release any left-down triggered by first finger before 2nd finger landed
         sendInputToHost({ t: "mc", b: "left", a: "up", alt: false, ctrl: false, shift: false, meta: false });
         return;
@@ -1152,23 +1235,18 @@
     } else if (e.touches.length === 2) {
       touchStartTime = performance.now();
       touchMovedDist = 0;
-      lastTouchY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      initPinchGesture(e);
     }
   }
 
   function handleTouchMove(e: TouchEvent) {
     if (!isClientConnected || !e.touches.length) return;
+    lastTouchInteractionAt = performance.now();
     e.preventDefault();
 
     if (!touchpadMode) {
       if (e.touches.length === 2) {
-        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        const diff = midY - lastTouchY;
-        touchMovedDist += Math.abs(diff);
-        if (Math.abs(diff) > 10) {
-          sendInputToHost({ t: "mw", dy: diff > 0 ? 120 : -120 });
-          lastTouchY = midY;
-        }
+        handleTwoFingerMove(e);
         return;
       }
       const now = performance.now();
@@ -1180,15 +1258,9 @@
       return;
     }
 
-    // Touchpad Mode: 2-finger scroll
+    // Touchpad Mode: 2-finger pinch-to-zoom or scroll
     if (e.touches.length === 2) {
-      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      const diff = midY - lastTouchY;
-      touchMovedDist += Math.abs(diff);
-      if (Math.abs(diff) > 10) {
-        sendInputToHost({ t: "mw", dy: diff > 0 ? 120 : -120 });
-        lastTouchY = midY;
-      }
+      handleTwoFingerMove(e);
       return;
     }
 
@@ -1223,6 +1295,7 @@
 
   function handleTouchEnd(e: TouchEvent) {
     if (!isClientConnected) return;
+    lastTouchInteractionAt = performance.now();
 
     if (!touchpadMode) {
       if (e.touches.length === 0) {
@@ -1241,6 +1314,11 @@
     }
 
     if (e.touches.length === 0) {
+      if (pinchDidZoom) {
+        pinchDidZoom = false;
+        touchMaxFingers = 0;
+        return;
+      }
       const elapsed = performance.now() - touchStartTime;
       if (isTouchDraggingLeft) {
         isTouchDraggingLeft = false;
@@ -1490,12 +1568,12 @@
       <!-- Click-Expanded Floating Top Control Bar (Clean, non-wrapping, generous spacing) -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
-        class="absolute top-4 left-1/2 -translate-x-1/2 z-40 w-max max-w-[96vw] transition-all duration-300 ease-out {showToolbar
+        class="absolute top-4 left-1/2 -translate-x-1/2 z-40 w-[95vw] sm:w-max max-w-[96vw] transition-all duration-300 ease-out {showToolbar
           ? 'translate-y-0 opacity-100 pointer-events-auto'
           : '-translate-y-16 opacity-0 pointer-events-none'}"
       >
         <div
-          class="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs max-w-full"
+          class="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs w-full sm:w-auto max-h-[38vh] overflow-y-auto"
         >
           <!-- Host & Latency Info -->
           <div class="flex items-center gap-1.5 sm:gap-2 sm:pr-3 sm:border-r border-slate-800 shrink-0">
@@ -1819,8 +1897,18 @@
           autoplay
           playsinline
           muted={isAudioMuted}
-          class="{isSecondDisplayFill ? 'w-full h-full object-fill' : 'max-w-full max-h-full object-contain'} pointer-events-none select-none shadow-2xl"
+          style="transform: translate({panX}px, {panY}px) scale({zoomScale}); transform-origin: center center;"
+          class="{isSecondDisplayFill ? 'w-full h-full object-fill' : 'max-w-full max-h-full object-contain'} pointer-events-none select-none shadow-2xl transition-transform duration-75 ease-out"
         ></video>
+        {#if zoomScale > 1.05}
+          <button
+            type="button"
+            on:click|stopPropagation={resetMobileZoom}
+            class="absolute bottom-3 right-3 z-40 px-2.5 py-1 rounded-full bg-slate-900/90 border border-cyan-500/40 text-[11px] font-mono font-bold text-cyan-300 shadow-lg backdrop-blur-md cursor-pointer"
+          >
+            {zoomScale.toFixed(1)}x • Reset
+          </button>
+        {/if}
         {#if $remoteLatencyMs === 0 && $remoteStreamFps === 0}
           <div class="pointer-events-none absolute inset-0 flex items-center justify-center z-20">
             <div class="pointer-events-auto px-4 py-3 rounded-2xl bg-slate-900/95 border border-cyan-500/30 shadow-2xl flex flex-col items-center gap-2 text-xs text-slate-200 backdrop-blur-md">

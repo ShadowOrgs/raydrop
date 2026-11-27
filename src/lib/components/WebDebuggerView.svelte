@@ -8,6 +8,7 @@
     Gauge,
     Globe,
     Layout,
+    Loader2,
     Network,
     Shield,
     Terminal,
@@ -144,8 +145,13 @@
           disabled={speedtestLoading || !speedtestUrl.trim()}
           class="px-2.5 py-1 rounded-md bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-400/30 text-[11px] font-semibold flex items-center gap-1 disabled:opacity-40 cursor-pointer"
         >
-          <Zap class="w-3.5 h-3.5" />
-          {speedtestLoading ? "Testing..." : "Speedtest"}
+          {#if speedtestLoading}
+            <Loader2 class="w-3.5 h-3.5 animate-spin" />
+            <span>Testing...</span>
+          {:else}
+            <Zap class="w-3.5 h-3.5" />
+            <span>Speedtest</span>
+          {/if}
         </button>
       </div>
 

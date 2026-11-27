@@ -15,6 +15,7 @@
     Download,
     Globe,
     Layers,
+    Loader2,
     Sparkles,
     RefreshCw,
   } from 'lucide-svelte';
@@ -130,13 +131,19 @@
           </div>
           <button
             type="button"
+            disabled={isOpeningFolder}
             on:click={() => {
               handleOpenFolder();
               handleOpenBrowserUrl('chrome');
             }}
-            class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 cursor-pointer"
+            class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 cursor-pointer flex items-center gap-1.5"
           >
-            Update Now
+            {#if isOpeningFolder}
+              <Loader2 class="w-3.5 h-3.5 animate-spin" />
+              <span>Updating...</span>
+            {:else}
+              <span>Update Now</span>
+            {/if}
           </button>
         </div>
       {/if}
@@ -187,7 +194,11 @@
               disabled={isOpeningFolder}
               class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-semibold flex items-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all text-xs cursor-pointer shrink-0"
             >
-              <FolderOpen class="w-3.5 h-3.5" />
+              {#if isOpeningFolder}
+                <Loader2 class="w-3.5 h-3.5 animate-spin" />
+              {:else}
+                <FolderOpen class="w-3.5 h-3.5" />
+              {/if}
               <span>{isOpeningFolder ? 'Opening...' : 'Open Extension Folder'}</span>
             </button>
           </div>

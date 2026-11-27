@@ -43,42 +43,47 @@ pub struct CloudContactItem {
 }
 
 #[tauri::command]
-pub fn get_app_state(state: State<'_, Arc<AppState>>) -> Result<AppStateSnapshot, String> {
-    let settings = state
-        .settings
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone();
-    let wan_reflexive_addr = state
-        .wan_reflexive_addr
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone();
-    let mut queued = state
-        .queued_cli_files
-        .lock()
-        .map_err(|e| e.to_string())?;
-    let queued_cli_files = std::mem::take(&mut *queued);
+pub async fn get_app_state(state: State<'_, Arc<AppState>>) -> Result<AppStateSnapshot, String> {
+    let st = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        let settings = st
+            .settings
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone();
+        let wan_reflexive_addr = st
+            .wan_reflexive_addr
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone();
+        let mut queued = st
+            .queued_cli_files
+            .lock()
+            .map_err(|e| e.to_string())?;
+        let queued_cli_files = std::mem::take(&mut *queued);
 
-    let mut queued_conv = state
-        .queued_convert_files
-        .lock()
-        .map_err(|e| e.to_string())?;
-    let queued_convert_files = std::mem::take(&mut *queued_conv);
+        let mut queued_conv = st
+            .queued_convert_files
+            .lock()
+            .map_err(|e| e.to_string())?;
+        let queued_convert_files = std::mem::take(&mut *queued_conv);
 
-    Ok(AppStateSnapshot {
-        settings,
-        ed25519_pubkey: state.identity.public_hex(),
-        os_type: std::env::consts::OS.to_string(),
-        local_ip: state.local_ip.clone(),
-        mac_address: get_local_mac_address(&state.local_ip),
-        listen_port: state.listen_port,
-        wan_reflexive_addr,
-        signaling_connected: state.is_signaling_connected(),
-        queued_cli_files,
-        queued_convert_files,
-        my_rank_exp: state.db.compute_my_rank_exp().unwrap_or(0),
+        Ok(AppStateSnapshot {
+            settings,
+            ed25519_pubkey: st.identity.public_hex(),
+            os_type: std::env::consts::OS.to_string(),
+            local_ip: st.local_ip.clone(),
+            mac_address: get_local_mac_address(&st.local_ip),
+            listen_port: st.listen_port,
+            wan_reflexive_addr,
+            signaling_connected: st.is_signaling_connected(),
+            queued_cli_files,
+            queued_convert_files,
+            my_rank_exp: st.db.compute_my_rank_exp().unwrap_or(0),
+        })
     })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
 }
 
 #[tauri::command]
@@ -154,60 +159,21 @@ pub fn logout_cloud_session(state: State<'_, Arc<AppState>>) -> Result<AppSettin
 }
 
 #[tauri::command]
-pub fn sync_cloud_data_to_local(
+pub async fn sync_cloud_data_to_local(
     state: State<'_, Arc<AppState>>,
     my_devices: Vec<CloudDeviceItem>,
     contacts: Vec<CloudContactItem>,
 ) -> Result<Vec<Contact>, String> {
-    let now = now_unix_secs();
+    let st = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        let now = now_unix_secs();
 
-    // 1. Upsert all other devices belonging to the user's own account (My Devices / Tailnet)
-    for dev in my_devices {
-        if dev.device_id == state.identity.device_id {
-            continue;
-        }
-        let existing = state.db.get_contact(&dev.device_id).ok().flatten();
-        let net_type = existing
-            .as_ref()
-            .map(|c| c.network_type.clone())
-            .unwrap_or_else(|| "wan".to_string());
-        let last_port = existing.as_ref().and_then(|c| c.last_known_port);
-        let last_ip = existing
-            .as_ref()
-            .and_then(|c| c.last_known_ip.clone())
-            .or(dev.last_ip);
-
-        let c = Contact {
-            device_id: dev.device_id,
-            alias_name: dev.device_name,
-            custom_name: existing.as_ref().and_then(|c| c.custom_name.clone()),
-            user_email: Some(dev.user_email),
-            user_name: Some(dev.user_name),
-            os_type: Some(dev.os_type),
-            is_own_device: true,
-            ed25519_pubkey: Some(dev.ed25519_pubkey),
-            network_type: net_type,
-            last_known_ip: last_ip,
-            last_known_port: last_port,
-            trust_level: "trusted_auto_accept".to_string(),
-            is_online: dev.is_online,
-            last_seen_at: now,
-            created_at: now,
-            avatar_hash: existing.as_ref().and_then(|c| c.avatar_hash.clone()),
-            rank_exp: existing.as_ref().map(|c| c.rank_exp).unwrap_or(0),
-            mac_address: existing.as_ref().and_then(|c| c.mac_address.clone()),
-            mesh_status: existing.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "approved".to_string()),
-        };
-        let _ = state.db.upsert_contact(&c);
-    }
-
-    // 2. Upsert all devices belonging to saved Cloud Contacts
-    for contact_group in contacts {
-        for dev in contact_group.devices {
-            if dev.device_id == state.identity.device_id {
+        // 1. Upsert all other devices belonging to the user's own account (My Devices / Tailnet)
+        for dev in my_devices {
+            if dev.device_id == st.identity.device_id {
                 continue;
             }
-            let existing = state.db.get_contact(&dev.device_id).ok().flatten();
+            let existing = st.db.get_contact(&dev.device_id).ok().flatten();
             let net_type = existing
                 .as_ref()
                 .map(|c| c.network_type.clone())
@@ -222,28 +188,72 @@ pub fn sync_cloud_data_to_local(
                 device_id: dev.device_id,
                 alias_name: dev.device_name,
                 custom_name: existing.as_ref().and_then(|c| c.custom_name.clone()),
-                user_email: Some(contact_group.email.clone()),
-                user_name: Some(contact_group.name.clone()),
+                user_email: Some(dev.user_email),
+                user_name: Some(dev.user_name),
                 os_type: Some(dev.os_type),
-                is_own_device: false,
+                is_own_device: true,
                 ed25519_pubkey: Some(dev.ed25519_pubkey),
                 network_type: net_type,
                 last_known_ip: last_ip,
                 last_known_port: last_port,
-                trust_level: contact_group.trust_level.clone(),
+                trust_level: "trusted_auto_accept".to_string(),
                 is_online: dev.is_online,
                 last_seen_at: now,
                 created_at: now,
                 avatar_hash: existing.as_ref().and_then(|c| c.avatar_hash.clone()),
                 rank_exp: existing.as_ref().map(|c| c.rank_exp).unwrap_or(0),
                 mac_address: existing.as_ref().and_then(|c| c.mac_address.clone()),
-                mesh_status: existing.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
+                mesh_status: existing.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "approved".to_string()),
             };
-            let _ = state.db.upsert_contact(&c);
+            let _ = st.db.upsert_contact(&c);
         }
-    }
 
-    state.db.list_contacts()
+        // 2. Upsert all devices belonging to saved Cloud Contacts
+        for contact_group in contacts {
+            for dev in contact_group.devices {
+                if dev.device_id == st.identity.device_id {
+                    continue;
+                }
+                let existing = st.db.get_contact(&dev.device_id).ok().flatten();
+                let net_type = existing
+                    .as_ref()
+                    .map(|c| c.network_type.clone())
+                    .unwrap_or_else(|| "wan".to_string());
+                let last_port = existing.as_ref().and_then(|c| c.last_known_port);
+                let last_ip = existing
+                    .as_ref()
+                    .and_then(|c| c.last_known_ip.clone())
+                    .or(dev.last_ip);
+
+                let c = Contact {
+                    device_id: dev.device_id,
+                    alias_name: dev.device_name,
+                    custom_name: existing.as_ref().and_then(|c| c.custom_name.clone()),
+                    user_email: Some(contact_group.email.clone()),
+                    user_name: Some(contact_group.name.clone()),
+                    os_type: Some(dev.os_type),
+                    is_own_device: false,
+                    ed25519_pubkey: Some(dev.ed25519_pubkey),
+                    network_type: net_type,
+                    last_known_ip: last_ip,
+                    last_known_port: last_port,
+                    trust_level: contact_group.trust_level.clone(),
+                    is_online: dev.is_online,
+                    last_seen_at: now,
+                    created_at: now,
+                    avatar_hash: existing.as_ref().and_then(|c| c.avatar_hash.clone()),
+                    rank_exp: existing.as_ref().map(|c| c.rank_exp).unwrap_or(0),
+                    mac_address: existing.as_ref().and_then(|c| c.mac_address.clone()),
+                    mesh_status: existing.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
+                };
+                let _ = st.db.upsert_contact(&c);
+            }
+        }
+
+        st.db.list_contacts()
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
 }
 
 #[tauri::command]
@@ -445,8 +455,11 @@ pub fn set_speed_limit(state: State<'_, Arc<AppState>>, speed_limit_mbps: u32) -
 }
 
 #[tauri::command]
-pub fn get_contacts(state: State<'_, Arc<AppState>>) -> Result<Vec<Contact>, String> {
-    state.db.list_contacts()
+pub async fn get_contacts(state: State<'_, Arc<AppState>>) -> Result<Vec<Contact>, String> {
+    let st = state.inner().clone();
+    tokio::task::spawn_blocking(move || st.db.list_contacts())
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
 }
 
 #[tauri::command]
@@ -652,10 +665,13 @@ pub fn cancel_transfer(
 }
 
 #[tauri::command]
-pub fn get_transfer_history(
+pub async fn get_transfer_history(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<TransferRecord>, String> {
-    state.db.list_transfers()
+    let st = state.inner().clone();
+    tokio::task::spawn_blocking(move || st.db.list_transfers())
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
 }
 
 #[tauri::command]
@@ -1410,8 +1426,10 @@ pub fn generate_image_thumbnail(file_path: &str, max_width: u32, max_height: u32
 }
 
 #[tauri::command]
-pub fn get_file_thumbnail(path: String) -> Result<String, String> {
-    generate_image_thumbnail(&path, 320, 240)
+pub async fn get_file_thumbnail(path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || generate_image_thumbnail(&path, 320, 240))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
 }
 
 pub fn get_avatars_dir() -> std::path::PathBuf {
