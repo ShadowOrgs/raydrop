@@ -582,12 +582,7 @@ async function proceedHostAcceptRemote(
   // Reset any stuck modifier keys from previous session
   raydropApi.releaseRemoteModifiers().catch(() => { });
 
-  // Auto-minimize Host Raydrop window so client sees a clean desktop immediately
-  try {
-    getCurrentWindow().minimize().catch(() => { });
-  } catch (_) { }
-
-  // Setup WebRTC Host Peer Connection
+  // Setup WebRTC Host Peer Connection (minimize only AFTER DataChannel opens so WebView2 doesn't throttle handshake)
   try {
     await setupHostPeerConnection(clientDeviceId, sessionId, stream);
   } catch (err: any) {
@@ -955,6 +950,10 @@ export function triggerLocalClipboardSyncNow() {
 function setupHostDataChannel(dc: RTCDataChannel) {
   dc.onopen = async () => {
     lastClientPingAt = Date.now();
+    // Auto-minimize Host Raydrop window only after WebRTC DataChannel is open
+    try {
+      getCurrentWindow().minimize().catch(() => { });
+    } catch (_) { }
     if (hostWatchdogInterval) clearInterval(hostWatchdogInterval);
     hostWatchdogInterval = setInterval(() => {
       const sess = get(activeRemoteSession);
