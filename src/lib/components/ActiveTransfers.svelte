@@ -617,7 +617,7 @@
   }
 </script>
 
-<div class="spatial-card flex flex-col h-full bg-white/[0.05] border border-white/[0.12] rounded-[22px] overflow-hidden backdrop-blur-xl">
+<div class="spatial-card flex flex-col h-full bg-slate-900/80 border border-white/[0.12] rounded-[22px] overflow-hidden">
   <!-- Top Hub: Spatial Pill Toolbar & Frosted Drop Zone -->
   <div class="p-3 sm:p-4 border-b border-white/[0.1] bg-white/[0.03] flex flex-col gap-3">
     <!-- Row 1: Unified Spatial Pill Controls -->
@@ -782,7 +782,7 @@
     <!-- Live Performance Badge -->
     <div class="flex items-center gap-3">
       {#if totalActiveSpeed > 0}
-        <div class="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-mono font-bold animate-pulse">
+        <div class="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-mono font-bold">
           <Zap class="w-3.5 h-3.5 text-emerald-400" />
           <span>{totalActiveSpeed.toFixed(1)} MB/s Active</span>
         </div>

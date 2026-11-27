@@ -135,7 +135,7 @@
 />
 
 <header
-  class="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-xl px-3 sm:px-5 pt-8 pb-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 z-20 shrink-0"
+  class="border-b border-slate-800/80 bg-slate-900/95 px-3 sm:px-5 pt-8 pb-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 z-20 shrink-0"
 >
   <!-- Brand & Identity (Left) -->
   <div class="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0">

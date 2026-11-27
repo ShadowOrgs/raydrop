@@ -87,7 +87,7 @@
   class="hidden md:flex flex-col items-center justify-center z-30 shrink-0 select-none pl-2 sm:pl-3 max-h-full py-1"
 >
   <div
-    class="spatial-glass-pill rail-scroll flex flex-col items-center gap-1 p-1.5 rounded-full bg-white/[0.08] backdrop-blur-2xl border border-white/15 shadow-[0_16px_40px_-8px_rgba(0,0,0,0.55)] max-h-full overflow-y-auto overflow-x-hidden"
+    class="spatial-glass-pill rail-scroll flex flex-col items-center gap-1 p-1.5 rounded-full bg-slate-900/90 border border-white/15 shadow-[0_16px_40px_-8px_rgba(0,0,0,0.55)] max-h-full overflow-y-auto overflow-x-hidden"
   >
     {#each RAIL_ITEMS as item}
       {@const isDisabled = item.id === "remote" && !$appSettings.discoverable}

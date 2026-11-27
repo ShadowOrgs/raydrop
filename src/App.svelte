@@ -1194,7 +1194,7 @@
         {/if}
 
         <div
-          class="spatial-glass-pill relative z-40 inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/[0.08] backdrop-blur-2xl border border-white/15 shadow-xl max-w-[92vw] overflow-x-auto"
+          class="spatial-glass-pill relative z-40 inline-flex items-center gap-1 px-2 py-1 rounded-full bg-slate-900/90 border border-white/15 shadow-xl max-w-[92vw] overflow-x-auto"
         >
           {#each ALL_BOTTOM_MENUS.filter( (m) => bottomBarTabIds.includes(m.id), ) as tab (tab.id)}
             <button
