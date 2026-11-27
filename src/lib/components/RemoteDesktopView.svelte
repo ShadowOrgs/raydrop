@@ -5,6 +5,7 @@
     Shield,
     Lock,
     Key,
+    Keyboard,
     RefreshCw,
     Play,
     Check,
@@ -150,6 +151,88 @@
   let lastSingleTouchY = 0;
   let lastTapEndTime = 0;
   let isTouchDraggingLeft = false;
+  let showMobileKeyboard = false;
+  let mobileKeyboardInputEl: HTMLInputElement | null = null;
+  let autoKeyboardCheckTimers: number[] = [];
+  let lastMobileSpecialKeyAt = 0;
+
+  function openMobileKeyboard() {
+    showMobileKeyboard = true;
+    setTimeout(() => {
+      mobileKeyboardInputEl?.focus();
+    }, 20);
+  }
+
+  function closeMobileKeyboard() {
+    showMobileKeyboard = false;
+    mobileKeyboardInputEl?.blur();
+  }
+
+  function toggleMobileKeyboard() {
+    if (showMobileKeyboard) {
+      closeMobileKeyboard();
+    } else {
+      openMobileKeyboard();
+    }
+  }
+
+  function scheduleAutoKeyboardCheck() {
+    for (const t of autoKeyboardCheckTimers) clearTimeout(t);
+    autoKeyboardCheckTimers = [];
+    if ($remoteCursorShape === "text") {
+      openMobileKeyboard();
+      return;
+    }
+    autoKeyboardCheckTimers.push(
+      window.setTimeout(() => {
+        if (isClientConnected && $remoteCursorShape === "text") openMobileKeyboard();
+      }, 180),
+      window.setTimeout(() => {
+        if (isClientConnected && $remoteCursorShape === "text") openMobileKeyboard();
+      }, 420),
+    );
+  }
+
+  function handleMobileKeyboardKeyDown(e: KeyboardEvent) {
+    if (!isClientConnected) return;
+    if (e.key === "Unidentified") return;
+    const special = ["Backspace", "Enter", "Tab", "Escape", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
+    if (special.includes(e.key)) {
+      e.preventDefault();
+      lastMobileSpecialKeyAt = performance.now();
+      sendInputToHost({ t: "kk", k: e.key, c: e.code || e.key, a: "down" });
+      sendInputToHost({ t: "kk", k: e.key, c: e.code || e.key, a: "up" });
+    }
+  }
+
+  function handleMobileKeyboardInput(e: Event) {
+    if (!isClientConnected) return;
+    const ie = e as InputEvent;
+    const inputType = ie.inputType || "";
+    const recentlySentSpecial = performance.now() - lastMobileSpecialKeyAt < 80;
+
+    if (inputType === "deleteContentBackward") {
+      if (!recentlySentSpecial) {
+        sendInputToHost({ t: "kk", k: "Backspace", c: "Backspace", a: "down" });
+        sendInputToHost({ t: "kk", k: "Backspace", c: "Backspace", a: "up" });
+      }
+    } else if (inputType === "insertLineBreak" || inputType === "insertParagraph") {
+      if (!recentlySentSpecial) {
+        sendInputToHost({ t: "kk", k: "Enter", c: "Enter", a: "down" });
+        sendInputToHost({ t: "kk", k: "Enter", c: "Enter", a: "up" });
+      }
+    } else {
+      const text = ie.data || mobileKeyboardInputEl?.value || "";
+      for (const ch of text) {
+        sendInputToHost({ t: "kk", k: ch, c: "", a: "down" });
+        sendInputToHost({ t: "kk", k: ch, c: "", a: "up" });
+      }
+    }
+
+    if (mobileKeyboardInputEl) {
+      mobileKeyboardInputEl.value = "";
+    }
+  }
   let isAudioMuted = false;
   let isPiP = false;
   let showAnnotation = false;
@@ -1148,6 +1231,9 @@
           sendInputToHost({ t: "mc", b: "right", a: "click", alt: false, ctrl: false, shift: false, meta: false });
         } else {
           sendInputToHost({ t: "mc", b: "left", a: "up", alt: false, ctrl: false, shift: false, meta: false });
+          if (touchMaxFingers === 1 && elapsed < 320 && touchMovedDist < 14) {
+            scheduleAutoKeyboardCheck();
+          }
         }
         touchMaxFingers = 0;
       }
@@ -1168,6 +1254,7 @@
         sendInputToHost({ t: "mm", x: touchCursorX, y: touchCursorY });
         sendInputToHost({ t: "mc", b: "left", a: "click", alt: false, ctrl: false, shift: false, meta: false });
         lastTapEndTime = performance.now();
+        scheduleAutoKeyboardCheck();
       }
       touchMaxFingers = 0;
     }
@@ -1514,6 +1601,19 @@
               <span>{touchpadMode ? "Touchpad" : "Direct Touch"}</span>
             </button>
 
+            <!-- Show/Hide Mobile Soft Keyboard Toggle -->
+            <button
+              type="button"
+              on:click={toggleMobileKeyboard}
+              class="px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer border {showMobileKeyboard
+                ? 'bg-indigo-500/25 text-indigo-200 border-indigo-400/50 hover:bg-indigo-500/35'
+                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'}"
+              title={showMobileKeyboard ? "Hide Keyboard" : "Show Keyboard"}
+            >
+              <Keyboard class="w-3.5 h-3.5" />
+              <span>{showMobileKeyboard ? "Hide KB" : "Keyboard"}</span>
+            </button>
+
             <!-- Keyboard Lock to Host Toggle (Default ON for Desktop & Game Mode) -->
             <button
               type="button"
@@ -1700,6 +1800,19 @@
         on:touchmove={handleTouchMove}
         on:touchend={handleTouchEnd}
       >
+        <input
+          bind:this={mobileKeyboardInputEl}
+          type="text"
+          autocapitalize="off"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck={false}
+          aria-label="Remote Mobile Keyboard Input"
+          on:keydown={handleMobileKeyboardKeyDown}
+          on:input={handleMobileKeyboardInput}
+          on:blur={() => (showMobileKeyboard = false)}
+          class="fixed -left-[9999px] top-0 w-px h-px opacity-0 pointer-events-none"
+        />
         <video
           bind:this={videoEl}
           use:attachStream={$clientRemoteStream}

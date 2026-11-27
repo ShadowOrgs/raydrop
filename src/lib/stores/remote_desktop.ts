@@ -659,7 +659,7 @@ function boostSdpBitrate(sdp: string, kbps: number = 20000): string {
       continue;
     }
 
-    if (inVideo && !bandwidthAdded && (line.startsWith('c=') || line.startsWith('a='))) {
+    if (inVideo && !bandwidthAdded && line.startsWith('a=')) {
       result.push(`b=AS:${kbps}`);
       result.push(`b=TIAS:${bps}`);
       bandwidthAdded = true;
@@ -674,6 +674,12 @@ function boostSdpBitrate(sdp: string, kbps: number = 20000): string {
     }
 
     result.push(line);
+
+    if (inVideo && !bandwidthAdded && line.startsWith('c=')) {
+      result.push(`b=AS:${kbps}`);
+      result.push(`b=TIAS:${bps}`);
+      bandwidthAdded = true;
+    }
 
     // Inject a=fmtp:<pt> right after a=rtpmap:<pt> for codecs like VP8/VP9 that lack fmtp
     if (inVideo && line.startsWith('a=rtpmap:')) {
@@ -717,11 +723,11 @@ async function setupHostPeerConnection(
     pc.addTrack(audioTrack, stream);
   }
 
-  // Prefer AV1 (crisp text at low bandwidth like Chrome Remote Desktop) -> Hardware H264 -> VP9 -> VP8
+  // Prefer H264 -> VP9 -> VP8 -> AV1 for broadest cross-device WebRTC compatibility
   try {
     const caps = RTCRtpSender.getCapabilities?.('video');
     if (caps?.codecs) {
-      const preferredOrder = ['video/AV1', 'video/H264', 'video/VP9', 'video/VP8'];
+      const preferredOrder = ['video/H264', 'video/VP9', 'video/VP8', 'video/AV1'];
       const sortedCodecs = [...caps.codecs].sort((a, b) => {
         const ia = preferredOrder.indexOf(a.mimeType);
         const ib = preferredOrder.indexOf(b.mimeType);
@@ -775,7 +781,7 @@ async function setupHostPeerConnection(
     if (activePeerConnection === pc && pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed' && pc.connectionState !== 'connected') {
       disconnectRemoteSession();
     }
-  }, 15000);
+  }, 25000);
 
   pc.onconnectionstatechange = () => {
     if (activePeerConnection !== pc) return;
@@ -1283,7 +1289,8 @@ async function handleIncomingOffer(
   iceWatchdogTimer = setTimeout(() => {
     if (
       activePeerConnection === pc &&
-      (pc.connectionState !== 'connected' || activeDataChannel?.readyState !== 'open')
+      pc.connectionState !== 'connected' &&
+      activeDataChannel?.readyState !== 'open'
     ) {
       const state = `ICE=${pc.iceConnectionState}, PC=${pc.connectionState}, DC=${activeDataChannel?.readyState || 'none'}`;
       cleanupPeerConnection();
@@ -1291,7 +1298,7 @@ async function handleIncomingOffer(
       remoteConnectionStatus.set('error');
       remoteErrorMessage.set(`P2P video handshake timed out (${state}). Ensure both devices are updated and UDP/Tailscale is reachable.`);
     }
-  }, 15000);
+  }, 25000);
 
   pc.onconnectionstatechange = () => {
     if (activePeerConnection !== pc) return;
