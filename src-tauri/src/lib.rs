@@ -6,6 +6,8 @@ pub mod db;
 pub mod folder_sync;
 pub mod http_downloader;
 pub mod image_tools;
+pub mod llm_bridge;
+pub mod mcp_library;
 pub mod mcp_server;
 pub mod media_converter;
 pub mod media_player;
@@ -236,6 +238,7 @@ pub fn run() {
                 media_player: Arc::new(Mutex::new(persisted_media_player)),
                 mcp_server: Arc::new(crate::mcp_server::McpServerManager::default()),
                 telegram_bot: Arc::new(crate::telegram_bot::TelegramBotManager::default()),
+                llm_bridge: Arc::new(crate::llm_bridge::LlmBridgeManager::default()),
             });
 
             let state_for_setup = app_state.clone();
@@ -582,6 +585,11 @@ pub fn run() {
                         let _ = crate::media_player::ensure_ytdlp_installed(Some(&handle_ytdlp)).await;
                     });
                 }
+                let handle_llm = handle.clone();
+                let state_llm = state_for_setup.clone();
+                tauri::async_runtime::spawn(async move {
+                    state_llm.llm_bridge.init_from_db(&handle_llm, &state_llm.db);
+                });
                 browser_bridge::start_browser_bridge_daemon(handle, state_for_setup);
             }
 
@@ -589,6 +597,25 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             browser_bridge::run_web_speedtest,
+            llm_bridge::get_llm_bridge_status,
+            llm_bridge::update_llm_bridge_provider,
+            llm_bridge::refresh_llm_bridge_models,
+            llm_bridge::test_llm_bridge_provider,
+            llm_bridge::get_llm_bridge_network_info,
+            llm_bridge::discover_peer_llm_bridges,
+            llm_bridge::get_peer_llm_proxies,
+            llm_bridge::start_peer_llm_proxy,
+            llm_bridge::stop_peer_llm_proxy,
+            mcp_library::mcp_library_list,
+            mcp_library::mcp_library_supported_agents,
+            mcp_library::mcp_library_inspect,
+            mcp_library::mcp_library_save,
+            mcp_library::mcp_library_delete,
+            mcp_library::mcp_library_test,
+            mcp_library::mcp_library_toggle_bot,
+            mcp_library::mcp_library_install_agent,
+            mcp_library::mcp_library_uninstall_agent,
+            mcp_library::mcp_library_popular_presets,
             commands::get_app_state,
             commands::save_cloud_session,
             commands::logout_cloud_session,

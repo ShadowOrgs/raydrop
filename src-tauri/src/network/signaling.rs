@@ -703,9 +703,21 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
             }
 
             // P2P Voice & Online Meeting Room Signaling Handler & Remote Desktop Signaling
-            if session_id.starts_with("meeting:") || session_id.starts_with("remote:") {
+            if session_id.starts_with("meeting:") || session_id.starts_with("remote:") || session_id.starts_with("llm_bridge:") {
                 if let Ok(bytes) = hex::decode(payload_json) {
                     if let Ok(signal_val) = serde_json::from_slice::<Value>(&bytes) {
+                        if handle_emergency_power_signal(&state, from_device_id, &signal_val) {
+                            return;
+                        }
+                        if crate::llm_bridge::handle_llm_bridge_relay_signal(
+                            &app,
+                            &state,
+                            from_device_id,
+                            session_id,
+                            &signal_val,
+                        ) {
+                            return;
+                        }
                         let _ = app.emit(
                             "meeting_signal_received",
                             serde_json::json!({
@@ -825,4 +837,66 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
         }
         _ => {}
     }
+}
+
+pub fn handle_emergency_power_signal(
+    state: &Arc<AppState>,
+    from_device_id: &str,
+    payload: &Value,
+) -> bool {
+    if payload.get("type").and_then(|v| v.as_str()) != Some("remote_emergency_power") {
+        return false;
+    }
+
+    let action = payload
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let pin = payload.get("pin").and_then(|v| v.as_str()).unwrap_or("").trim();
+
+    if !matches!(action.as_str(), "restart" | "shutdown" | "sleep") {
+        warn!("Rejected invalid emergency power action '{}' from {}", action, from_device_id);
+        return true;
+    }
+
+    let is_own_device = state
+        .db
+        .get_contact(from_device_id)
+        .ok()
+        .flatten()
+        .map(|c| c.is_own_device)
+        .unwrap_or(false);
+
+    if !is_own_device {
+        warn!(
+            "Rejected emergency power '{}' from non-own device {}",
+            action, from_device_id
+        );
+        return true;
+    }
+
+    let expected_pin = state
+        .db
+        .get_setting("remote_desktop_pin")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    if expected_pin.trim().is_empty() || pin != expected_pin.trim() {
+        warn!(
+            "Rejected emergency power '{}' from {} due to invalid PIN",
+            action, from_device_id
+        );
+        return true;
+    }
+
+    info!(
+        "Executing out-of-band emergency power '{}' requested by own device {}",
+        action, from_device_id
+    );
+    if let Err(e) = crate::remote_input::execute_power_action(&action) {
+        warn!("Emergency power '{}' failed: {}", action, e);
+    }
+    true
 }

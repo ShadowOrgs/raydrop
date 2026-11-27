@@ -37,7 +37,9 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 **Your files, voice data, screen streams, and metadata NEVER touch the cloud.**
 
 ### 🌟 What Makes Raydrop Unique?
-- 🧠 **AI Skills Library (Universal Coding-Agent Skills Manager):** Discover, scan, import (GitHub, local folder, ZIP), and safely install `SKILL.md` packages globally or per-project across Codex, Claude Code, Cursor, Gemini CLI, OpenCode, GitHub Copilot, Windsurf, Cline, Roo Code, and Continue—with static security heuristics, backup & rollback, and pre-existing skill auto-discovery.
+- 🔌 **OpenAI-Compatible Multi-CLI LLM Bridge & P2P Relay:** Expose local coding-agent CLIs (Antigravity `agy`, Claude Code, Codex, Gemini CLI, OpenCode) as standard OpenAI-compatible `/v1/chat/completions` & `/v1/models` endpoints on dynamic ports (`48811–48815`), with Tailscale IP detection, Public/Private access toggle, live peer bridge discovery, and encrypted P2P WAN/LAN relay.
+- 🧩 **AI-Assisted MCP Library & Popular Presets:** Paste any MCP URL, GitHub repo, CLI command, or JSON config—Raydrop probes the endpoint, detects API key/auth requirements, tests live `tools/list`, installs directly to 8+ coding agents (`Antigravity`, `Claude Code`, `Cursor`, `Gemini CLI`, `Codex`, `Windsurf`, `OpenCode`, `Cline`) and enables them inside RayBot & Telegram Bot. Includes 15+ popular presets (MySQL, PostgreSQL, SQLite, Supabase, Context7, Playwright, GitHub, Figma, Notion, Brave Search, Firecrawl).
+- 🧠 **AI Skills Library (Universal Coding-Agent Skills Manager):** Discover, scan, import (GitHub, local folder, ZIP), auto-sync entire GitHub skill repositories (`anthropics/skills`, `vercel-labs/agent-skills`, `obra/superpowers`), and safely install `SKILL.md` packages globally or per-project across 10+ coding agents—with static security heuristics, backup & rollback, and pre-existing skill auto-discovery.
 - 🎵 **RayAmp (Winamp-Style Audio/Video Player & YouTube Music):** Floating deck with Web Audio spectrum visualizer, local MP3/FLAC/MP4/MKV, persistent SQLite Queue & Playlists with drag-and-drop reorder, YouTube Music search, compact Video mode, and automatic zero-config `yt-dlp` stream engine setup.
 - 🤖 **Full MCP Server & Telegram AI Bot:** Built-in JSON-RPC MCP server (`http://127.0.0.1:48765/mcp`) plus a native Telegram AI Bot with multi-user whitelist, customizable Bot Persona, and preset/custom OpenAI-compatible LLM providers (OpenAI, Gemini, Claude, DeepSeek, Groq, OpenRouter, Ollama).
 - 🖥️ **Unattended P2P Remote Desktop (Pre-Login Windows Service):** Full 60fps remote control with Windows `SYSTEM` service for pre-login Lock/PIN screen access, native zero-prompt capture, WASAPI system audio streaming, multi-monitor switching, remote power controls, and auto-minimize on connect.
@@ -78,6 +80,12 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 ---
 
 ## ✨ Key Features
+
+### 🆕 Multi-CLI LLM Bridge, AI MCP Library & GitHub Skills Sync (New in v1.2.95)
+- **OpenAI-Compatible Multi-CLI LLM Bridge:** Turn local coding CLIs into OpenAI-compatible `/v1/models`, `/v1/chat/completions`, and `/v1/images/generations` endpoints on dynamic ports (`48811–48815`), with Tailscale IP support, Public/Private contact access toggle, live peer bridge discovery, and P2P WAN/LAN relay proxies.
+- **AI-Assisted MCP Library & 15+ Popular Presets:** Paste any MCP endpoint URL (e.g. `https://mcp.sehatierp.com/`), GitHub repo, `npx`/`uvx` command, or JSON—Raydrop auto-detects transport (`http`/`sse`/`stdio`) and API key fields, runs live `Test Connection`, installs to 8+ Coding Agents, and plugs external MCP tools straight into Raydrop Bot & Telegram Bot. Ships with 15+ built-in presets including **MySQL**, **PostgreSQL**, **SQLite**, **Supabase**, **Context7**, **Playwright**, **GitHub**, **Figma**, **Notion**, **Brave Search**, and **Firecrawl**.
+- **GitHub Repo Auto-Sync & Built-in Skills:** One-click **Sync** for GitHub skill repositories (`anthropics/skills`, `vercel-labs/agent-skills`, `obra/superpowers`), plus built-in `performance-optimization-skill` & `reverse-engineer-anything` and Windows read-only (`os error 5`) sync hardening.
+- **Remote Power Controls in My Devices:** Trigger remote Sleep, Restart, or Shutdown directly from the My Devices view for authorized devices.
 
 ### 🆕 AI Skills Library, Meeting Video Recording & RayAmp Upgrades (New in v1.2.80)
 - **Local-First AI Skills Library:** Manage coding-agent skills (`SKILL.md`) across 10+ agents (`Codex`, `Claude Code`, `Cursor`, `Gemini CLI`, `OpenCode`, `GitHub Copilot`, `Windsurf`, `Cline`, `Roo Code`, `Continue`) with GitHub/ZIP/Folder import, static security scanning, Global & Project scope install/uninstall, auto-scan of pre-existing skills on disk, update diffing, and 1-click backup rollback.
@@ -281,10 +289,10 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.94/Raydrop_1.2.94_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.94/Raydrop_1.2.94_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.94/Raydrop_1.2.94_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.94/Raydrop_1.2.94_amd64.AppImage) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.95/Raydrop_1.2.95_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.95/Raydrop_1.2.95_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.95/Raydrop_1.2.95_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.95/Raydrop_1.2.95_amd64.AppImage) |
 | **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.23/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**

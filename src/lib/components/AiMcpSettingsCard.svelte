@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import {
     Bot,
     Server,
@@ -103,16 +104,55 @@
   let feedbackMsg = "";
   let errorMsg = "";
   let copiedMcpJson = false;
+  let localBridges: Array<{
+    id: string;
+    name: string;
+    port: number;
+    api_key: string;
+    default_model: string;
+    running: boolean;
+  }> = [];
+  let peerProxies: Array<{
+    id: string;
+    peer_alias: string;
+    provider_id: string;
+    local_port: number;
+    remote_api_key: string;
+  }> = [];
 
   onMount(async () => {
     try {
       config = await raydropApi.getAiMcpConfig();
       runtime = await raydropApi.getAiMcpRuntimeStatus();
     } catch (_) {}
+    try {
+      localBridges = await invoke("get_llm_bridge_status");
+      peerProxies = await invoke("get_peer_llm_proxies");
+    } catch (_) {}
   });
 
   function handleProviderChange(providerKey: string) {
     config.llm_provider = providerKey;
+    if (providerKey.startsWith("bridge:")) {
+      const bid = providerKey.slice(7);
+      const found = localBridges.find((b) => b.id === bid);
+      if (found) {
+        config.llm_base_url = `http://127.0.0.1:${found.port}/v1`;
+        config.llm_api_key = found.api_key;
+        config.llm_model = found.default_model;
+      }
+      return;
+    }
+    if (providerKey.startsWith("peer:")) {
+      const pid = providerKey.slice(5);
+      const found = peerProxies.find((p) => p.id === pid);
+      if (found) {
+        config.llm_base_url = `http://127.0.0.1:${found.local_port}/v1`;
+        config.llm_api_key = found.remote_api_key;
+        config.llm_model = found.provider_id;
+      }
+      return;
+    }
     const preset = PROVIDER_PRESETS[providerKey];
     if (preset && providerKey !== "custom") {
       config.llm_base_url = preset.baseUrl;
@@ -323,6 +363,20 @@
           {#each Object.entries(PROVIDER_PRESETS) as [key, p]}
             <option value={key}>{p.label}</option>
           {/each}
+          {#if localBridges.length > 0 || peerProxies.length > 0}
+            <optgroup label="Raydrop LLM Bridges (Local & Peer)">
+              {#each localBridges as b}
+                <option value={`bridge:${b.id}`}>
+                  Raydrop Bridge: {b.name} [:{b.port}] {b.running ? "(ON)" : "(OFF)"}
+                </option>
+              {/each}
+              {#each peerProxies as px}
+                <option value={`peer:${px.id}`}>
+                  Peer Bridge: {px.peer_alias} ({px.provider_id}) [:{px.local_port}]
+                </option>
+              {/each}
+            </optgroup>
+          {/if}
         </select>
       </div>
       <div>

@@ -126,8 +126,16 @@ pub fn ingest_skill_package(db: &Database, input: PackageIngestInput) -> Result<
     let lib_root = managed_library_dir(db)?;
     let pkg_dir = lib_root.join(&skill_id);
     if pkg_dir.exists() {
-        std::fs::remove_dir_all(&pkg_dir)
-            .map_err(|e| format!("Failed to clean existing managed package dir: {}", e))?;
+        clear_readonly_recursive(&pkg_dir);
+        if let Err(e) = std::fs::remove_dir_all(&pkg_dir) {
+            // Windows fallback: rename locked/held directory aside so staging can proceed cleanly
+            let stale_dir = lib_root.join(format!("{}.stale_{}", skill_id, now));
+            if std::fs::rename(&pkg_dir, &stale_dir).is_ok() {
+                let _ = std::fs::remove_dir_all(&stale_dir);
+            } else {
+                return Err(format!("Failed to clean existing managed package dir: {}", e));
+            }
+        }
     }
     std::fs::create_dir_all(&pkg_dir)
         .map_err(|e| format!("Failed to create managed package dir: {}", e))?;
@@ -184,4 +192,28 @@ pub fn ingest_skill_package(db: &Database, input: PackageIngestInput) -> Result<
 
     upsert_skill_with_files(db, &skill, &file_records)?;
     Ok(skill)
+}
+
+fn clear_readonly_recursive(path: &Path) {
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mut perms = meta.permissions();
+        if perms.readonly() {
+            perms.set_readonly(false);
+            let _ = std::fs::set_permissions(path, perms);
+        }
+    }
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                clear_readonly_recursive(&p);
+            } else if let Ok(meta) = std::fs::metadata(&p) {
+                let mut perms = meta.permissions();
+                if perms.readonly() {
+                    perms.set_readonly(false);
+                    let _ = std::fs::set_permissions(&p, perms);
+                }
+            }
+        }
+    }
 }

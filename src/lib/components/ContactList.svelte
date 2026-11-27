@@ -42,6 +42,10 @@
     HardDrive,
     Video,
     Zap,
+    Power,
+    RotateCcw,
+    Moon,
+    Loader2,
   } from "lucide-svelte";
   import RemoteExplorerModal from "./RemoteExplorerModal.svelte";
   import { createMeetingRoom, inviteContactToMeeting } from "../stores/meeting";
@@ -50,7 +54,46 @@
   import { triggerWakeOnLan } from "../stores/wol";
 
   let remoteBrowserTarget: { deviceId: string; alias: string } | null = null;
+  let powerTarget: { deviceId: string; alias: string } | null = null;
+  let powerAction: "restart" | "sleep" | "shutdown" = "restart";
+  let powerPin = "";
+  let powerSending = false;
+  let powerFeedback: { ok: boolean; text: string } | null = null;
   let myDirectAddr: { ip: string; port: number } | null = null;
+
+  async function sendEmergencyPower() {
+    if (!powerTarget || !powerPin.trim()) return;
+    powerSending = true;
+    powerFeedback = null;
+    try {
+      await raydropApi.sendMeetingSignal(
+        powerTarget.deviceId,
+        `remote:power_${Date.now()}`,
+        {
+          type: "remote_emergency_power",
+          action: powerAction,
+          pin: powerPin.trim(),
+        },
+      );
+      const label =
+        powerAction === "restart"
+          ? "Restart"
+          : powerAction === "sleep"
+            ? "Sleep"
+            : "Power Off";
+      powerFeedback = {
+        ok: true,
+        text: `Perintah ${label} dikirim langsung ke Rust engine ${powerTarget.alias}. (Pastikan PIN benar)`,
+      };
+    } catch (err: any) {
+      powerFeedback = {
+        ok: false,
+        text: `Gagal mengirim perintah: ${err?.message || err}`,
+      };
+    } finally {
+      powerSending = false;
+    }
+  }
 
   async function startMeetingWith(target: string | string[], alias: string) {
     activeMainTab.set("meeting");
@@ -643,6 +686,18 @@
                   title="Browse Remote Files"
                 >
                   <HardDrive class="w-4 h-4" />
+                </button>
+                <button
+                  on:click={() => {
+                    powerTarget = { deviceId: dev.device_id, alias: dev.device_name };
+                    powerAction = "restart";
+                    powerFeedback = null;
+                  }}
+                  class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-semibold transition-all"
+                  title="Remote Power (Restart, Sleep, Power Off)"
+                >
+                  <Power class="w-3.5 h-3.5" />
+                  <span>Power</span>
                 </button>
                 <button
                   on:click={() => handleRemoveDevice(dev.device_id)}
@@ -1597,4 +1652,132 @@
     info={$lanStatusMap[selectedLanBadge.deviceId] || selectedLanBadge.info}
     onClose={() => (selectedLanBadge = null)}
   />
+{/if}
+
+{#if powerTarget}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+  <div
+    class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+    role="dialog"
+    aria-modal="true"
+    on:click={() => (powerTarget = null)}
+  >
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <div
+      class="w-full max-w-md bg-slate-900 border border-rose-500/30 rounded-2xl p-5 shadow-2xl space-y-4"
+      role="document"
+      on:click|stopPropagation
+    >
+      <div class="flex items-start justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400">
+            <Power class="w-4 h-4" />
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">Remote Power Control</h3>
+            <p class="text-[11px] text-slate-400 font-mono truncate max-w-[260px]">
+              Target: {powerTarget.alias}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          on:click={() => (powerTarget = null)}
+          class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
+        >
+          <X class="w-4 h-4" />
+        </button>
+      </div>
+
+      <p class="text-[11px] text-slate-300 leading-relaxed bg-slate-950/70 border border-slate-800 rounded-xl p-2.5">
+        Dikirim langsung ke <b>Rust engine</b> perangkat tujuan (tanpa WebRTC). Tetap bekerja meski UI/layar Remote Desktop sedang hang selama jaringan aktif.
+      </p>
+
+      <div class="grid grid-cols-3 gap-2">
+        <button
+          type="button"
+          on:click={() => (powerAction = "restart")}
+          class="p-2.5 rounded-xl border text-center flex flex-col items-center gap-1.5 cursor-pointer transition {powerAction === 'restart'
+            ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'}"
+        >
+          <RotateCcw class="w-4 h-4" />
+          <span class="text-xs font-bold">Restart</span>
+        </button>
+
+        <button
+          type="button"
+          on:click={() => (powerAction = "sleep")}
+          class="p-2.5 rounded-xl border text-center flex flex-col items-center gap-1.5 cursor-pointer transition {powerAction === 'sleep'
+            ? 'bg-indigo-500/20 border-indigo-400 text-indigo-200'
+            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'}"
+        >
+          <Moon class="w-4 h-4" />
+          <span class="text-xs font-bold">Sleep</span>
+        </button>
+
+        <button
+          type="button"
+          on:click={() => (powerAction = "shutdown")}
+          class="p-2.5 rounded-xl border text-center flex flex-col items-center gap-1.5 cursor-pointer transition {powerAction === 'shutdown'
+            ? 'bg-rose-500/25 border-rose-400 text-rose-200'
+            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'}"
+        >
+          <Power class="w-4 h-4" />
+          <span class="text-xs font-bold">Power Off</span>
+        </button>
+      </div>
+
+      <div>
+        <label for="emergencyPowerPin" class="block text-[11px] font-semibold text-slate-300 mb-1">
+          Remote Desktop PIN (Perangkat Tujuan)
+        </label>
+        <input
+          id="emergencyPowerPin"
+          type="password"
+          bind:value={powerPin}
+          placeholder="Masukkan 6-digit PIN Remote Desktop..."
+          class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white font-mono outline-none focus:border-rose-400"
+        />
+      </div>
+
+      {#if powerFeedback}
+        <div
+          class="p-2.5 rounded-xl text-xs border {powerFeedback.ok
+            ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
+            : 'bg-rose-500/15 border-rose-500/35 text-rose-300'}"
+        >
+          {powerFeedback.text}
+        </div>
+      {/if}
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+        <button
+          type="button"
+          on:click={() => (powerTarget = null)}
+          class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 cursor-pointer"
+        >
+          Close
+        </button>
+        <button
+          type="button"
+          disabled={powerSending || !powerPin.trim()}
+          on:click={sendEmergencyPower}
+          class="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+        >
+          {#if powerSending}
+            <Loader2 class="w-3.5 h-3.5 animate-spin" />
+            <span>Sending...</span>
+          {:else}
+            <Power class="w-3.5 h-3.5" />
+            <span>
+              {powerAction === "restart" ? "Restart Now" : powerAction === "sleep" ? "Sleep Now" : "Power Off Now"}
+            </span>
+          {/if}
+        </button>
+      </div>
+    </div>
+  </div>
 {/if}

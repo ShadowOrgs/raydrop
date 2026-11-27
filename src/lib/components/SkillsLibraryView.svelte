@@ -1023,10 +1023,19 @@
             placeholder="Source Name (e.g. Team Registry)"
             class="px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white"
           />
+          <select
+            bind:value={newSourceType}
+            class="px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white"
+          >
+            <option value="github_repo">GitHub Repo (Auto-Sync)</option>
+            <option value="custom_registry">JSON Registry URL</option>
+          </select>
           <input
             type="text"
             bind:value={newSourceUrl}
-            placeholder="https://example.com/skills-registry.json"
+            placeholder={newSourceType === "github_repo"
+              ? "https://github.com/owner/skills-repo"
+              : "https://example.com/skills-registry.json"}
             class="flex-1 min-w-[220px] px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white"
           />
           <button

@@ -11,6 +11,8 @@
     Wand2,
     Globe,
     Sparkles,
+    Bot,
+    Plug,
   } from "lucide-svelte";
   import {
     activeMainTab,
@@ -42,6 +44,8 @@
     { id: "converter", label: "File Converter", icon: Wand2 },
     { id: "webdebugger", label: "Web Debugger", icon: Globe },
     { id: "skills", label: "AI Skills Library", icon: Sparkles },
+    { id: "mcplibrary", label: "MCP Library", icon: Plug },
+    { id: "llmbridge", label: "LLM Bridge", icon: Bot },
   ];
 
   let hoveredTooltip: { label: string; top: number; left: number } | null = null;

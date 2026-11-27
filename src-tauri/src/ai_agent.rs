@@ -1,5 +1,6 @@
 use crate::db::storage::Database;
-use crate::mcp_server::{execute_mcp_tool, get_mcp_tool_definitions, to_openai_tools};
+use crate::mcp_library::{call_external_mcp_tool, get_enabled_bot_mcp_tools};
+use crate::mcp_server::{execute_mcp_tool, get_mcp_tool_definitions};
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -197,6 +198,71 @@ pub async fn chat_with_mcp_tools(
     }
 }
 
+fn sanitize_llm_tool_part(raw: &str) -> String {
+    raw.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn make_bot_mcp_fn_name(mcp_id: &str, tool_name: &str) -> String {
+    let full = format!("extmcp__{}__{}", mcp_id, sanitize_llm_tool_part(tool_name));
+    if full.len() <= 64 {
+        full
+    } else {
+        full.chars().take(64).collect()
+    }
+}
+
+fn get_all_bot_tool_definitions(state: &Arc<AppState>) -> Vec<Value> {
+    let mut defs = get_mcp_tool_definitions();
+    for (mcp_id, mcp_name, tool) in get_enabled_bot_mcp_tools(&state.db) {
+        defs.push(json!({
+            "name": make_bot_mcp_fn_name(&mcp_id, &tool.name),
+            "description": format!("[{}] {}", mcp_name, tool.description),
+            "inputSchema": tool.input_schema
+        }));
+    }
+    defs
+}
+
+fn to_all_openai_tools(state: &Arc<AppState>) -> Vec<Value> {
+    get_all_bot_tool_definitions(state)
+        .into_iter()
+        .map(|t| {
+            json!({
+                "type": "function",
+                "function": {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "parameters": t["inputSchema"]
+                }
+            })
+        })
+        .collect()
+}
+
+async fn execute_bot_tool(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    name: &str,
+    args: &Value,
+) -> Result<String, String> {
+    if name.starts_with("extmcp__") {
+        for (mcp_id, _, tool) in get_enabled_bot_mcp_tools(&state.db) {
+            if make_bot_mcp_fn_name(&mcp_id, &tool.name) == name {
+                return call_external_mcp_tool(&state.db, &mcp_id, &tool.name, args).await;
+            }
+        }
+    }
+    execute_mcp_tool(app, state, name, args).await
+}
+
 fn extract_prompt_tool_call(text: &str) -> Option<(String, Value)> {
     let start = text.find("<tool_call>")?;
     let after = &text[start + "<tool_call>".len()..];
@@ -227,7 +293,7 @@ async fn chat_prompt_tool_loop(
         history.drain(0..drain);
     }
 
-    let tool_specs: Vec<String> = get_mcp_tool_definitions()
+    let tool_specs: Vec<String> = get_all_bot_tool_definitions(state)
         .into_iter()
         .map(|t| {
             format!(
@@ -293,7 +359,7 @@ async fn chat_prompt_tool_loop(
         history.push(json!({ "role": "assistant", "content": reply_text }));
 
         if let Some((fn_name, args_val)) = extract_prompt_tool_call(&reply_text) {
-            let tool_out = match execute_mcp_tool(app, state, &fn_name, &args_val).await {
+            let tool_out = match execute_bot_tool(app, state, &fn_name, &args_val).await {
                 Ok(out) => out,
                 Err(e) => format!("Tool error: {}", e),
             };
@@ -341,7 +407,7 @@ async fn chat_openai_compatible_loop(
     }
 
     let system_prompt = build_persona_system_prompt(cfg);
-    let tools = to_openai_tools();
+    let tools = to_all_openai_tools(state);
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(20))
         .timeout(std::time::Duration::from_secs(120))
@@ -429,7 +495,7 @@ async fn chat_openai_compatible_loop(
                 .unwrap_or("{}");
             let args_val: Value = serde_json::from_str(args_raw).unwrap_or(json!({}));
 
-            let tool_out = match execute_mcp_tool(app, state, fn_name, &args_val).await {
+            let tool_out = match execute_bot_tool(app, state, fn_name, &args_val).await {
                 Ok(out) => out,
                 Err(e) => format!("Tool error: {}", e),
             };
@@ -462,7 +528,7 @@ async fn chat_anthropic_loop(
     }
 
     let system_prompt = build_persona_system_prompt(cfg);
-    let anthropic_tools: Vec<Value> = get_mcp_tool_definitions()
+    let anthropic_tools: Vec<Value> = get_all_bot_tool_definitions(state)
         .into_iter()
         .map(|t| {
             json!({
@@ -527,7 +593,7 @@ async fn chat_anthropic_loop(
                     let id = block["id"].as_str().unwrap_or("tool_0");
                     let name = block["name"].as_str().unwrap_or("");
                     let input = block.get("input").cloned().unwrap_or(json!({}));
-                    let out = match execute_mcp_tool(app, state, name, &input).await {
+                    let out = match execute_bot_tool(app, state, name, &input).await {
                         Ok(s) => s,
                         Err(e) => format!("Tool error: {}", e),
                     };

@@ -56,6 +56,7 @@ pub struct AppState {
     pub media_player: Arc<Mutex<crate::media_player::MediaPlayerState>>,
     pub mcp_server: Arc<crate::mcp_server::McpServerManager>,
     pub telegram_bot: Arc<crate::telegram_bot::TelegramBotManager>,
+    pub llm_bridge: Arc<crate::llm_bridge::LlmBridgeManager>,
 }
 
 impl AppState {

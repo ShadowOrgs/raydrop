@@ -61,7 +61,9 @@ export type MainTab =
   | 'notes'
   | 'converter'
   | 'webdebugger'
-  | 'skills';
+  | 'skills'
+  | 'mcplibrary'
+  | 'llmbridge';
 
 export const activeMainTab = writable<MainTab>('transfers');
 export const activeChatPeerId = writable<string | null>(null);

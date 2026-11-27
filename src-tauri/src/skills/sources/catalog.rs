@@ -303,6 +303,9 @@ pub fn ensure_default_sources_and_catalog(db: &Database) -> Result<(), String> {
     let sources = list_sources(db)?;
     let defaults = [
         ("src_curated", "Raydrop Curated Catalog", "curated", "builtin://curated", true),
+        ("src_gh_anthropics", "Anthropic Official Skills", "github_repo", "https://github.com/anthropics/skills", true),
+        ("src_gh_vercel", "Vercel Labs Agent Skills", "github_repo", "https://github.com/vercel-labs/agent-skills", true),
+        ("src_gh_superpowers", "Superpowers Agent Skills (obra)", "github_repo", "https://github.com/obra/superpowers", true),
         ("src_github", "GitHub Repositories", "github", "https://github.com", true),
         ("src_skills_sh", "skills.sh Directory", "skills_sh", "https://skills.sh", true),
         ("src_aitmpl", "AITMPL Templates", "aitmpl", "https://www.aitmpl.com", true),
@@ -474,6 +477,67 @@ Prevent version-drift bugs and hallucinated APIs by anchoring every library call
 4. **Validate Edge Cases**: check platform guards (`#[cfg(target_os = ...)]`), nullability, and async error propagation.
 "#,
     },
+    BuiltinSkillPackage {
+        slug: "performance-optimization-skill",
+        skill_md: r#"---
+name: Performance Optimization Skill
+description: CLI performance optimization - startup time, memory usage, token savings benchmarking.
+author: Raydrop
+license: MIT
+version: 1.0.0
+categories:
+  - Performance
+  - Backend
+tags: [performance, cli, benchmark, memory, startup, rust]
+---
+
+# Performance Optimization Skill
+
+Systematic performance analysis and optimization for CLI tools, focusing on **startup time (<10ms)**, **memory usage (<5MB)**, and **token savings (>=20% floor)**.
+
+## When to Use
+- After filter changes, regex modifications, or dependency additions
+- When performance degradation is suspected or before a release
+- After any code change that could impact startup time, memory, or binary size
+
+## Performance Analysis Workflow
+1. **Establish Baseline**: capture startup time (`hyperfine`), resident memory (`/usr/bin/time`), and stripped binary size before editing.
+2. **Optimize**: eliminate repeated regex compilation (`LazyLock`), avoid startup file I/O, and minimize heap allocations.
+3. **Rebuild and Measure**: run `cargo build --release` and re-benchmark with `hyperfine`.
+4. **Identify Regressions**: profile startup regressions (>15% or >2ms) with `cargo flamegraph` and heap allocations with `dhat`.
+"#,
+    },
+    BuiltinSkillPackage {
+        slug: "reverse-engineer-anything",
+        skill_md: r#"---
+name: Reverse Engineer Anything
+description: Reverse engineer native, managed, Electron/JavaScript, packaged, firmware, and browser targets with REA, and build AgentEnv bundles from live instances or captures.
+author: morluto
+license: MIT
+version: 1.0.0
+categories:
+  - Security
+  - Analysis
+tags: [reverse-engineering, binary, asar, electron, firmware, rea]
+---
+
+# Reverse Engineer Anything (REA)
+
+Use REA when a claim depends on a shipped binary or package, decompilation, requested runtime evidence, or comparison with behavior not established by available source. Skip REA for ordinary source-repository architecture analysis.
+
+## Quick Routing
+- **ASAR / Electron / JavaScript tree**: `open_binary` -> `inspect_artifact` (`detail: "summary"`), or CLI fallback:
+  `npx -y rea-agents@latest analyze-javascript-application /absolute/path/to/app --json`
+- **Archives / Installers (ZIP, APK, IPA, MSIX, DMG, PyInstaller)**: `open_binary` -> `inspect_artifact`
+- **Managed PE/.NET assembly**: `inspect_managed_artifact`
+- **Android APK**: `inspect_android_package`
+- **Firmware / ESP32**: `inspect_artifact` / `inspect_firmware_regions`
+
+## Rules
+- Never invent unverified runtime behavior; ground every claim in observed Evidence records, hashes, and tool outputs.
+- Keep complete inline Evidence when retained references are unavailable.
+"#,
+    },
 ];
 
 pub fn ensure_builtin_context_skills(db: &Database) -> Result<(), String> {
@@ -529,6 +593,7 @@ pub async fn refresh_source(db: &Database, source_id: &str) -> Result<usize, Str
             ensure_default_sources_and_catalog(db)?;
             Ok(CURATED_SEEDS.len())
         }
+        "github_repo" => sync_github_repo_source(db, &src).await,
         "custom_registry" => sync_custom_registry_url(db, &src).await,
         "skills_sh" | "aitmpl" => {
             // Respectful discovery check: verify endpoint reachability without aggressive scraping
@@ -627,5 +692,62 @@ async fn sync_custom_registry_url(db: &Database, src: &SkillSourceRecord) -> Res
         };
         upsert_skill_with_files(db, &rec, &[])?;
     }
+    Ok(count)
+}
+
+async fn sync_github_repo_source(db: &Database, src: &SkillSourceRecord) -> Result<usize, String> {
+    let parsed = super::github::parse_github_url(&src.source_url)?;
+    let (branch, commit_sha, discovered) = super::github::discover_github_skills(&src.source_url).await?;
+    let existing = search_skills(db, &SkillsSearchQuery::default())?;
+
+    let now = now_unix_secs();
+    let count = discovered.len();
+    let repo_url = format!("https://github.com/{}/{}", parsed.owner, parsed.repo);
+
+    for d in discovered {
+        let slug = slugify_skill_name(&d.name);
+        let rel = d.relative_path.trim_matches('/');
+        let skill_url = if rel.is_empty() {
+            repo_url.clone()
+        } else {
+            format!("{}/tree/{}/{}", repo_url, branch, rel)
+        };
+        let id = stable_skill_id(&skill_url, &slug);
+        let prev = existing.iter().find(|s| s.id == id);
+
+        let rec = SkillRecord {
+            id,
+            source_id: src.id.clone(),
+            name: d.name,
+            slug,
+            description: d.description,
+            author: Some(parsed.owner.clone()),
+            license: prev.and_then(|p| p.license.clone()),
+            repository_url: Some(repo_url.clone()),
+            source_url: skill_url,
+            source_path: if rel.is_empty() { None } else { Some(rel.to_string()) },
+            version: Some("github-sync".to_string()),
+            branch: Some(branch.clone()),
+            commit_sha: Some(commit_sha.clone()),
+            categories: vec!["Community".to_string()],
+            tags: d.tags,
+            compatibility: Vec::new(),
+            security_status: prev
+                .map(|p| p.security_status.clone())
+                .unwrap_or_else(|| "unscanned".to_string()),
+            security_report: prev
+                .map(|p| p.security_report.clone())
+                .unwrap_or_default(),
+            popularity: prev.and_then(|p| p.popularity).or(Some(800)),
+            local_package_path: prev.and_then(|p| p.local_package_path.clone()),
+            last_updated: Some(now),
+            created_at: prev.map(|p| p.created_at).unwrap_or(now),
+            updated_at: now,
+            is_favorite: prev.map(|p| p.is_favorite).unwrap_or(false),
+            installed_agents: Vec::new(),
+        };
+        upsert_skill_with_files(db, &rec, &[])?;
+    }
+
     Ok(count)
 }

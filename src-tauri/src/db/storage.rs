@@ -464,6 +464,34 @@ fn open_and_migrate_db(db_path: &std::path::Path) -> Result<Connection, String> 
             position INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (preset_id, skill_id)
         );
+
+        CREATE TABLE IF NOT EXISTS mcp_library_items (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            source_url TEXT NOT NULL DEFAULT '',
+            transport TEXT NOT NULL DEFAULT 'http',
+            url TEXT NOT NULL DEFAULT '',
+            command TEXT NOT NULL DEFAULT '',
+            args_json TEXT NOT NULL DEFAULT '[]',
+            headers_json TEXT NOT NULL DEFAULT '{}',
+            env_json TEXT NOT NULL DEFAULT '{}',
+            auth_fields_json TEXT NOT NULL DEFAULT '[]',
+            enabled_for_bot INTEGER NOT NULL DEFAULT 0,
+            cached_tools_json TEXT NOT NULL DEFAULT '[]',
+            last_test_status TEXT NOT NULL DEFAULT '',
+            last_test_error TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS mcp_agent_installations (
+            mcp_id TEXT NOT NULL,
+            agent_id TEXT NOT NULL,
+            config_path TEXT NOT NULL,
+            installed_at INTEGER NOT NULL,
+            PRIMARY KEY (mcp_id, agent_id)
+        );
         ",
     )
     .map_err(|e| e.to_string())?;

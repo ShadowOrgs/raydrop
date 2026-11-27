@@ -24,6 +24,8 @@
   import ConverterView from "./lib/components/ConverterView.svelte";
   import WebDebuggerView from "./lib/components/WebDebuggerView.svelte";
   import SkillsLibraryView from "./lib/components/SkillsLibraryView.svelte";
+  import McpLibraryView from "./lib/components/McpLibraryView.svelte";
+  import LlmBridgeView from "./lib/components/LlmBridgeView.svelte";
   import {
     initWebDebuggerListeners,
     extensionUpdateInfo,
@@ -1106,6 +1108,24 @@
               : 'hidden'}"
           >
             <SkillsLibraryView />
+          </div>
+        {/if}
+        {#if visitedTabs.mcplibrary}
+          <div
+            class="h-full w-full {$activeMainTab === 'mcplibrary'
+              ? 'flex flex-col'
+              : 'hidden'}"
+          >
+            <McpLibraryView />
+          </div>
+        {/if}
+        {#if visitedTabs.llmbridge}
+          <div
+            class="h-full w-full {$activeMainTab === 'llmbridge'
+              ? 'flex flex-col'
+              : 'hidden'}"
+          >
+            <LlmBridgeView />
           </div>
         {/if}
         {#if visitedTabs.lan || visitedTabs.devices || visitedTabs.contacts}
