@@ -43,6 +43,7 @@
   let telemetry: SystemTelemetry | null = null;
   let analytics: TransferAnalytics | null = null;
   let loading = false;
+  let liveMonitorEnabled = false;
   let nowTime = "";
   let dialMode: "reliability" | "cpu" | "ram" = "reliability";
 
@@ -61,9 +62,13 @@
 
   async function fetchTelemetry() {
     if (!isTauriRuntime) return;
+    loading = true;
     try {
       telemetry = await raydropApi.getSystemTelemetry();
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      loading = false;
+    }
   }
 
   async function fetchAnalytics() {
@@ -73,25 +78,30 @@
     } catch (_) {}
   }
 
-  function startPolling() {
-    if (!isTauriRuntime) {
-      loading = false;
-      return;
-    }
-    if (telemetryTimer) return;
-    loading = !telemetry;
-    Promise.all([fetchTelemetry(), fetchAnalytics()]).finally(() => {
-      loading = false;
-    });
-    telemetryTimer = setInterval(fetchTelemetry, 1500);
-    analyticsTimer = setInterval(fetchAnalytics, 5000);
+  function startTelemetryPolling() {
+    if (!isTauriRuntime || telemetryTimer) return;
+    fetchTelemetry();
+    telemetryTimer = setInterval(fetchTelemetry, 2000);
   }
 
-  function stopPolling() {
+  function stopTelemetryPolling() {
     if (telemetryTimer) {
       clearInterval(telemetryTimer);
       telemetryTimer = null;
     }
+  }
+
+  function toggleLiveMonitor() {
+    liveMonitorEnabled = !liveMonitorEnabled;
+    if (liveMonitorEnabled) {
+      startTelemetryPolling();
+    } else {
+      stopTelemetryPolling();
+    }
+  }
+
+  function stopPolling() {
+    stopTelemetryPolling();
     if (analyticsTimer) {
       clearInterval(analyticsTimer);
       analyticsTimer = null;
@@ -99,7 +109,12 @@
   }
 
   $: if (active) {
-    startPolling();
+    if (!analytics && isTauriRuntime) {
+      fetchAnalytics();
+    }
+    if (liveMonitorEnabled) {
+      startTelemetryPolling();
+    }
   } else {
     stopPolling();
   }
@@ -167,7 +182,7 @@
     <!-- Top Row: Node Hero Card + Rounded Bar Chart -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
       <!-- Device / Node Hero Card (7 cols) -->
-      <div class="lg:col-span-7 spatial-card rounded-[22px] bg-white/[0.08] backdrop-blur-xl border border-white/[0.14] p-4 sm:p-5 flex flex-col justify-between gap-4">
+      <div class="lg:col-span-7 spatial-card rounded-[22px] bg-slate-900/80 border border-white/[0.14] p-4 sm:p-5 flex flex-col justify-between gap-4">
         <div class="flex items-start justify-between gap-3">
           <div class="flex items-center gap-3.5 min-w-0">
             <div class="w-14 h-14 rounded-2xl bg-white/[0.08] border border-white/15 flex items-center justify-center shrink-0 shadow-inner">
@@ -180,17 +195,31 @@
               </h2>
             </div>
           </div>
-          <button
-            type="button"
-            on:click={() => {
-              fetchTelemetry();
-              fetchAnalytics();
-            }}
-            class="w-8 h-8 rounded-full bg-white/[0.08] hover:bg-white/15 border border-white/10 flex items-center justify-center text-white/80 transition cursor-pointer shrink-0"
-            title="Refresh Telemetry"
-          >
-            <RefreshCw class="w-3.5 h-3.5 {loading ? 'animate-spin' : ''}" />
-          </button>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              on:click={toggleLiveMonitor}
+              class="px-2.5 py-1.5 rounded-full text-[11px] font-semibold border transition cursor-pointer flex items-center gap-1.5 {liveMonitorEnabled
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                : 'bg-white/[0.08] hover:bg-white/15 text-white/80 border-white/10'}"
+              title={liveMonitorEnabled ? "Pause Live System Monitor" : "Start Live System Monitor"}
+            >
+              <span class="w-2 h-2 rounded-full {liveMonitorEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}"></span>
+              <span>{liveMonitorEnabled ? "Live ON" : "Monitor"}</span>
+            </button>
+            <button
+              type="button"
+              disabled={loading}
+              on:click={() => {
+                fetchTelemetry();
+                fetchAnalytics();
+              }}
+              class="w-8 h-8 rounded-full bg-white/[0.08] hover:bg-white/15 border border-white/10 flex items-center justify-center text-white/80 transition cursor-pointer shrink-0"
+              title="Refresh Telemetry"
+            >
+              <RefreshCw class="w-3.5 h-3.5 {loading ? 'animate-spin' : ''}" />
+            </button>
+          </div>
         </div>
 
         <div class="grid grid-cols-2 gap-3 bg-black/20 rounded-2xl p-3 border border-white/[0.07]">

@@ -210,7 +210,7 @@
     }
   });
 
-  let visitedTabs: Record<string, boolean> = { dashboard: true, home: true };
+  let visitedTabs: Record<string, boolean> = { transfers: true, home: true };
   $: if ($activeMainTab && !visitedTabs[$activeMainTab]) {
     visitedTabs = { ...visitedTabs, [$activeMainTab]: true };
   }
@@ -668,7 +668,7 @@
       clearTimeout(readyFailSafe);
       setTimeout(() => {
         isAppReady = true;
-      }, 150);
+      }, 350);
     }
 
     // Auto-check for software updates silently on startup after brief initialization
@@ -707,17 +707,17 @@
 <div
   class="h-screen w-screen flex flex-col bg-slate-950 text-slate-100 select-none overflow-hidden relative"
 >
-  <!-- Ambient floating blobs (matching landing page aesthetic) -->
+  <!-- Ambient static radial glow (0% GPU blur overhead) -->
   <div
-    class="ambient-blob w-[450px] h-[450px] bg-cyan-500/[0.07] -top-24 -left-24"
+    class="ambient-blob w-[450px] h-[450px] text-cyan-400 -top-24 -left-24"
     aria-hidden="true"
   ></div>
   <div
-    class="ambient-blob w-[450px] h-[450px] bg-indigo-500/[0.07] top-1/2 -right-24"
+    class="ambient-blob w-[450px] h-[450px] text-indigo-400 top-1/2 -right-24"
     aria-hidden="true"
   ></div>
   <div
-    class="ambient-blob w-[380px] h-[380px] bg-emerald-500/[0.06] -bottom-24 left-1/3"
+    class="ambient-blob w-[380px] h-[380px] text-emerald-400 -bottom-24 left-1/3"
     aria-hidden="true"
   ></div>
 
@@ -733,7 +733,7 @@
       <div class="relative flex-1 flex flex-col min-w-0 min-h-0">
         <div
           aria-hidden="true"
-          class="spatial-window pointer-events-none absolute inset-0 rounded-[26px] bg-white/[0.04] backdrop-blur-2xl border border-white/[0.14] shadow-[0_28px_70px_-15px_rgba(0,0,0,0.6)]"
+          class="spatial-window pointer-events-none absolute inset-0 rounded-[26px] bg-slate-900/75 border border-white/[0.12] shadow-[0_28px_70px_-15px_rgba(0,0,0,0.6)]"
         ></div>
         <main
           class="relative flex-1 w-full max-w-full p-2.5 sm:p-4 overflow-x-hidden overflow-y-hidden flex flex-col min-h-0 rounded-[26px]"
@@ -1493,7 +1493,7 @@
 
   {#if !isAppReady}
     <div
-      class="fixed inset-0 z-[100] bg-slate-950/95 backdrop-blur-xl flex flex-col items-center justify-center p-6 select-none"
+      class="fixed inset-0 z-[100] bg-slate-950 flex flex-col items-center justify-center p-6 select-none"
       aria-busy="true"
       aria-label="Loading Raydrop"
     >

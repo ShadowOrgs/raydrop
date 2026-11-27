@@ -63,7 +63,7 @@ export type MainTab =
   | 'webdebugger'
   | 'skills';
 
-export const activeMainTab = writable<MainTab>('dashboard');
+export const activeMainTab = writable<MainTab>('transfers');
 export const activeChatPeerId = writable<string | null>(null);
 export const myRankExp = writable<number>(0);
 export const isDraggingFiles = writable<boolean>(false);

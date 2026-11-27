@@ -41,18 +41,12 @@
   }
 }
 
-@keyframes drift {
-  0% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(4vw, 3vh, 0) scale(1.06); }
-  100% { transform: translate3d(-3vw, 5vh, 0) scale(0.96); }
-}
-
 .ambient-blob {
   position: absolute;
   border-radius: 50%;
-  filter: blur(90px);
+  background: radial-gradient(circle, currentColor 0%, transparent 70%);
+  opacity: 0.08;
   pointer-events: none;
-  animation: drift 28s ease-in-out infinite alternate;
 }
 
 /* Syntax Highlighting for Chat Code Blocks */
