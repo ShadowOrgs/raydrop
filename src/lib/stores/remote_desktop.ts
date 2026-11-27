@@ -57,6 +57,7 @@ export const remoteAudioEnabled = writable<boolean>(true);
 export const remoteCursorShape = writable<string>('default');
 export const remoteSessionMode = writable<'desktop' | 'game'>('desktop');
 export const activeGamepadCount = writable<number>(0);
+export const remoteDebugInfo = writable<string>('');
 
 let activePeerConnection: RTCPeerConnection | null = null;
 let activeDataChannel: RTCDataChannel | null = null;
@@ -1255,14 +1256,18 @@ async function handleIncomingOffer(
     }
   };
 
+  function updateDebug() {
+    if (activePeerConnection !== pc) return;
+    remoteDebugInfo.set(
+      `ICE: ${pc.iceConnectionState} • PC: ${pc.connectionState} • DC: ${activeDataChannel?.readyState || 'none'} • Sig: ${pc.signalingState}`
+    );
+  }
+  updateDebug();
+
   pc.oniceconnectionstatechange = () => {
     if (activePeerConnection !== pc) return;
-    if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-      if (iceWatchdogTimer) {
-        clearTimeout(iceWatchdogTimer);
-        iceWatchdogTimer = null;
-      }
-    } else if (pc.iceConnectionState === 'failed') {
+    updateDebug();
+    if (pc.iceConnectionState === 'failed') {
       if (iceWatchdogTimer) {
         clearTimeout(iceWatchdogTimer);
         iceWatchdogTimer = null;
@@ -1270,24 +1275,28 @@ async function handleIncomingOffer(
       cleanupPeerConnection();
       activeRemoteSession.set(null);
       remoteConnectionStatus.set('error');
-      remoteErrorMessage.set('P2P WebRTC ICE connection failed. Check firewall or Tailscale/NAT connectivity between host and client.');
+      remoteErrorMessage.set(`P2P WebRTC ICE connection failed (${pc.iceConnectionState}). Check firewall or Tailscale/NAT connectivity between host and client.`);
     }
   };
 
   if (iceWatchdogTimer) clearTimeout(iceWatchdogTimer);
   iceWatchdogTimer = setTimeout(() => {
-    if (activePeerConnection === pc && pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed' && pc.connectionState !== 'connected') {
-      const state = pc.iceConnectionState || pc.connectionState;
+    if (
+      activePeerConnection === pc &&
+      (pc.connectionState !== 'connected' || activeDataChannel?.readyState !== 'open')
+    ) {
+      const state = `ICE=${pc.iceConnectionState}, PC=${pc.connectionState}, DC=${activeDataChannel?.readyState || 'none'}`;
       cleanupPeerConnection();
       activeRemoteSession.set(null);
       remoteConnectionStatus.set('error');
-      remoteErrorMessage.set(`P2P video handshake timed out (ICE: ${state}). Ensure both devices are updated and UDP/Tailscale is reachable.`);
+      remoteErrorMessage.set(`P2P video handshake timed out (${state}). Ensure both devices are updated and UDP/Tailscale is reachable.`);
     }
   }, 15000);
 
   pc.onconnectionstatechange = () => {
     if (activePeerConnection !== pc) return;
-    if (pc.connectionState === 'connected') {
+    updateDebug();
+    if (pc.connectionState === 'connected' && activeDataChannel?.readyState === 'open') {
       if (iceWatchdogTimer) {
         clearTimeout(iceWatchdogTimer);
         iceWatchdogTimer = null;
@@ -1444,6 +1453,11 @@ function playIncomingPcmChunk(b64: string) {
 
 function setupClientDataChannel(dc: RTCDataChannel) {
   dc.onopen = () => {
+    if (iceWatchdogTimer) {
+      clearTimeout(iceWatchdogTimer);
+      iceWatchdogTimer = null;
+    }
+    remoteDebugInfo.set('Connected');
     remoteConnectionStatus.set('connected');
     // Start periodic ping to measure latency
     if (pingInterval) clearInterval(pingInterval);
@@ -1737,6 +1751,7 @@ function cleanupPeerConnection() {
   activeVideoSender = null;
   clientRemoteStream.set(null);
   remoteCursorShape.set('default');
+  remoteDebugInfo.set('');
   pendingIceCandidates = [];
 }
 

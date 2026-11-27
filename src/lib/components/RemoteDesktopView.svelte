@@ -55,6 +55,7 @@
     remoteCursorShape,
     remoteSessionMode,
     activeGamepadCount,
+    remoteDebugInfo,
     setRemoteSessionMode,
     loadRemoteDesktopSettings,
     saveRemoteDesktopSettings,
@@ -1709,9 +1710,21 @@
         ></video>
         {#if $remoteLatencyMs === 0 && $remoteStreamFps === 0}
           <div class="pointer-events-none absolute inset-0 flex items-center justify-center z-20">
-            <div class="px-4 py-2.5 rounded-2xl bg-slate-900/90 border border-cyan-500/30 shadow-2xl flex items-center gap-2.5 text-xs text-slate-200 backdrop-blur-md">
-              <RefreshCw class="w-4 h-4 text-cyan-400 animate-spin" />
-              <span>Connecting P2P video stream...</span>
+            <div class="pointer-events-auto px-4 py-3 rounded-2xl bg-slate-900/95 border border-cyan-500/30 shadow-2xl flex flex-col items-center gap-2 text-xs text-slate-200 backdrop-blur-md">
+              <div class="flex items-center gap-2.5">
+                <RefreshCw class="w-4 h-4 text-cyan-400 animate-spin" />
+                <span class="font-medium">Connecting P2P video stream...</span>
+              </div>
+              {#if $remoteDebugInfo}
+                <span class="text-[10px] font-mono text-slate-400">{$remoteDebugInfo}</span>
+              {/if}
+              <button
+                type="button"
+                on:click={() => disconnectRemoteSession()}
+                class="mt-1 px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] border border-slate-700 transition cursor-pointer"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         {/if}
