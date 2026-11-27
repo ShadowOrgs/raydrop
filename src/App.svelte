@@ -730,9 +730,14 @@
     <FloatingRail />
 
     <div class="flex-1 flex flex-col min-w-0 min-h-0">
-      <main
-        class="spatial-window flex-1 w-full max-w-full p-2.5 sm:p-4 overflow-x-hidden overflow-y-hidden relative flex flex-col min-h-0 rounded-[26px] bg-white/[0.04] backdrop-blur-2xl border border-white/[0.14] shadow-[0_28px_70px_-15px_rgba(0,0,0,0.6)]"
-      >
+      <div class="relative flex-1 flex flex-col min-w-0 min-h-0">
+        <div
+          aria-hidden="true"
+          class="spatial-window pointer-events-none absolute inset-0 rounded-[26px] bg-white/[0.04] backdrop-blur-2xl border border-white/[0.14] shadow-[0_28px_70px_-15px_rgba(0,0,0,0.6)]"
+        ></div>
+        <main
+          class="relative flex-1 w-full max-w-full p-2.5 sm:p-4 overflow-x-hidden overflow-y-hidden flex flex-col min-h-0 rounded-[26px]"
+        >
         <!-- Mobile Windows-Phone / Metro Tile Home Menu (md:hidden) -->
         {#if $activeMainTab === "home"}
           <div
@@ -1115,6 +1120,7 @@
           </div>
         {/if}
       </main>
+      </div>
 
       <!-- Bottom Spatial Pill Bar + Customizable Menu Picker -->
       <div
