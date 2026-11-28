@@ -1,7 +1,8 @@
-use crate::db::storage::Database;
+use crate::db::storage::{now_unix_secs, Database};
 use crate::mcp_library::{call_external_mcp_tool, get_enabled_bot_mcp_tools};
 use crate::mcp_server::{execute_mcp_tool, get_mcp_tool_definitions};
 use crate::state::AppState;
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -618,4 +619,408 @@ async fn chat_anthropic_loop(
     }
 
     Err("Anthropic AI reached maximum tool-calling steps".to_string())
+}
+
+// ============================================================================
+// Persistent RayBot Chat (Sessions, Messages, Attachments: File / Image / Voice)
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RaybotAttachment {
+    pub kind: String, // "image" | "file" | "voice"
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub mime: String,
+    #[serde(default)]
+    pub data_url: String,
+    #[serde(default)]
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RaybotSession {
+    pub id: String,
+    pub title: String,
+    pub created_at: u64,
+    pub updated_at: u64,
+    #[serde(default)]
+    pub last_message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RaybotMessage {
+    pub id: String,
+    pub session_id: String,
+    pub role: String, // "user" | "assistant"
+    pub content: String,
+    #[serde(default)]
+    pub attachments: Vec<RaybotAttachment>,
+    pub created_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RaybotSendResult {
+    pub user_message: RaybotMessage,
+    pub assistant_message: RaybotMessage,
+    pub session: RaybotSession,
+}
+
+pub fn list_raybot_sessions(db: &Database) -> Result<Vec<RaybotSession>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.id, s.title, s.created_at, s.updated_at,
+                    COALESCE((SELECT m.content FROM raybot_messages m WHERE m.session_id = s.id ORDER BY m.created_at DESC LIMIT 1), '')
+             FROM raybot_sessions s
+             ORDER BY s.updated_at DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(RaybotSession {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                created_at: row.get::<_, i64>(2)? as u64,
+                updated_at: row.get::<_, i64>(3)? as u64,
+                last_message: row.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
+}
+
+pub fn create_raybot_session(db: &Database, title: Option<&str>) -> Result<RaybotSession, String> {
+    let now = now_unix_secs();
+    let id = format!("rb_{}", uuid::Uuid::new_v4().simple());
+    let clean_title = title
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("New Chat")
+        .to_string();
+
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO raybot_sessions (id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+        params![id, clean_title, now as i64, now as i64],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(RaybotSession {
+        id,
+        title: clean_title,
+        created_at: now,
+        updated_at: now,
+        last_message: String::new(),
+    })
+}
+
+pub fn list_raybot_messages(db: &Database, session_id: &str) -> Result<Vec<RaybotMessage>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, session_id, role, content, attachments_json, created_at
+             FROM raybot_messages
+             WHERE session_id = ?1
+             ORDER BY created_at ASC, rowid ASC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(params![session_id], |row| {
+            let att_json: String = row.get(4)?;
+            Ok(RaybotMessage {
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                attachments: serde_json::from_str(&att_json).unwrap_or_default(),
+                created_at: row.get::<_, i64>(5)? as u64,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
+}
+
+fn insert_raybot_message(db: &Database, msg: &RaybotMessage) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let att_json = serde_json::to_string(&msg.attachments).unwrap_or_else(|_| "[]".to_string());
+    conn.execute(
+        "INSERT INTO raybot_messages (id, session_id, role, content, attachments_json, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            msg.id,
+            msg.session_id,
+            msg.role,
+            msg.content,
+            att_json,
+            msg.created_at as i64
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE raybot_sessions SET updated_at = ?1 WHERE id = ?2",
+        params![msg.created_at as i64, msg.session_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn build_attachment_context(attachments: &[RaybotAttachment]) -> (String, Vec<String>) {
+    let mut notes = Vec::new();
+    let mut image_urls = Vec::new();
+
+    for att in attachments {
+        match att.kind.as_str() {
+            "image" => {
+                let label = if att.name.is_empty() { "pasted-image.png" } else { &att.name };
+                notes.push(format!("[Attached Image: {}]", label));
+                if !att.data_url.trim().is_empty() {
+                    image_urls.push(att.data_url.clone());
+                }
+            }
+            "voice" => {
+                notes.push(format!("[Attached Voice Note: {} ({} bytes)]", att.name, att.size_bytes));
+            }
+            _ => {
+                let path = att.path.trim();
+                let mut file_note = format!("[Attached File: {} | path={} | {} bytes]", att.name, path, att.size_bytes);
+                if !path.is_empty() {
+                    if let Ok(bytes) = std::fs::read(path) {
+                        if bytes.len() <= 24 * 1024 {
+                            if let Ok(text) = std::str::from_utf8(&bytes) {
+                                file_note.push_str(&format!("\n```\n{}\n```", text));
+                            }
+                        }
+                    }
+                }
+                notes.push(file_note);
+            }
+        }
+    }
+
+    (notes.join("\n\n"), image_urls)
+}
+
+#[tauri::command]
+pub async fn raybot_list_sessions(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<RaybotSession>, String> {
+    list_raybot_sessions(&state.db)
+}
+
+#[tauri::command]
+pub async fn raybot_create_session(
+    state: tauri::State<'_, Arc<AppState>>,
+    title: Option<String>,
+) -> Result<RaybotSession, String> {
+    create_raybot_session(&state.db, title.as_deref())
+}
+
+#[tauri::command]
+pub async fn raybot_rename_session(
+    state: tauri::State<'_, Arc<AppState>>,
+    session_id: String,
+    title: String,
+) -> Result<(), String> {
+    let clean = title.trim();
+    if clean.is_empty() {
+        return Err("Title cannot be empty".to_string());
+    }
+    let conn = state.db.conn.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE raybot_sessions SET title = ?1, updated_at = ?2 WHERE id = ?3",
+        params![clean, now_unix_secs() as i64, session_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn raybot_delete_session(
+    state: tauri::State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Result<(), String> {
+    let conn = state.db.conn.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM raybot_messages WHERE session_id = ?1", params![session_id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM raybot_sessions WHERE id = ?1", params![session_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn raybot_get_messages(
+    state: tauri::State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Result<Vec<RaybotMessage>, String> {
+    list_raybot_messages(&state.db, &session_id)
+}
+
+#[tauri::command]
+pub async fn raybot_send_message(
+    app: AppHandle,
+    state: tauri::State<'_, Arc<AppState>>,
+    session_id: String,
+    text: String,
+    attachments: Vec<RaybotAttachment>,
+) -> Result<RaybotSendResult, String> {
+    let cfg = load_ai_mcp_config(&state.db);
+    if cfg.llm_base_url.trim().is_empty() || cfg.llm_model.trim().is_empty() {
+        return Err("Configure LLM Base URL & Model in Settings -> AI & MCP first.".to_string());
+    }
+
+    let now = now_unix_secs();
+    let user_msg = RaybotMessage {
+        id: format!("rbm_{}", uuid::Uuid::new_v4().simple()),
+        session_id: session_id.clone(),
+        role: "user".to_string(),
+        content: text.clone(),
+        attachments: attachments.clone(),
+        created_at: now,
+    };
+
+    // Load prior messages for context before inserting current user message
+    let prior = list_raybot_messages(&state.db, &session_id)?;
+    let mut history: Vec<Value> = prior
+        .into_iter()
+        .rev()
+        .take(18)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .map(|m| json!({ "role": m.role, "content": m.content }))
+        .collect();
+
+    insert_raybot_message(&state.db, &user_msg)?;
+
+    // Auto-title session on first message
+    {
+        let conn = state.db.conn.lock().map_err(|e| e.to_string())?;
+        let current_title: String = conn
+            .query_row(
+                "SELECT title FROM raybot_sessions WHERE id = ?1",
+                params![session_id],
+                |r| r.get(0),
+            )
+            .unwrap_or_else(|_| "New Chat".to_string());
+        if current_title == "New Chat" {
+            let auto_title_src = if !text.trim().is_empty() {
+                text.trim().to_string()
+            } else if let Some(first_att) = attachments.first() {
+                first_att.name.clone()
+            } else {
+                "RayBot Chat".to_string()
+            };
+            let short: String = auto_title_src.chars().take(42).collect();
+            let _ = conn.execute(
+                "UPDATE raybot_sessions SET title = ?1 WHERE id = ?2",
+                params![short, session_id],
+            );
+        }
+    }
+
+    let (att_ctx, image_urls) = build_attachment_context(&attachments);
+    let combined_prompt = match (text.trim().is_empty(), att_ctx.is_empty()) {
+        (false, true) => text.clone(),
+        (true, false) => att_ctx,
+        (false, false) => format!("{}\n\n{}", text.trim(), att_ctx),
+        (true, true) => "Hello".to_string(),
+    };
+
+    // If images are attached and using OpenAI-compatible vision mode, try multimodal first
+    let reply = if !image_urls.is_empty() && cfg.llm_provider != "anthropic" && !cfg.llm_prompt_tool_mode {
+        let mut parts = vec![json!({ "type": "text", "text": combined_prompt })];
+        for img in &image_urls {
+            parts.push(json!({ "type": "image_url", "image_url": { "url": img } }));
+        }
+        let mut vision_history = history.clone();
+        vision_history.push(json!({ "role": "user", "content": parts }));
+
+        let base = cfg.llm_base_url.trim().trim_end_matches('/');
+        let url = format!("{}/chat/completions", base);
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(20))
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let mut req = client.post(&url);
+        if !cfg.llm_api_key.trim().is_empty() {
+            req = req.bearer_auth(cfg.llm_api_key.trim());
+        }
+        let mut msgs = vec![json!({ "role": "system", "content": build_persona_system_prompt(&cfg) })];
+        msgs.extend(vision_history);
+        let vision_res = req
+            .json(&json!({
+                "model": cfg.llm_model.trim(),
+                "messages": msgs,
+                "tools": to_all_openai_tools(state.inner()),
+                "temperature": cfg.llm_temperature,
+                "max_tokens": cfg.llm_max_tokens
+            }))
+            .send()
+            .await;
+
+        let mut handled_vision = None;
+        if let Ok(resp) = vision_res {
+            if resp.status().is_success() {
+                if let Ok(body) = resp.json::<Value>().await {
+                    if let Some(msg) = body.pointer("/choices/0/message") {
+                        let tool_calls = msg.get("tool_calls").and_then(|t| t.as_array()).cloned().unwrap_or_default();
+                        if tool_calls.is_empty() {
+                            if let Some(c) = msg.get("content").and_then(|c| c.as_str()) {
+                                handled_vision = Some(c.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        match handled_vision {
+            Some(r) => r,
+            None => chat_with_mcp_tools(&app, state.inner(), &cfg, &mut history, &combined_prompt).await?,
+        }
+    } else {
+        chat_with_mcp_tools(&app, state.inner(), &cfg, &mut history, &combined_prompt).await?
+    };
+
+    let assistant_msg = RaybotMessage {
+        id: format!("rbm_{}", uuid::Uuid::new_v4().simple()),
+        session_id: session_id.clone(),
+        role: "assistant".to_string(),
+        content: reply,
+        attachments: Vec::new(),
+        created_at: now_unix_secs(),
+    };
+    insert_raybot_message(&state.db, &assistant_msg)?;
+
+    let session = list_raybot_sessions(&state.db)?
+        .into_iter()
+        .find(|s| s.id == session_id)
+        .unwrap_or(RaybotSession {
+            id: session_id,
+            title: "RayBot Chat".to_string(),
+            created_at: now,
+            updated_at: assistant_msg.created_at,
+            last_message: assistant_msg.content.clone(),
+        });
+
+    Ok(RaybotSendResult {
+        user_message: user_msg,
+        assistant_message: assistant_msg,
+        session,
+    })
 }

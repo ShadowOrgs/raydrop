@@ -754,6 +754,42 @@
         }
         break;
       }
+      case "enqueue_tracks": {
+        const incoming = (payload?.tracks || []) as MediaTrack[];
+        if (incoming.length > 0) {
+          winampPlayerOpen.set(true);
+          const prev = get(mediaPlayerState);
+          const wasIdle = !prev.current_track && !prev.is_playing;
+          const startIdx = prev.queue.length;
+          mediaPlayerState.update((s) => ({
+            ...s,
+            queue: [...s.queue, ...incoming],
+          }));
+          syncBackend(true);
+          if ((payload?.play_if_idle ?? true) && wasIdle) {
+            await playTrack(incoming[0], startIdx);
+          }
+        }
+        break;
+      }
+      case "play_queue_index": {
+        const idx = Number(payload?.index ?? -1);
+        const st = get(mediaPlayerState);
+        if (idx >= 0 && idx < st.queue.length) {
+          winampPlayerOpen.set(true);
+          await playTrack(st.queue[idx], idx);
+        }
+        break;
+      }
+      case "clear_queue": {
+        mediaPlayerState.update((s) => ({
+          ...s,
+          queue: [],
+          current_index: -1,
+        }));
+        syncBackend(true);
+        break;
+      }
     }
   }
 

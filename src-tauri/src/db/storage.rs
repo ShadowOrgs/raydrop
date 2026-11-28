@@ -492,6 +492,22 @@ fn open_and_migrate_db(db_path: &std::path::Path) -> Result<Connection, String> 
             installed_at INTEGER NOT NULL,
             PRIMARY KEY (mcp_id, agent_id)
         );
+
+        CREATE TABLE IF NOT EXISTS raybot_sessions (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS raybot_messages (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            attachments_json TEXT NOT NULL DEFAULT '[]',
+            created_at INTEGER NOT NULL
+        );
         ",
     )
     .map_err(|e| e.to_string())?;

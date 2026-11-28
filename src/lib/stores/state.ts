@@ -63,6 +63,7 @@ export type MainTab =
   | 'webdebugger'
   | 'skills'
   | 'mcplibrary'
+  | 'raybot'
   | 'llmbridge';
 
 export const activeMainTab = writable<MainTab>('transfers');

@@ -13,6 +13,7 @@
     Sparkles,
     Bot,
     Plug,
+    MessageCircle,
   } from "lucide-svelte";
   import {
     activeMainTab,
@@ -45,6 +46,7 @@
     { id: "webdebugger", label: "Web Debugger", icon: Globe },
     { id: "skills", label: "AI Skills Library", icon: Sparkles },
     { id: "mcplibrary", label: "MCP Library", icon: Plug },
+    { id: "raybot", label: "RayBot AI Chat", icon: MessageCircle },
     { id: "llmbridge", label: "LLM Bridge", icon: Bot },
   ];
 

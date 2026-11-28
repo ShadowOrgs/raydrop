@@ -144,6 +144,56 @@ pub fn get_mcp_tool_definitions() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "playlist_get_items",
+            "description": "List all tracks inside a saved RayAmp playlist by playlist_id.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "playlist_id": { "type": "string", "description": "Playlist ID to inspect" }
+                },
+                "required": ["playlist_id"]
+            }
+        }),
+        json!({
+            "name": "media_queue_list",
+            "description": "Get all tracks currently in the RayAmp playback queue along with current_index and playback status.",
+            "inputSchema": { "type": "object", "properties": {} }
+        }),
+        json!({
+            "name": "media_queue_add",
+            "description": "Search YouTube Music and add one or more songs/videos to the RayAmp playback queue without interrupting playback (or start if idle).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Single song or video query to search and enqueue" },
+                    "queries": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional list of song queries to search and enqueue in order"
+                    },
+                    "video_id": { "type": "string", "description": "Optional exact YouTube videoId" },
+                    "prefer_video": { "type": "boolean", "description": "True to prefer music videos" },
+                    "play_if_idle": { "type": "boolean", "description": "Start playing immediately if RayAmp is currently idle (default true)" }
+                }
+            }
+        }),
+        json!({
+            "name": "media_queue_play_index",
+            "description": "Immediately play a specific song in the RayAmp queue by its 0-based index.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "index": { "type": "integer", "description": "0-based queue index to play" }
+                },
+                "required": ["index"]
+            }
+        }),
+        json!({
+            "name": "media_queue_clear",
+            "description": "Clear all tracks from the RayAmp playback queue.",
+            "inputSchema": { "type": "object", "properties": {} }
+        }),
+        json!({
             "name": "devices_list",
             "description": "List known RayDrop devices/contacts with online status, OS, device_id, and MAC address.",
             "inputSchema": { "type": "object", "properties": {} }
@@ -391,6 +441,142 @@ pub async fn execute_mcp_tool(
                 }),
             );
             Ok(json!({ "status": "ok", "playlist_id": pid }).to_string())
+        }
+        "playlist_get_items" => {
+            let pid = args["playlist_id"].as_str().unwrap_or("").trim();
+            if pid.is_empty() {
+                return Err("`playlist_id` is required".to_string());
+            }
+            let items = state.db.list_media_playlist_items(pid)?;
+            serde_json::to_string_pretty(&items).map_err(|e| e.to_string())
+        }
+        "media_queue_list" => {
+            let st = state
+                .media_player
+                .lock()
+                .map(|g| g.clone())
+                .map_err(|e| e.to_string())?;
+            let queue_summary: Vec<Value> = st
+                .queue
+                .iter()
+                .enumerate()
+                .map(|(idx, t)| {
+                    json!({
+                        "index": idx,
+                        "id": t.id,
+                        "title": t.title,
+                        "artist": t.artist,
+                        "duration_secs": t.duration_secs,
+                        "is_video": t.is_video,
+                        "uri_or_id": t.uri_or_id
+                    })
+                })
+                .collect();
+            serde_json::to_string_pretty(&json!({
+                "is_playing": st.is_playing,
+                "current_index": st.current_index,
+                "current_track": st.current_track,
+                "queue_length": st.queue.len(),
+                "queue": queue_summary
+            }))
+            .map_err(|e| e.to_string())
+        }
+        "media_queue_add" => {
+            let prefer_video = args["prefer_video"].as_bool().unwrap_or(false);
+            let play_if_idle = args["play_if_idle"].as_bool().unwrap_or(true);
+            let mut tracks = Vec::new();
+
+            if let Some(vid) = args["video_id"].as_str().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                tracks.push(crate::media_player::MediaTrack {
+                    id: format!("yt-{}", vid),
+                    source_type: "ytmusic".to_string(),
+                    title: "YouTube Music Track".to_string(),
+                    artist: "YouTube Music".to_string(),
+                    duration_secs: 0,
+                    uri_or_id: vid.to_string(),
+                    thumbnail_url: None,
+                    is_video: prefer_video,
+                    stream_url: None,
+                });
+            } else {
+                let mut queries: Vec<String> = Vec::new();
+                if let Some(arr) = args["queries"].as_array() {
+                    for q in arr {
+                        if let Some(s) = q.as_str().map(|x| x.trim()).filter(|x| !x.is_empty()) {
+                            queries.push(s.to_string());
+                        }
+                    }
+                }
+                if let Some(q) = args["query"].as_str().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                    if queries.is_empty() {
+                        queries.push(q.to_string());
+                    }
+                }
+                if queries.is_empty() {
+                    return Err("Provide `query`, `queries`, or `video_id`".to_string());
+                }
+                let filter = if prefer_video { "videos" } else { "all" };
+                for q in queries {
+                    let results = crate::media_player::search_ytmusic(&q, filter).await?;
+                    if let Some(first) = results.into_iter().next() {
+                        tracks.push(crate::media_player::MediaTrack {
+                            id: format!("yt-{}", first.video_id),
+                            source_type: "ytmusic".to_string(),
+                            title: first.title,
+                            artist: first.artist,
+                            duration_secs: first.duration_secs,
+                            uri_or_id: first.video_id,
+                            thumbnail_url: first.thumbnail_url,
+                            is_video: prefer_video || first.is_video,
+                            stream_url: None,
+                        });
+                    }
+                }
+                if tracks.is_empty() {
+                    return Err("No YouTube Music tracks matched your query".to_string());
+                }
+            }
+
+            let _ = app.emit(
+                "media_player_remote_action",
+                json!({
+                    "action": "enqueue_tracks",
+                    "payload": {
+                        "tracks": tracks,
+                        "play_if_idle": play_if_idle
+                    }
+                }),
+            );
+
+            Ok(json!({
+                "status": "queued",
+                "added_count": tracks.len(),
+                "tracks": tracks
+            })
+            .to_string())
+        }
+        "media_queue_play_index" => {
+            let idx = args["index"]
+                .as_u64()
+                .ok_or_else(|| "`index` (integer) is required".to_string())? as usize;
+            let _ = app.emit(
+                "media_player_remote_action",
+                json!({
+                    "action": "play_queue_index",
+                    "payload": { "index": idx }
+                }),
+            );
+            Ok(json!({ "status": "ok", "index": idx }).to_string())
+        }
+        "media_queue_clear" => {
+            let _ = app.emit(
+                "media_player_remote_action",
+                json!({
+                    "action": "clear_queue",
+                    "payload": {}
+                }),
+            );
+            Ok(json!({ "status": "ok", "cleared": true }).to_string())
         }
         "devices_list" => {
             let contacts = state.db.list_contacts()?;

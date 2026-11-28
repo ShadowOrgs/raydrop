@@ -25,6 +25,7 @@
   import WebDebuggerView from "./lib/components/WebDebuggerView.svelte";
   import SkillsLibraryView from "./lib/components/SkillsLibraryView.svelte";
   import McpLibraryView from "./lib/components/McpLibraryView.svelte";
+  import RayBotChatView from "./lib/components/RayBotChatView.svelte";
   import LlmBridgeView from "./lib/components/LlmBridgeView.svelte";
   import {
     initWebDebuggerListeners,
@@ -1117,6 +1118,15 @@
               : 'hidden'}"
           >
             <McpLibraryView />
+          </div>
+        {/if}
+        {#if visitedTabs.raybot}
+          <div
+            class="h-full w-full {$activeMainTab === 'raybot'
+              ? 'flex flex-col'
+              : 'hidden'}"
+          >
+            <RayBotChatView />
           </div>
         {/if}
         {#if visitedTabs.llmbridge}
