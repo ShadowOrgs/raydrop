@@ -17,6 +17,7 @@ pub struct TelegramAllowedUser {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AiMcpConfig {
     // MCP Server
     pub mcp_enabled: bool,
@@ -30,11 +31,11 @@ pub struct AiMcpConfig {
     pub llm_model: String,
     pub llm_temperature: f32,
     pub llm_max_tokens: u32,
-    #[serde(default)]
     pub llm_prompt_tool_mode: bool,
 
     // Bot Persona
     pub persona_name: String,
+    pub persona_avatar: String,
     pub persona_preset: String,   // "assistant" | "friendly" | "concise" | "custom"
     pub persona_language: String, // "auto" | "id" | "en"
     pub persona_system_prompt: String,
@@ -59,6 +60,7 @@ impl Default for AiMcpConfig {
             llm_max_tokens: 2048,
             llm_prompt_tool_mode: false,
             persona_name: "RayBot".to_string(),
+            persona_avatar: String::new(),
             persona_preset: "assistant".to_string(),
             persona_language: "auto".to_string(),
             persona_system_prompt:

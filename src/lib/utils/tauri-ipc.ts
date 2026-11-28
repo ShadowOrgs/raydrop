@@ -102,6 +102,7 @@ export interface AiMcpConfig {
   llm_max_tokens: number;
   llm_prompt_tool_mode?: boolean;
   persona_name: string;
+  persona_avatar?: string;
   persona_preset: string;
   persona_language: string;
   persona_system_prompt: string;

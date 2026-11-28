@@ -85,6 +85,7 @@
     llm_max_tokens: 2048,
     llm_prompt_tool_mode: false,
     persona_name: "RayBot",
+    persona_avatar: "",
     persona_preset: "assistant",
     persona_language: "auto",
     persona_system_prompt: DEFAULT_PERSONA_PROMPT,
@@ -121,14 +122,18 @@
   }> = [];
 
   onMount(async () => {
-    try {
-      config = await raydropApi.getAiMcpConfig();
-      runtime = await raydropApi.getAiMcpRuntimeStatus();
-    } catch (_) {}
-    try {
-      localBridges = await invoke("get_llm_bridge_status");
-      peerProxies = await invoke("get_peer_llm_proxies");
-    } catch (_) {}
+    const [cfgRes, rtRes, bridgesRes, proxiesRes] = await Promise.allSettled([
+      raydropApi.getAiMcpConfig(),
+      raydropApi.getAiMcpRuntimeStatus(),
+      invoke<typeof localBridges>("get_llm_bridge_status"),
+      invoke<typeof peerProxies>("get_peer_llm_proxies"),
+    ]);
+    if (bridgesRes.status === "fulfilled") localBridges = bridgesRes.value;
+    if (proxiesRes.status === "fulfilled") peerProxies = proxiesRes.value;
+    if (rtRes.status === "fulfilled") runtime = rtRes.value;
+    if (cfgRes.status === "fulfilled") {
+      config = { persona_avatar: "", ...cfgRes.value };
+    }
   });
 
   function handleProviderChange(providerKey: string) {
@@ -188,12 +193,44 @@
     );
   }
 
+  export async function saveConfig() {
+    return handleSave();
+  }
+
+  function handleAvatarFileChange(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxSide = 256;
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          config = { ...config, persona_avatar: canvas.toDataURL("image/webp", 0.85) };
+        }
+      };
+      img.src = String(reader.result || "");
+    };
+    reader.readAsDataURL(file);
+    input.value = "";
+  }
+
   async function handleSave() {
     saving = true;
     errorMsg = "";
     feedbackMsg = "";
     try {
       config = await raydropApi.saveAiMcpConfig(config);
+      window.dispatchEvent(new CustomEvent("raybot-config-updated", { detail: config }));
       setTimeout(async () => {
         runtime = await raydropApi.getAiMcpRuntimeStatus().catch(() => runtime);
       }, 450);
@@ -377,6 +414,9 @@
               {/each}
             </optgroup>
           {/if}
+          {#if (config.llm_provider.startsWith("bridge:") || config.llm_provider.startsWith("peer:")) && !localBridges.some((b) => `bridge:${b.id}` === config.llm_provider) && !peerProxies.some((px) => `peer:${px.id}` === config.llm_provider)}
+            <option value={config.llm_provider}>{config.llm_provider}</option>
+          {/if}
         </select>
       </div>
       <div>
@@ -473,6 +513,33 @@
         <RotateCcw class="w-3 h-3" />
         <span>Reset Default</span>
       </button>
+    </div>
+
+    <div class="flex items-center gap-3 p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
+      <div class="w-11 h-11 rounded-full overflow-hidden bg-purple-500/15 border border-purple-500/30 flex items-center justify-center shrink-0">
+        {#if config.persona_avatar}
+          <img src={config.persona_avatar} alt={config.persona_name || "RayBot"} class="w-full h-full object-cover" />
+        {:else}
+          <Bot class="w-5 h-5 text-purple-300" />
+        {/if}
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-[11px] font-semibold text-slate-200">Persona Avatar</div>
+        <div class="text-[10px] text-slate-400">Shown in RayBot Chat UI</div>
+      </div>
+      <label class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold cursor-pointer transition active:scale-[0.97]">
+        Upload Avatar
+        <input type="file" accept="image/*" class="hidden" on:change={handleAvatarFileChange} />
+      </label>
+      {#if config.persona_avatar}
+        <button
+          type="button"
+          on:click={() => (config = { ...config, persona_avatar: "" })}
+          class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 text-[11px] transition active:scale-[0.97] cursor-pointer"
+        >
+          Remove
+        </button>
+      {/if}
     </div>
 
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">

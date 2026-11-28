@@ -43,6 +43,7 @@
   } from "lucide-svelte";
 
   let aliasName = "";
+  let aiMcpCardRef: AiMcpSettingsCard | null = null;
   let downloadDir = "";
   let signalingUrl = "";
   let stunAddr = "";
@@ -244,6 +245,7 @@
         maxConcurrentDownloads,
       });
       appSettings.set(updated);
+      await aiMcpCardRef?.saveConfig();
       if (updated.auth_token && updated.alias_name) {
         try {
           const res = await cloudApi.renameDevice(
@@ -936,7 +938,7 @@
         </div>
 
         <!-- AI Remote Control (MCP, LLM Provider, Persona & Telegram Bot) -->
-        <AiMcpSettingsCard />
+        <AiMcpSettingsCard bind:this={aiMcpCardRef} />
 
         <!-- Software Updates -->
         <div

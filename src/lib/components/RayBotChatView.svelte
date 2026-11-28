@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
   import { marked } from "marked";
+  import { raydropApi, type AiMcpConfig } from "../utils/tauri-ipc";
   import {
     Bot,
     Plus,
@@ -64,6 +65,17 @@
   let sending = false;
   let errorMsg = "";
 
+  let personaName = "RayBot";
+  let personaAvatar = "";
+  let personaModel = "";
+
+  function applyAiConfig(cfg: Partial<AiMcpConfig> | null | undefined) {
+    if (!cfg) return;
+    personaName = (cfg.persona_name || "RayBot").trim() || "RayBot";
+    personaAvatar = cfg.persona_avatar || "";
+    personaModel = cfg.llm_model || "";
+  }
+
   let inputText = "";
   let pendingAttachments: RaybotAttachment[] = [];
   let chatScrollEl: HTMLDivElement | null = null;
@@ -108,7 +120,13 @@
 
   onMount(() => {
     loadSessions(true);
+    raydropApi.getAiMcpConfig().then(applyAiConfig).catch(() => {});
+    const onCfgUpdated = (e: Event) => {
+      applyAiConfig((e as CustomEvent<AiMcpConfig>).detail);
+    };
+    window.addEventListener("raybot-config-updated", onCfgUpdated);
     return () => {
+      window.removeEventListener("raybot-config-updated", onCfgUpdated);
       if (recordTimer) clearInterval(recordTimer);
     };
   });
@@ -446,12 +464,18 @@
     <div class="p-3.5 border-b border-slate-800/80 space-y-2.5">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <div class="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-            <Bot class="w-4 h-4" />
+          <div class="w-8 h-8 rounded-full overflow-hidden bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+            {#if personaAvatar}
+              <img src={personaAvatar} alt={personaName} class="w-full h-full object-cover" />
+            {:else}
+              <Bot class="w-4 h-4" />
+            {/if}
           </div>
-          <div>
-            <div class="text-xs font-bold text-white">RayBot Chats</div>
-            <div class="text-[10px] text-slate-400">MCP + RayAmp + Vision</div>
+          <div class="min-w-0">
+            <div class="text-xs font-bold text-white truncate">{personaName}</div>
+            <div class="text-[10px] text-slate-400 truncate">
+              {personaModel ? personaModel : "MCP + RayAmp + Vision"}
+            </div>
           </div>
         </div>
         <button
@@ -581,11 +605,15 @@
         </div>
       {:else if messages.length === 0}
         <div class="max-w-xl mx-auto mt-10 text-center space-y-4">
-          <div class="w-12 h-12 mx-auto rounded-2xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-            <Sparkles class="w-6 h-6" />
+          <div class="w-14 h-14 mx-auto rounded-full overflow-hidden bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+            {#if personaAvatar}
+              <img src={personaAvatar} alt={personaName} class="w-full h-full object-cover" />
+            {:else}
+              <Sparkles class="w-6 h-6" />
+            {/if}
           </div>
           <div>
-            <h3 class="text-base font-bold text-white">Chat with RayBot</h3>
+            <h3 class="text-base font-bold text-white">Chat with {personaName}</h3>
             <p class="text-xs text-slate-400 mt-1">
               Control RayAmp music queues &amp; playlists, inspect attached files/images, or use any MCP server you installed.
             </p>
@@ -604,12 +632,24 @@
         </div>
       {:else}
         {#each messages as msg (msg.id)}
-          <div class="flex {msg.role === 'user' ? 'justify-end' : 'justify-start'}">
+          <div class="flex {msg.role === 'user' ? 'justify-end' : 'justify-start items-start gap-2.5'}">
+            {#if msg.role === "assistant"}
+              <div class="w-7 h-7 rounded-full overflow-hidden bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0 mt-0.5">
+                {#if personaAvatar}
+                  <img src={personaAvatar} alt={personaName} class="w-full h-full object-cover" />
+                {:else}
+                  <Bot class="w-3.5 h-3.5" />
+                {/if}
+              </div>
+            {/if}
             <div
-              class="max-w-[82%] rounded-2xl px-4 py-3 text-xs space-y-2 {msg.role === 'user'
+              class="max-w-[80%] rounded-2xl px-4 py-3 text-xs space-y-2 {msg.role === 'user'
                 ? 'bg-cyan-600/25 border border-cyan-500/35 text-white'
                 : 'bg-slate-900/90 border border-slate-800 text-slate-100'}"
             >
+              {#if msg.role === "assistant"}
+                <div class="text-[11px] font-bold text-cyan-300">{personaName}</div>
+              {/if}
               {#if msg.attachments && msg.attachments.length > 0}
                 <div class="space-y-2">
                   {#each msg.attachments as att}
