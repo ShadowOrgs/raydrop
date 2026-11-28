@@ -731,6 +731,126 @@ async fn handle_signaling_message(app: &AppHandle, state: &Arc<AppState>, text: 
                 return;
             }
 
+            // RayAmp Now-Playing Activity Broadcast (Discord-style)
+            if session_id == "rayamp:activity" {
+                if let Ok(bytes) = hex::decode(&payload_json) {
+                    if let Ok(act_val) = serde_json::from_slice::<Value>(&bytes) {
+                        let _ = app.emit(
+                            "peer_rayamp_activity",
+                            serde_json::json!({
+                                "from_device_id": from_device_id,
+                                "is_playing": act_val.get("is_playing").and_then(|v| v.as_bool()).unwrap_or(false),
+                                "title": act_val.get("title").and_then(|v| v.as_str()).unwrap_or(""),
+                                "artist": act_val.get("artist").and_then(|v| v.as_str()).unwrap_or(""),
+                                "source_type": act_val.get("source_type").and_then(|v| v.as_str()).unwrap_or("local"),
+                            }),
+                        );
+                    }
+                }
+                return;
+            }
+
+            // Remote RayBot Chat Execution & Response Handler (Own Devices)
+            if session_id.starts_with("raybot:") {
+                if let Ok(bytes) = hex::decode(&payload_json) {
+                    if let Ok(rb_val) = serde_json::from_slice::<Value>(&bytes) {
+                        let kind = rb_val.get("kind").and_then(|v| v.as_str()).unwrap_or_default();
+                        let req_id = rb_val
+                            .get("req_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        if kind == "RAYBOT_REMOTE_REQ" && !req_id.is_empty() {
+                            let app_clone = app.clone();
+                            let state_clone = state.clone();
+                            let from_id = from_device_id.clone();
+                            let text = rb_val
+                                .get("text")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let history = rb_val
+                                .get("history")
+                                .and_then(|v| v.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            let attachments: Vec<crate::ai_agent::RaybotAttachment> = rb_val
+                                .get("attachments")
+                                .cloned()
+                                .and_then(|v| serde_json::from_value(v).ok())
+                                .unwrap_or_default();
+                            tauri::async_runtime::spawn(async move {
+                                let res = crate::ai_agent::execute_remote_raybot_prompt(
+                                    &app_clone,
+                                    &state_clone,
+                                    text,
+                                    history,
+                                    attachments,
+                                )
+                                .await;
+                                let resp_payload = match res {
+                                    Ok((reply, atts)) => serde_json::json!({
+                                        "kind": "RAYBOT_REMOTE_RES",
+                                        "req_id": req_id,
+                                        "ok": true,
+                                        "reply": reply,
+                                        "attachments": atts,
+                                    }),
+                                    Err(err) => serde_json::json!({
+                                        "kind": "RAYBOT_REMOTE_RES",
+                                        "req_id": req_id,
+                                        "ok": false,
+                                        "error": err,
+                                    }),
+                                };
+                                let payload_hex = hex::encode(resp_payload.to_string().as_bytes());
+                                let relay_msg = serde_json::json!({
+                                    "type": "RELAY_CONTROL",
+                                    "target_device_id": from_id,
+                                    "session_id": format!("raybot:{}", req_id),
+                                    "payload_json": payload_hex,
+                                });
+                                if let Ok(guard) = state_clone.signaling_tx.lock() {
+                                    if let Some(tx) = guard.as_ref() {
+                                        let _ = tx.send(relay_msg.to_string());
+                                    }
+                                }
+                            });
+                        } else if kind == "RAYBOT_REMOTE_RES" && !req_id.is_empty() {
+                            let sender_opt = state
+                                .pending_raybot_remote
+                                .lock()
+                                .ok()
+                                .and_then(|mut m| m.remove(&req_id));
+                            if let Some(tx) = sender_opt {
+                                let ok = rb_val.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+                                if ok {
+                                    let reply = rb_val
+                                        .get("reply")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let atts: Vec<crate::ai_agent::RaybotAttachment> = rb_val
+                                        .get("attachments")
+                                        .cloned()
+                                        .and_then(|v| serde_json::from_value(v).ok())
+                                        .unwrap_or_default();
+                                    let _ = tx.send(Ok((reply, atts)));
+                                } else {
+                                    let err = rb_val
+                                        .get("error")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("Remote RayBot error")
+                                        .to_string();
+                                    let _ = tx.send(Err(err));
+                                }
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+
             // Real-Time P2P Avatar Synchronization Handler (WAN Relay)
             if session_id.starts_with("avatar:") {
                 if let Ok(bytes) = hex::decode(payload_json) {

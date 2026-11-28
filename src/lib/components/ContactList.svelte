@@ -13,6 +13,8 @@
   import LanInfoModal from "./LanInfoModal.svelte";
   import type { LanStatusInfo } from "../utils/tauri-ipc";
   import { peerAvatars, peerAvatarHashes, myAvatar, loadPeerAvatar } from "../stores/avatars";
+  import { peerActivities, notifyToast } from "../stores/presence";
+  import { Share2, Music } from "lucide-svelte";
   import {
     raydropApi,
     cloudApi,
@@ -153,6 +155,18 @@
   function openChatWith(deviceId: string) {
     activeChatPeerId.set(deviceId);
     activeMainTab.set("chat");
+  }
+
+  async function handleShareContact(name: string, email: string, deviceId?: string) {
+    const shareText = deviceId
+      ? `Raydrop Contact\nName: ${name}\nEmail: ${email}\nDevice ID: ${deviceId}`
+      : `Raydrop Contact\nName: ${name}\nEmail: ${email}`;
+    try {
+      await navigator.clipboard.writeText(shareText);
+      notifyToast("Contact Shared", `Info kontak ${name} disalin ke clipboard`, "cyan");
+    } catch (_) {
+      notifyToast("Share Contact", shareText, "cyan");
+    }
   }
 
   let activeTab: "devices" | "contacts" | "lan" = "devices";
@@ -781,6 +795,12 @@
                   <p class="text-xs font-mono text-slate-400 truncate">
                     {group.email}
                   </p>
+                  {#each group.devices.filter((d) => $peerActivities[d.device_id]?.is_playing).slice(0, 1) as actDev}
+                    <div class="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[10px] font-medium text-amber-300 max-w-full">
+                      <Music class="w-3 h-3 shrink-0 animate-pulse" />
+                      <span class="truncate">Listening to {$peerActivities[actDev.device_id].title}</span>
+                    </div>
+                  {/each}
                 </div>
               </div>
 
@@ -838,6 +858,18 @@
                   </div>
                 {/if}
 
+                <button
+                  on:click={() =>
+                    handleShareContact(
+                      group.name,
+                      group.email,
+                      primaryDev?.device_id,
+                    )}
+                  class="p-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/25 shrink-0 cursor-pointer"
+                  title="Share Contact"
+                >
+                  <Share2 class="w-3.5 h-3.5" />
+                </button>
                 <button
                   on:click={() => handleRemoveContact(group.email)}
                   class="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 shrink-0"

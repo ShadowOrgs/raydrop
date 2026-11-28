@@ -4,8 +4,10 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { marked } from "marked";
   import { raydropApi, type AiMcpConfig } from "../utils/tauri-ipc";
+  import { cloudMyDevices, appSettings } from "../stores/state";
   import {
     Bot,
+    Laptop,
     Plus,
     Send,
     Paperclip,
@@ -151,6 +153,7 @@
   let personaName = "RayBot";
   let personaAvatar = "";
   let personaModel = "";
+  let targetDeviceId = "";
 
   function applyAiConfig(cfg: Partial<AiMcpConfig> | null | undefined) {
     if (!cfg) return;
@@ -494,11 +497,20 @@
     sending = true;
     errorMsg = "";
     try {
-      const res = await invoke<RaybotSendResult>("raybot_send_message", {
-        sessionId: activeSessionId,
-        text,
-        attachments: atts,
-      });
+      const useRemote =
+        targetDeviceId && targetDeviceId !== $appSettings.device_id;
+      const res = useRemote
+        ? await invoke<RaybotSendResult>("raybot_remote_send_message", {
+            targetDeviceId,
+            sessionId: activeSessionId,
+            text,
+            attachments: atts,
+          })
+        : await invoke<RaybotSendResult>("raybot_send_message", {
+            sessionId: activeSessionId,
+            text,
+            attachments: atts,
+          });
       messages = [
         ...messages.filter((m) => m.id !== tempId),
         res.user_message,
@@ -673,6 +685,24 @@
       </div>
 
       <div class="flex items-center gap-1.5 flex-wrap">
+        <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/80 border border-slate-800 text-xs">
+          <Laptop class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <select
+            bind:value={targetDeviceId}
+            class="bg-transparent text-slate-200 text-xs outline-none cursor-pointer max-w-[150px]"
+            title="Choose which of your devices runs RayBot"
+          >
+            <option value="" class="bg-slate-900 text-slate-100">
+              This Device ({$appSettings.alias_name || "Local"})
+            </option>
+            {#each $cloudMyDevices.filter((d) => d.device_id !== $appSettings.device_id) as dev}
+              <option value={dev.device_id} class="bg-slate-900 text-slate-100" disabled={!dev.is_online}>
+                {dev.device_name} ({dev.is_online ? "Online" : "Offline"})
+              </option>
+            {/each}
+          </select>
+        </div>
+
         <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/80 border border-slate-800 text-xs">
           <FolderGit2 class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
           <select

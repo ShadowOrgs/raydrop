@@ -2082,6 +2082,24 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_clipboard_image_entry(&self, id: &str, data_url: &str) -> Result<(), String> {
+        let trimmed = data_url.trim();
+        if !trimmed.starts_with("data:image/") {
+            return Err("Invalid image data URL".to_string());
+        }
+        let content_hash = blake3::hash(trimmed.as_bytes()).to_hex().to_string();
+        let now = now_unix_secs() as i64;
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE clipboard_history
+             SET content = ?1, content_type = 'image', preview = 'Image Snapshot (Edited)', content_hash = ?2, created_at = ?3
+             WHERE id = ?4",
+            params![trimmed, content_hash, now, id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     pub fn list_notes(&self, include_archived: bool) -> Result<Vec<NoteItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let sql = if include_archived {

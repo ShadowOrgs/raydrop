@@ -20,6 +20,7 @@
   } from "lucide-svelte";
   import { networkInfo, cloudMyDevices, appSettings } from "../stores/state";
   import { contacts } from "../stores/contacts";
+  import { notifyToast } from "../stores/presence";
 
   interface LlmBridgeProvider {
     id: string;
@@ -273,7 +274,9 @@
           extra_args: p.extra_args || "",
         },
       });
+      notifyToast("LLM Bridge", `${p.name} berhasil disimpan`, "emerald");
     } catch (err: any) {
+      notifyToast("LLM Bridge Error", String(err), "rose");
       testResults = {
         ...testResults,
         [p.id]: { ok: false, latency_ms: 0, text: String(err) },
@@ -382,11 +385,11 @@
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-3.5">
       {#each providers as p (p.id)}
         {@const baseUrl = `http://${$networkInfo.localIp || '127.0.0.1'}:${p.port}/v1`}
-        <div class="rounded-2xl bg-slate-900/75 border {p.running ? 'border-emerald-500/40' : 'border-white/10'} p-4 space-y-3">
+        <div class="rounded-2xl bg-slate-900/75 border {p.running ? 'border-emerald-500/40' : 'border-white/10'} p-4 space-y-3 min-w-0 overflow-hidden">
           <!-- Card Header -->
-          <div class="flex items-start justify-between gap-3">
-            <div class="space-y-1">
-              <div class="flex flex-wrap items-center gap-2">
+          <div class="space-y-2 min-w-0">
+            <div class="flex flex-wrap items-start justify-between gap-2.5 min-w-0">
+              <div class="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
                 <h3 class="text-sm font-bold text-white">{p.name}</h3>
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold {p.cli_installed
                   ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
@@ -402,13 +405,49 @@
                   <Wrench class="w-3 h-3" /> Tool Call
                 </span>
               </div>
-              <div class="flex flex-wrap items-center gap-2 text-[11px] font-mono text-cyan-300">
+
+              <!-- Public/Private + ON/OFF Controls -->
+              <div class="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  disabled={savingId === p.id}
+                  on:click={() => saveProvider(p, undefined, !p.is_public)}
+                  class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer {p.is_public
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'}"
+                  title={p.is_public
+                    ? "Public: Semua kontak di Raydrop bisa akses (tetap pakai API Key)"
+                    : "Private: Hanya device milik sendiri & kontak auto-accept"}
+                >
+                  {p.is_public ? "Public" : "Private"}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={savingId === p.id}
+                  on:click={() => saveProvider(p, !p.enabled)}
+                  class="px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center gap-1.5 {p.running
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'}"
+                >
+                  {#if savingId === p.id}
+                    <Loader2 class="w-3.5 h-3.5 animate-spin" />
+                  {:else}
+                    <span class="w-2 h-2 rounded-full {p.running ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}"></span>
+                  {/if}
+                  <span>{p.running ? "ON" : "OFF"}</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="space-y-1 min-w-0">
+              <div class="flex items-center gap-2 text-[11px] font-mono text-cyan-300 min-w-0">
                 <Server class="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span>LAN: {`http://${localIpNet || $networkInfo.localIp || '127.0.0.1'}:${p.port}/v1`}</span>
+                <span class="truncate min-w-0">LAN: {`http://${localIpNet || $networkInfo.localIp || '127.0.0.1'}:${p.port}/v1`}</span>
                 <button
                   type="button"
                   on:click={() => copyBaseUrl(p)}
-                  class="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
+                  class="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer shrink-0"
                   title="Copy LAN Base URL"
                 >
                   {#if copiedId === p.id}
@@ -419,9 +458,9 @@
                 </button>
               </div>
               {#if tailscaleIp}
-                <div class="flex items-center gap-2 text-[11px] font-mono text-indigo-300">
+                <div class="flex items-center gap-2 text-[11px] font-mono text-indigo-300 min-w-0">
                   <Globe class="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                  <span>Tailscale: {`http://${tailscaleIp}:${p.port}/v1`}</span>
+                  <span class="truncate min-w-0">Tailscale: {`http://${tailscaleIp}:${p.port}/v1`}</span>
                   <button
                     type="button"
                     on:click={() => {
@@ -429,7 +468,7 @@
                       copiedId = `${p.id}-ts`;
                       setTimeout(() => (copiedId = ""), 2000);
                     }}
-                    class="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
+                    class="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer shrink-0"
                     title="Copy Tailscale Base URL"
                   >
                     {#if copiedId === `${p.id}-ts`}
@@ -441,9 +480,9 @@
                 </div>
               {/if}
               {#if myDeviceId}
-                <div class="flex items-center gap-2 text-[11px] font-mono text-emerald-300">
+                <div class="flex items-center gap-2 text-[11px] font-mono text-emerald-300 min-w-0">
                   <Globe class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span class="truncate">WAN Relay: {`${wanHttpBase}/llm/${myDeviceId}/${p.id}/v1`}</span>
+                  <span class="truncate min-w-0">WAN Relay: {`${wanHttpBase}/llm/${myDeviceId}/${p.id}/v1`}</span>
                   <button
                     type="button"
                     on:click={() => {
@@ -462,39 +501,6 @@
                   </button>
                 </div>
               {/if}
-            </div>
-
-            <!-- Public/Private + ON/OFF Controls -->
-            <div class="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                disabled={savingId === p.id}
-                on:click={() => saveProvider(p, undefined, !p.is_public)}
-                class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer {p.is_public
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                  : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'}"
-                title={p.is_public
-                  ? "Public: Semua kontak di Raydrop bisa akses (tetap pakai API Key)"
-                  : "Private: Hanya device milik sendiri & kontak auto-accept"}
-              >
-                {p.is_public ? "Public" : "Private"}
-              </button>
-
-              <button
-                type="button"
-                disabled={savingId === p.id}
-                on:click={() => saveProvider(p, !p.enabled)}
-                class="px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center gap-1.5 {p.running
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'}"
-              >
-                {#if savingId === p.id}
-                  <Loader2 class="w-3.5 h-3.5 animate-spin" />
-                {:else}
-                  <span class="w-2 h-2 rounded-full {p.running ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}"></span>
-                {/if}
-                <span>{p.running ? "ON" : "OFF"}</span>
-              </button>
             </div>
           </div>
 

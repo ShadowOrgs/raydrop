@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { notifyToast } from "../stores/presence";
   import {
     Bot,
     Server,
@@ -289,8 +290,10 @@
         runtime = await raydropApi.getAiMcpRuntimeStatus().catch(() => runtime);
       }, 450);
       feedbackMsg = "MCP, LLM Provider, Persona & Telegram Bot config saved!";
+      notifyToast("AI & Bot Config", "Konfigurasi berhasil disimpan", "emerald");
     } catch (err: any) {
       errorMsg = err?.message || String(err);
+      notifyToast("Save Failed", errorMsg, "rose");
     } finally {
       saving = false;
     }

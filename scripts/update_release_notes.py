@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.97"
+    tag = clean_args[0] if clean_args else "v1.2.98"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Startup Freeze Hotfix, RayBot Coding Workspace & CLI Modes"
+    title = f"Raydrop {tag}: Snipping Image Editor, RayAmp Now-Playing, Remote RayBot & Mobile Fixes"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/ShadowOrgs/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Startup Freeze Hotfix, RayBot Coding Workspace & CLI Modes</h2>
+<h2 align="center">Raydrop {tag}: Snipping Image Editor, RayAmp Now-Playing, Remote RayBot & Mobile Fixes</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -125,6 +125,11 @@ if __name__ == "__main__":
 ---
 
 ### 🚀 What's New & Highlights in {tag}
+
+#### ✂️ Snipping-Tool Image Editor, RayAmp Now-Playing & Remote RayBot
+- **Snipping-Tool Image Editor (Copy History):** Edit captured images with Pen, Highlighter, Eraser, Arrow, Rectangle, Circle, Blur/Redact, Text, Crop, Undo/Redo, Save PNG, and Save & Copy.
+- **RayAmp Now-Playing Broadcast & Mobile Media:** Discord-style `Listening to ...` activity in Contacts & Chat, responsive full-screen mobile RayAmp, and Android local audio/video file picker support.
+- **Remote RayBot Device Switcher & Mobile/WebRTC Fixes:** Switch target device in RayBot Chat UI across your own online devices, fixed `createOffer ... signalingState is 'closed'` on Remote Desktop reconnect, fixed mobile Profile button & APK v1/v2/v3 signing, added Share Contact, global toast notifications, complete bottom menu, and fixed LLM Bridge button overflow.
 
 #### ⚡ Startup Freeze & WebView2 CPU Hotfix
 - **Zero-Idle-CPU RayAmp Visualizer:** Stopped the 60fps `requestAnimationFrame` canvas gradient loop when RayAmp is paused/idle or hidden, eliminating background WebView2 GPU/Renderer CPU spikes on Windows.

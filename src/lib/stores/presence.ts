@@ -19,6 +19,40 @@ export interface PresenceToast {
 }
 
 export const presenceToasts = writable<PresenceToast[]>([]);
+
+export interface PeerRayampActivity {
+  title: string;
+  artist: string;
+  is_playing: boolean;
+  source_type: string;
+  updated_at: number;
+}
+
+export const peerActivities = writable<Record<string, PeerRayampActivity>>({});
+
+export function notifyToast(
+  displayName: string,
+  subtitle: string,
+  tone: 'emerald' | 'cyan' | 'amber' | 'rose' | 'slate' = 'emerald',
+  durationMs = 3500
+) {
+  const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  presenceToasts.update((list) => [
+    ...list.slice(-3),
+    {
+      id,
+      deviceId: 'local',
+      displayName,
+      isOnline: tone !== 'rose' && tone !== 'slate',
+      subtitle,
+      tone,
+      timestamp: Date.now(),
+    },
+  ]);
+  setTimeout(() => {
+    presenceToasts.update((list) => list.filter((t) => t.id !== id));
+  }, durationMs);
+}
 export const presenceSoundEnabled = writable<boolean>(
   typeof localStorage !== 'undefined'
     ? localStorage.getItem('raydrop_presence_sound_v1') !== 'false'

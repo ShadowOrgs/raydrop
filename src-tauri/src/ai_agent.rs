@@ -1128,3 +1128,198 @@ pub async fn raybot_send_message(
         session,
     })
 }
+
+pub async fn execute_remote_raybot_prompt(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    text: String,
+    mut history: Vec<Value>,
+    attachments: Vec<RaybotAttachment>,
+) -> Result<(String, Vec<RaybotAttachment>), String> {
+    let cfg = load_ai_mcp_config(&state.db);
+    if cfg.llm_base_url.trim().is_empty() || cfg.llm_model.trim().is_empty() {
+        return Err("Target device has no LLM Base URL & Model configured.".to_string());
+    }
+    let (att_ctx, _) = build_attachment_context(&attachments);
+    let combined_prompt = match (text.trim().is_empty(), att_ctx.is_empty()) {
+        (false, true) => text,
+        (true, false) => att_ctx,
+        (false, false) => format!("{}\n\n{}", text.trim(), att_ctx),
+        (true, true) => "Hello".to_string(),
+    };
+    let mut generated_images: Vec<String> = Vec::new();
+    let reply = chat_with_mcp_tools_with_media(
+        app,
+        state,
+        &cfg,
+        &mut history,
+        &combined_prompt,
+        &mut generated_images,
+    )
+    .await?;
+
+    let mut assistant_atts = Vec::new();
+    for img_path in generated_images {
+        if let Ok(bytes) = std::fs::read(&img_path) {
+            use base64::Engine as _;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            let fname = std::path::Path::new(&img_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("generated.png")
+                .to_string();
+            assistant_atts.push(RaybotAttachment {
+                kind: "image".to_string(),
+                name: fname,
+                path: img_path,
+                mime: "image/png".to_string(),
+                data_url: format!("data:image/png;base64,{}", b64),
+                size_bytes: bytes.len() as u64,
+            });
+        }
+    }
+    Ok((reply, assistant_atts))
+}
+
+#[tauri::command]
+pub async fn raybot_remote_send_message(
+    state: tauri::State<'_, Arc<AppState>>,
+    target_device_id: String,
+    session_id: String,
+    text: String,
+    attachments: Vec<RaybotAttachment>,
+) -> Result<RaybotSendResult, String> {
+    let now = now_unix_secs();
+    let user_msg = RaybotMessage {
+        id: format!("rbm_{}", uuid::Uuid::new_v4().simple()),
+        session_id: session_id.clone(),
+        role: "user".to_string(),
+        content: text.clone(),
+        attachments: attachments.clone(),
+        created_at: now,
+    };
+
+    let prior = list_raybot_messages(&state.db, &session_id)?;
+    let history: Vec<Value> = prior
+        .into_iter()
+        .rev()
+        .take(18)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .map(|m| json!({ "role": m.role, "content": m.content }))
+        .collect();
+
+    insert_raybot_message(&state.db, &user_msg)?;
+
+    let req_id = format!("rbr_{}", uuid::Uuid::new_v4().simple());
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    {
+        let mut pending = state.pending_raybot_remote.lock().map_err(|e| e.to_string())?;
+        pending.insert(req_id.clone(), tx);
+    }
+
+    let payload = json!({
+        "kind": "RAYBOT_REMOTE_REQ",
+        "req_id": req_id,
+        "text": text,
+        "history": history,
+        "attachments": attachments,
+    });
+    let payload_hex = hex::encode(payload.to_string().as_bytes());
+    let relay_msg = json!({
+        "type": "RELAY_CONTROL",
+        "target_device_id": target_device_id,
+        "session_id": format!("raybot:{}", req_id),
+        "payload_json": payload_hex,
+    });
+
+    let sent = if let Ok(guard) = state.signaling_tx.lock() {
+        if let Some(sig_tx) = guard.as_ref() {
+            sig_tx.send(relay_msg.to_string()).is_ok()
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    if !sent {
+        if let Ok(mut pending) = state.pending_raybot_remote.lock() {
+            pending.remove(&req_id);
+        }
+        return Err("WAN Signaling is offline; cannot reach target device.".to_string());
+    }
+
+    let res = tokio::time::timeout(std::time::Duration::from_secs(120), rx)
+        .await
+        .map_err(|_| {
+            if let Ok(mut pending) = state.pending_raybot_remote.lock() {
+                pending.remove(&req_id);
+            }
+            "Remote RayBot timed out after 120s.".to_string()
+        })?
+        .map_err(|_| "Remote RayBot channel closed.".to_string())??;
+
+    let (reply, assistant_atts) = res;
+    let assistant_msg = RaybotMessage {
+        id: format!("rbm_{}", uuid::Uuid::new_v4().simple()),
+        session_id: session_id.clone(),
+        role: "assistant".to_string(),
+        content: reply,
+        attachments: assistant_atts,
+        created_at: now_unix_secs(),
+    };
+    insert_raybot_message(&state.db, &assistant_msg)?;
+
+    let session = list_raybot_sessions(&state.db)?
+        .into_iter()
+        .find(|s| s.id == session_id)
+        .unwrap_or(RaybotSession {
+            id: session_id,
+            title: "Remote RayBot".to_string(),
+            created_at: now,
+            updated_at: assistant_msg.created_at,
+            last_message: assistant_msg.content.clone(),
+        });
+
+    Ok(RaybotSendResult {
+        user_message: user_msg,
+        assistant_message: assistant_msg,
+        session,
+    })
+}
+
+#[tauri::command]
+pub fn broadcast_rayamp_activity(
+    state: tauri::State<'_, Arc<AppState>>,
+    target_device_ids: Vec<String>,
+    is_playing: bool,
+    title: String,
+    artist: String,
+    source_type: String,
+) {
+    let payload = json!({
+        "kind": "RAYAMP_ACTIVITY",
+        "is_playing": is_playing,
+        "title": title,
+        "artist": artist,
+        "source_type": source_type,
+    });
+    let payload_hex = hex::encode(payload.to_string().as_bytes());
+    if let Ok(guard) = state.signaling_tx.lock() {
+        if let Some(sig_tx) = guard.as_ref() {
+            for target_id in target_device_ids {
+                if target_id.trim().is_empty() {
+                    continue;
+                }
+                let msg = json!({
+                    "type": "RELAY_CONTROL",
+                    "target_device_id": target_id,
+                    "session_id": "rayamp:activity",
+                    "payload_json": payload_hex,
+                });
+                let _ = sig_tx.send(msg.to_string());
+            }
+        }
+    }
+}

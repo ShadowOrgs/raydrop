@@ -77,6 +77,7 @@ export const remoteDebugInfo = writable<string>('');
 let activePeerConnection: RTCPeerConnection | null = null;
 let activeDataChannel: RTCDataChannel | null = null;
 let activeVideoSender: RTCRtpSender | null = null;
+let hostSetupGen = 0;
 let pingInterval: any = null;
 let authRetryTimer: any = null;
 let pendingIceCandidates: RTCIceCandidateInit[] = [];
@@ -564,14 +565,22 @@ async function proceedHostAcceptRemote(
   sessionId: string,
   clientAlias: string
 ) {
+  const myGen = ++hostSetupGen;
   // Clean up any stale/lingering previous session before starting a new one
   if (activePeerConnection || get(activeRemoteSession)) {
     cleanupPeerConnection();
     stopHostScreenCapture();
   }
+  hostSetupGen = myGen;
 
   // Ensure host screen stream is ready (auto-selects screen with cursor: 'never')
   const stream = await acquireHostScreenStream();
+  if (myGen !== hostSetupGen) {
+    if (stream) {
+      stream.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
+    }
+    return;
+  }
   if (!stream) {
     sendRemoteSignal(clientDeviceId, sessionId, {
       type: 'remote_auth_rejected',
@@ -599,7 +608,7 @@ async function proceedHostAcceptRemote(
 
   // Setup WebRTC Host Peer Connection (minimize only AFTER DataChannel opens so WebView2 doesn't throttle handshake)
   try {
-    await setupHostPeerConnection(clientDeviceId, sessionId, stream);
+    await setupHostPeerConnection(clientDeviceId, sessionId, stream, myGen);
   } catch (err: any) {
     console.error('Failed to setup host peer connection:', err);
     stopHostScreenCapture();
@@ -706,9 +715,11 @@ function boostSdpBitrate(sdp: string, kbps: number = 20000): string {
 async function setupHostPeerConnection(
   clientDeviceId: string,
   sessionId: string,
-  stream: MediaStream
+  stream: MediaStream,
+  myGen: number = hostSetupGen
 ) {
   cleanupPeerConnection();
+  hostSetupGen = myGen;
   raydropApi.setHostCursorHidden(get(remoteSessionMode) !== 'game').catch(() => { });
 
   pendingIceCandidates = [];
@@ -723,8 +734,15 @@ async function setupHostPeerConnection(
   // Add Screen Share Video & System Audio Tracks
   const isGame = get(remoteSessionMode) === 'game';
   const videoTrack = stream.getVideoTracks()[0];
-  if (videoTrack && 'contentHint' in videoTrack) {
-    (videoTrack as any).contentHint = isGame ? 'detail' : 'text';
+  if (videoTrack) {
+    if ('contentHint' in videoTrack) {
+      (videoTrack as any).contentHint = isGame ? 'detail' : 'text';
+    }
+    videoTrack.onended = () => {
+      if (activePeerConnection === pc) {
+        disconnectRemoteSession();
+      }
+    };
   }
   const sender = pc.addTrack(videoTrack, stream);
   activeVideoSender = sender;
@@ -806,21 +824,32 @@ async function setupHostPeerConnection(
       // Restore host cursor immediately on connection drop so host isn't stuck with hidden cursor
       raydropApi.setHostCursorHidden(false).catch(() => { });
       raydropApi.releaseRemoteModifiers().catch(() => { });
+      try { pc.restartIce?.(); } catch (_) { }
       setTimeout(() => {
-        if (activePeerConnection === pc && pc.connectionState === 'disconnected') {
+        if (activePeerConnection === pc && (pc.connectionState === 'disconnected' || pc.connectionState === 'failed')) {
           disconnectRemoteSession();
         }
-      }, 5000);
+      }, 8000);
     }
   };
 
+  if (myGen !== hostSetupGen || activePeerConnection !== pc || pc.signalingState === 'closed') {
+    return;
+  }
+
   // Create and send offer to client with boosted bitrate
   const offer = await pc.createOffer();
+  if (myGen !== hostSetupGen || activePeerConnection !== pc || pc.signalingState === 'closed') {
+    return;
+  }
   const boostedOffer = {
     type: offer.type,
     sdp: boostSdpBitrate(offer.sdp || '', targetMaxKbps),
   };
   await pc.setLocalDescription(boostedOffer);
+  if (myGen !== hostSetupGen || activePeerConnection !== pc || pc.signalingState === 'closed') {
+    return;
+  }
 
   sendRemoteSignal(clientDeviceId, sessionId, {
     type: 'remote_webrtc_offer',

@@ -148,6 +148,8 @@ $bodyText = @"
 - **Windows Setup Installer (`.msi`):** \`Raydrop_${ver}_x64_en-US.msi\`
 
 ### Features & Highlights in $tag
+- **Snipping-Tool Image Editor in Copy History:** Edit captured images directly in Copy History with Pen, Highlighter, Eraser, Arrow, Rectangle, Circle, Blur/Redact, Text, Crop, Undo/Redo, Save PNG, and Save & Copy.
+- **RayAmp Now-Playing Broadcast & Remote RayBot:** Discord-style `Listening to ...` presence in Contacts & Chat, remote RayBot device switcher across your own online devices, Share Contact, global toast notifications, complete bottom menu, and Mobile/WebRTC reconnect fixes.
 - **Startup Freeze & WebView2 CPU Hotfix:** Stopped the 60fps RayAmp visualizer loop when idle/hidden, moved `llm_bridge::init_from_db` off the Tokio async worker into `spawn_blocking`, disabled UI torrent/HTTP broadcast loops inside `--system-agent`, and relaxed frontend polling to `10s`.
 - **RayBot Persistent Coding Workspace & Cross-Project Relations:** Configurable projects root (default `~`), persistent SQLite project registry & relation graph (`raybot_projects`, `raybot_project_relations`), Chat UI workspace bar, and 13 scoped `project_*` / `code_*` MCP tools for Chat UI & Telegram Bot.
 - **Direct RayBot Skills, MCP & Language Tutor Skill:** Install Skills & MCP servers directly onto RayBot across any LLM provider, plus a built-in `language-tutor` skill with dynamic CEFR syllabus and persistent per-language SQLite progress.

@@ -3,6 +3,7 @@
   import { getVersion } from "@tauri-apps/api/app";
   import { open } from "@tauri-apps/plugin-dialog";
   import { appSettings, settingsModalOpen, cloudMyDevices } from "../stores/state";
+  import { notifyToast } from "../stores/presence";
   import {
     updateInfo,
     updateModalOpen,
@@ -261,6 +262,7 @@
       }
       statusBanner =
         "Settings saved! Device alias broadcasted to contacts & cloud.";
+      notifyToast("Settings", "Pengaturan berhasil disimpan", "emerald");
       justSaved = true;
       setTimeout(() => (justSaved = false), 2500);
       setTimeout(() => (statusBanner = ""), 4000);

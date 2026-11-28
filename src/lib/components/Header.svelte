@@ -135,7 +135,7 @@
 />
 
 <header
-  class="border-b border-slate-800/80 bg-slate-900/95 px-3 sm:px-5 pt-8 pb-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 z-20 shrink-0"
+  class="border-b border-slate-800/80 bg-slate-900/95 px-3 sm:px-5 pt-8 pb-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 z-40 relative shrink-0"
 >
   <!-- Brand & Identity (Left) -->
   <div class="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0">
@@ -368,14 +368,14 @@
     <!-- Profile Avatar & Context Menu (Change Avatar, Settings, Sign In/Out) -->
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="relative shrink-0" on:click|stopPropagation>
+    <div class="relative shrink-0 z-50" on:click|stopPropagation on:pointerdown|stopPropagation>
       <button
         type="button"
-        on:click={() => {
+        on:click|stopPropagation={() => {
           profileMenuOpen = !profileMenuOpen;
           themeMenuOpen = false;
         }}
-        class="relative group w-8 h-8 rounded-xl overflow-hidden bg-slate-800 flex items-center justify-center shrink-0 transition cursor-pointer shadow-sm"
+        class="relative group w-8 h-8 rounded-xl overflow-hidden bg-slate-800 flex items-center justify-center shrink-0 transition cursor-pointer shadow-sm touch-manipulation"
         title="Profile Menu ({$appSettings.alias_name || 'Raydrop'})"
       >
         {#if $myAvatar}

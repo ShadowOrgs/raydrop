@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
+  import { notifyToast } from "../stores/presence";
   import {
     Sparkles,
     Bot,
@@ -1233,6 +1234,7 @@
     on:close={() => (installSkillId = null)}
     on:installed={async () => {
       await Promise.all([loadInstalled(), loadSkills()]);
+      notifyToast("Skill Installed", "Skill berhasil diinstall & siap digunakan", "emerald");
     }}
   />
 {/if}

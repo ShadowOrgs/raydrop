@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import {
     ClipboardList,
     Copy,
@@ -12,8 +13,10 @@
     FileText,
     Sparkles,
     X,
+    Pencil,
   } from "lucide-svelte";
   import { raydropApi, type ClipboardHistoryItem } from "../utils/tauri-ipc";
+  import SnippingEditorModal from "./SnippingEditorModal.svelte";
 
   export let active = false;
 
@@ -23,6 +26,8 @@
   let filterMode: "all" | "text" | "image" | "pinned" = "all";
   let copiedId: string | null = null;
   let expandedItem: ClipboardHistoryItem | null = null;
+  let editingItem: ClipboardHistoryItem | null = null;
+  let savingEdited = false;
   let unlisten: (() => void) | null = null;
 
   async function loadHistory() {
@@ -82,6 +87,24 @@
       items = items.filter((i) => i.id !== item.id);
     } catch (err) {
       console.warn("Delete failed:", err);
+    }
+  }
+
+  async function handleSaveEditedImage(e: CustomEvent<{ dataUrl: string; copyToClipboard: boolean }>) {
+    if (!editingItem) return;
+    savingEdited = true;
+    try {
+      await invoke("update_clipboard_history_image", {
+        id: editingItem.id,
+        dataUrl: e.detail.dataUrl,
+        copyToClipboard: e.detail.copyToClipboard,
+      });
+      await loadHistory();
+      editingItem = null;
+    } catch (err) {
+      console.warn("Save edited image failed:", err);
+    } finally {
+      savingEdited = false;
     }
   }
 
@@ -263,6 +286,17 @@
               </div>
 
               <div class="flex items-center gap-1">
+                {#if item.content_type === "image"}
+                  <button
+                    type="button"
+                    on:click={() => (editingItem = item)}
+                    class="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer bg-indigo-500/15 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30"
+                    title="Edit image (Snipping Tool)"
+                  >
+                    <Pencil class="w-3 h-3" />
+                    <span>Edit</span>
+                  </button>
+                {/if}
                 <button
                   type="button"
                   on:click={() => handleCopy(item)}
@@ -380,4 +414,13 @@
       </div>
     </div>
   </div>
+{/if}
+
+{#if editingItem}
+  <SnippingEditorModal
+    imageSrc={editingItem.content}
+    saving={savingEdited}
+    on:close={() => (editingItem = null)}
+    on:save={handleSaveEditedImage}
+  />
 {/if}

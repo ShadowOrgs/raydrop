@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
-  import { convertFileSrc } from "@tauri-apps/api/core";
+  import { convertFileSrc, invoke } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
+  import { contacts } from "../stores/contacts";
+  import { cloudMyDevices, appSettings } from "../stores/state";
   import {
     Play,
     Pause,
@@ -209,12 +211,36 @@
     return hrs > 0 ? `${hrs}:${mm}:${ss}` : `${mm}:${ss}`;
   }
 
+  let lastBroadcastKey = "";
+
+  function broadcastNowPlaying(st: MediaPlayerState) {
+    const key = `${st.is_playing}|${st.current_track?.id || ""}|${st.current_track?.title || ""}`;
+    if (key === lastBroadcastKey) return;
+    lastBroadcastKey = key;
+    const myId = get(appSettings).device_id;
+    const targetIds = Array.from(
+      new Set([
+        ...get(contacts).map((c) => c.device_id),
+        ...get(cloudMyDevices).map((d) => d.device_id),
+      ])
+    ).filter((id) => id && id !== myId);
+    if (targetIds.length === 0) return;
+    invoke("broadcast_rayamp_activity", {
+      targetDeviceIds: targetIds,
+      isPlaying: !!st.is_playing && !!st.current_track,
+      title: st.current_track?.title || "",
+      artist: st.current_track?.artist || "",
+      sourceType: st.current_track?.source_type || "local",
+    }).catch(() => {});
+  }
+
   function syncBackend(force = false) {
     const now = Date.now();
     if (!force && now - lastSyncTs < 750) return;
     lastSyncTs = now;
     const st = get(mediaPlayerState);
     raydropApi.mediaSyncFrontendState(st).catch(() => {});
+    broadcastNowPlaying(st);
   }
 
   function ensureAudioAnalyser(isLocalSource: boolean) {
@@ -463,32 +489,61 @@
     syncBackend(true);
   }
 
+  let mobileFileInput: HTMLInputElement | null = null;
+  let pendingMobilePlaylistId: string | undefined = undefined;
+  let isMobileViewport = typeof window !== "undefined" ? window.innerWidth < 640 : false;
+
   async function addLocalFiles(targetPlaylistId?: string) {
-    const picked = await open({
-      multiple: true,
-      title: "Select Audio or Video Files",
-      filters: [
-        {
-          name: "Audio & Video",
-          extensions: [
-            "mp3",
-            "flac",
-            "wav",
-            "ogg",
-            "m4a",
-            "aac",
-            "opus",
-            "mp4",
-            "mkv",
-            "webm",
-            "mov",
-            "avi",
-          ],
-        },
-      ],
-    });
+    const isAndroid =
+      typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
+    if (isAndroid && mobileFileInput) {
+      pendingMobilePlaylistId = targetPlaylistId;
+      mobileFileInput.value = "";
+      mobileFileInput.click();
+      return;
+    }
+
+    let picked: string | string[] | null = null;
+    try {
+      picked = await open({
+        multiple: true,
+        title: "Select Audio or Video Files",
+        filters: [
+          {
+            name: "Audio & Video",
+            extensions: [
+              "mp3",
+              "flac",
+              "wav",
+              "ogg",
+              "m4a",
+              "aac",
+              "opus",
+              "mp4",
+              "mkv",
+              "webm",
+              "mov",
+              "avi",
+            ],
+          },
+        ],
+      });
+    } catch (_) {
+      if (mobileFileInput) {
+        pendingMobilePlaylistId = targetPlaylistId;
+        mobileFileInput.value = "";
+        mobileFileInput.click();
+      }
+      return;
+    }
     if (!picked) return;
     const paths = Array.isArray(picked) ? picked : [picked];
+    if (paths.some((p) => p.startsWith("content://")) && mobileFileInput) {
+      pendingMobilePlaylistId = targetPlaylistId;
+      mobileFileInput.value = "";
+      mobileFileInput.click();
+      return;
+    }
     const videoExts = new Set(["mp4", "mkv", "webm", "mov", "avi"]);
 
     const newTracks: MediaTrack[] = [];
@@ -878,7 +933,40 @@
     }
   }
 
+  function handleMobileFileInput(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const files = Array.from(input.files || []);
+    if (files.length === 0) return;
+    const videoExts = new Set(["mp4", "mkv", "webm", "mov", "avi", "3gp"]);
+    const newTracks: MediaTrack[] = files.map((file) => {
+      const dotIdx = file.name.lastIndexOf(".");
+      const ext = dotIdx >= 0 ? file.name.slice(dotIdx + 1).toLowerCase() : "";
+      const title = dotIdx > 0 ? file.name.slice(0, dotIdx) : file.name;
+      const isVideo = file.type.startsWith("video/") || videoExts.has(ext);
+      const blobUrl = URL.createObjectURL(file);
+      return {
+        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+        source_type: "remote_url",
+        title,
+        artist: "Local Media",
+        duration_secs: 0,
+        uri_or_id: blobUrl,
+        thumbnail_url: null,
+        is_video: isVideo,
+      };
+    });
+    mediaPlayerState.update((st) => ({
+      ...st,
+      queue: [...st.queue, ...newTracks],
+    }));
+    if (!get(mediaPlayerState).current_track && newTracks.length > 0) {
+      playTrack(newTracks[0], get(mediaPlayerState).queue.length - newTracks.length);
+    }
+    pendingMobilePlaylistId = undefined;
+  }
+
   function startDrag(e: MouseEvent) {
+    if (isMobileViewport) return;
     dragging = true;
     dragOffsetX = e.clientX - posX;
     dragOffsetY = e.clientY - posY;
@@ -899,10 +987,27 @@
   }
 </script>
 
+<svelte:window
+  on:resize={() => {
+    isMobileViewport = window.innerWidth < 640;
+  }}
+/>
+
+<input
+  bind:this={mobileFileInput}
+  type="file"
+  accept="audio/*,video/*"
+  multiple
+  class="hidden"
+  on:change={handleMobileFileInput}
+/>
+
 <div
-  style="left: {posX}px; top: {posY}px;"
+  style={isMobileViewport ? "" : `left: ${posX}px; top: ${posY}px;`}
   class:hidden={!$winampPlayerOpen}
-  class="fixed z-[75] w-[420px] max-w-[calc(100vw-16px)] max-h-[calc(100vh-24px)] flex flex-col rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-cyan-500/35 shadow-2xl shadow-black/70 overflow-hidden select-none text-slate-100"
+  class="fixed z-[75] {isMobileViewport
+    ? 'inset-2 bottom-20 w-auto max-w-none max-h-none'
+    : 'w-[420px] max-w-[calc(100vw-16px)] max-h-[calc(100vh-24px)]'} flex flex-col rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-cyan-500/35 shadow-2xl shadow-black/70 overflow-hidden select-none text-slate-100"
 >
     <!-- Winamp Title Bar (Draggable) -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->

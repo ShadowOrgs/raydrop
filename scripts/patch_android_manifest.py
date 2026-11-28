@@ -16,12 +16,15 @@ permissions = """
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 """
 
 if "CHANGE_WIFI_MULTICAST_STATE" not in content:
     content = content.replace("<application", permissions + "\n    <application")
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        f.write(content)
-    print("AndroidManifest.xml successfully patched with required Android permissions!")
-else:
-    print("Permissions already present in AndroidManifest.xml.")
+if 'android:testOnly="true"' in content:
+    content = content.replace('android:testOnly="true"', 'android:testOnly="false"')
+with open(manifest_path, "w", encoding="utf-8") as f:
+    f.write(content)
+print("AndroidManifest.xml successfully patched!")

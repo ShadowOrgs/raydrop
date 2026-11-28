@@ -81,6 +81,12 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 
 ## ✨ Key Features
 
+### 🆕 Snipping-Tool Image Editor, RayAmp Now-Playing, Remote RayBot & Mobile Fixes (New in v1.2.98)
+- **Snipping-Tool Image Editor in Copy History:** Edit captured images directly in Copy History with Pen, Highlighter, Eraser, Arrow, Rectangle, Circle, Blur/Redact, Text, Crop, Undo/Redo, Save PNG, and Save & Copy.
+- **RayAmp Now-Playing Broadcast (Discord-Style) & Mobile Media:** Broadcast your active RayAmp track to contacts & devices (`🎵 Listening to ...` in Contacts & Chat), full-width mobile RayAmp layout, and Android local audio/video file picker support.
+- **Remote RayBot Device Switcher:** Switch target device in RayBot Chat UI across your own online devices (e.g. chat from Android to run coding/tools on your PC's RayBot).
+- **Remote Desktop WebRTC Reconnect Fix, Global Toast Notifications, Share Contact & Mobile Polish:** Fixed `createOffer ... signalingState is 'closed'` on reconnect and long-idle freeze, fixed mobile Profile button & APK v1/v2/v3 signing, completed Customize Bottom Menu, added Share Contact, global toast notifications, and fixed LLM Bridge button overflow.
+
 ### 🆕 Startup Freeze & WebView2 CPU Hotfix (New in v1.2.97)
 - **Zero-Idle-CPU RayAmp Visualizer:** Stopped the 60fps `requestAnimationFrame` canvas gradient loop when RayAmp is paused/idle or hidden, eliminating background WebView2 GPU/Renderer CPU spikes on Windows.
 - **Non-Blocking Startup & Throttled Polling:** Moved `llm_bridge::init_from_db` (`where` CLI detection) off the Tokio async worker into `spawn_blocking`, disabled UI torrent/HTTP broadcast loops inside `--system-agent`, and relaxed frontend status/LAN polling from `4–5s` to `10s`.
@@ -299,10 +305,10 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.97/Raydrop_1.2.97_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.97/Raydrop_1.2.97_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.97/Raydrop_1.2.97_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.97/Raydrop_1.2.97_amd64.AppImage) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.98/Raydrop_1.2.98_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.98/Raydrop_1.2.98_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.98/Raydrop_1.2.98_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.98/Raydrop_1.2.98_amd64.AppImage) |
 | **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.23/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**

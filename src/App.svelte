@@ -51,6 +51,7 @@
     notifyTransferState,
     playAppSound,
     presenceToasts,
+    peerActivities,
     removePresenceToast,
   } from "./lib/stores/presence";
   import { initAvatarStore, peerAvatars } from "./lib/stores/avatars";
@@ -155,6 +156,10 @@
     { id: "notes", label: "Notes" },
     { id: "converter", label: "Converter" },
     { id: "skills", label: "AI Skills" },
+    { id: "raybot", label: "RayBot Chat" },
+    { id: "llmbridge", label: "LLM Bridge" },
+    { id: "mcplibrary", label: "MCP Library" },
+    { id: "webdebugger", label: "Web Debug" },
   ] as const;
   type BottomMenuId = (typeof ALL_BOTTOM_MENUS)[number]["id"];
   const DEFAULT_BOTTOM_TAB_IDS: BottomMenuId[] = [
@@ -268,6 +273,26 @@
             refreshLanStatuses();
           } catch (_) {}
         }, 300);
+      });
+
+      await raydropApi.listenEvent<{
+        from_device_id: string;
+        is_playing: boolean;
+        title: string;
+        artist: string;
+        source_type: string;
+      }>("peer_rayamp_activity", (ev) => {
+        if (!ev?.from_device_id) return;
+        peerActivities.update((m) => ({
+          ...m,
+          [ev.from_device_id]: {
+            is_playing: !!ev.is_playing,
+            title: ev.title || "",
+            artist: ev.artist || "",
+            source_type: ev.source_type || "local",
+            updated_at: Date.now(),
+          },
+        }));
       });
 
       refreshLanStatuses();

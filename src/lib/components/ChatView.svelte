@@ -102,6 +102,7 @@
   import { renderMarkdown } from "../utils/markdown";
   import { formatLastOnline } from "../utils/time";
   import { getRankInfo } from "../utils/rank";
+  import { peerActivities } from "../stores/presence";
 
   let messageInput = "";
   let searchQuery = "";
@@ -1783,6 +1784,12 @@
                         : formatLastOnline(peer.lastSeenAt, false)}
                     </span>
                   </div>
+                  {#if $peerActivities[peer.deviceId]?.is_playing}
+                    <div class="text-[10px] text-amber-300 truncate flex items-center gap-1 mt-0.5">
+                      <Music class="w-2.5 h-2.5 shrink-0 animate-pulse" />
+                      <span class="truncate">Listening to {$peerActivities[peer.deviceId].title}</span>
+                    </div>
+                  {/if}
                 </div>
               </div>
 
@@ -1922,6 +1929,12 @@
             </div>
 
             <div class="min-w-0">
+              {#if $peerActivities[activePeer.deviceId]?.is_playing}
+                <div class="text-[10px] text-amber-300 truncate flex items-center gap-1 mb-0.5">
+                  <Music class="w-3 h-3 shrink-0 animate-pulse" />
+                  <span class="truncate">Listening to {$peerActivities[activePeer.deviceId].title}</span>
+                </div>
+              {/if}
               <div class="flex items-center gap-1.5 sm:gap-2">
                 {#if isEditingPeerNickname}
                   <form

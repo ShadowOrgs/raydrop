@@ -2907,6 +2907,23 @@ pub fn clear_clipboard_history(
 }
 
 #[tauri::command]
+pub fn update_clipboard_history_image(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    data_url: String,
+    copy_to_clipboard: bool,
+) -> Result<(), String> {
+    state.db.update_clipboard_image_entry(&id, &data_url)?;
+    if copy_to_clipboard {
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        write_clipboard_content(&data_url)?;
+    }
+    let _ = app.emit("clipboard_history_updated", ());
+    Ok(())
+}
+
+#[tauri::command]
 pub fn list_notes(
     state: State<'_, Arc<AppState>>,
     include_archived: bool,
