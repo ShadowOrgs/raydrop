@@ -47,6 +47,7 @@ struct ServerState {
     db: Arc<Mutex<Connection>>,
     web_shares: Arc<DashMap<String, WebShareSession>>,
     pending_downloads: Arc<DashMap<String, mpsc::Sender<Result<axum::body::Bytes, String>>>>,
+    pending_llm_requests: Arc<DashMap<String, tokio::sync::oneshot::Sender<(u16, serde_json::Value)>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -419,6 +420,7 @@ async fn main() {
         db: Arc::new(Mutex::new(conn)),
         web_shares: Arc::new(DashMap::new()),
         pending_downloads: Arc::new(DashMap::new()),
+        pending_llm_requests: Arc::new(DashMap::new()),
     };
 
     // Periodically prune expired rate-limit entries every 10 minutes
@@ -489,6 +491,13 @@ async fn main() {
             get(web_share_download_handler),
         )
         .route("/share/:share_id/api/info", get(web_share_info_handler))
+        .route(
+            "/llm/:device_id/:provider_id/v1/*rest",
+            post(llm_http_relay_handler)
+                .get(llm_http_relay_handler)
+                .options(llm_http_options_handler)
+                .layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
+        )
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -512,6 +521,128 @@ async fn health_handler() -> impl IntoResponse {
         "service": "raydrop-signal-server",
         "version": "2.1.0"
     }))
+}
+
+async fn llm_http_options_handler() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        [
+            ("Access-Control-Allow-Origin", "*"),
+            ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+            ("Access-Control-Allow-Headers", "Content-Type, Authorization"),
+        ],
+        "",
+    )
+}
+
+async fn llm_http_relay_handler(
+    State(state): State<ServerState>,
+    Path((device_id, provider_id, rest)): Path<(String, String, String)>,
+    method: axum::http::Method,
+    headers: HeaderMap,
+    body_bytes: axum::body::Bytes,
+) -> impl IntoResponse {
+    let Some(peer) = state.peers.get(&device_id) else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "error": {
+                    "message": format!("Target Raydrop device '{}' is offline or not connected to relay", device_id),
+                    "type": "server_error",
+                    "code": "device_offline"
+                }
+            })),
+        );
+    };
+    let peer_tx = peer.tx.clone();
+    drop(peer);
+
+    let bearer_token = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim())
+        .map(|s| s.strip_prefix("Bearer ").or_else(|| s.strip_prefix("bearer ")).unwrap_or(s))
+        .unwrap_or("")
+        .to_string();
+
+    let body_val: serde_json::Value = if body_bytes.is_empty() {
+        serde_json::Value::Null
+    } else {
+        match serde_json::from_slice(&body_bytes) {
+            Ok(v) => v,
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "error": {
+                            "message": format!("Invalid JSON body: {e}"),
+                            "type": "invalid_request_error",
+                            "code": "invalid_json"
+                        }
+                    })),
+                );
+            }
+        }
+    };
+
+    let req_id = Uuid::new_v4().to_string();
+    let (tx, rx) = tokio::sync::oneshot::channel::<(u16, serde_json::Value)>();
+    state.pending_llm_requests.insert(req_id.clone(), tx);
+
+    let clean_rest = rest.trim_start_matches('/');
+    let path = format!("/v1/{}", clean_rest);
+    let inner_payload = json!({
+        "type": "llm_http_req",
+        "req_id": req_id,
+        "provider_id": provider_id,
+        "method": method.as_str(),
+        "path": path,
+        "bearer_token": bearer_token,
+        "body": body_val
+    });
+    let hex_payload = hex::encode(inner_payload.to_string().as_bytes());
+    let msg_str = json!({
+        "type": "RELAY_CONTROL",
+        "session_id": format!("llm_bridge:http:{}", req_id),
+        "from_device_id": "__signal_http__",
+        "target_device_id": device_id,
+        "payload_json": hex_payload
+    })
+    .to_string();
+
+    if peer_tx.send(msg_str).await.is_err() {
+        state.pending_llm_requests.remove(&req_id);
+        return (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({
+                "error": {
+                    "message": "Failed to forward request to host Raydrop device",
+                    "type": "server_error",
+                    "code": "relay_send_failed"
+                }
+            })),
+        );
+    }
+
+    match tokio::time::timeout(std::time::Duration::from_secs(180), rx).await {
+        Ok(Ok((code, val))) => {
+            let status = StatusCode::from_u16(code).unwrap_or(StatusCode::OK);
+            (status, Json(val))
+        }
+        Ok(Err(_)) | Err(_) => {
+            state.pending_llm_requests.remove(&req_id);
+            (
+                StatusCode::GATEWAY_TIMEOUT,
+                Json(json!({
+                    "error": {
+                        "message": "Timed out waiting for host Raydrop LLM Bridge response",
+                        "type": "server_error",
+                        "code": "gateway_timeout"
+                    }
+                })),
+            )
+        }
+    }
 }
 
 fn format_bytes_human(bytes: u64) -> String {
@@ -1694,8 +1825,22 @@ async fn handle_socket(socket: WebSocket, client_ip: String, state: ServerState)
                             warn!("Blocked spoofed RELAY_CONTROL from {authed_id}");
                             continue;
                         }
-                        if payload_json.len() > 300 * 1024 {
+                        if payload_json.len() > 2 * 1024 * 1024 {
                             warn!("Blocked oversized RELAY_CONTROL payload ({} bytes) from {authed_id}", payload_json.len());
+                            continue;
+                        }
+                        if target_device_id == "__signal_http__" && session_id.starts_with("llm_bridge:http:") {
+                            if let Ok(bytes) = hex::decode(&payload_json) {
+                                if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                                    if let Some(req_id) = val.get("req_id").and_then(|v| v.as_str()) {
+                                        let status = val.get("status").and_then(|v| v.as_u64()).unwrap_or(502) as u16;
+                                        let body = val.get("body").cloned().unwrap_or_else(|| json!({}));
+                                        if let Some((_, tx)) = state.pending_llm_requests.remove(req_id) {
+                                            let _ = tx.send((status, body));
+                                        }
+                                    }
+                                }
+                            }
                             continue;
                         }
                         if let Some(target) = state.peers.get(&target_device_id) {

@@ -1514,13 +1514,34 @@ pub async fn get_llm_bridge_network_info(
     state: State<'_, Arc<crate::state::AppState>>,
 ) -> Result<Value, String> {
     let local_ip = state.local_ip.clone();
+    let device_id = state.identity.device_id.clone();
+    let sig_url = state
+        .settings
+        .lock()
+        .map(|s| s.signaling_url.clone())
+        .unwrap_or_default();
+    let wan_http_base = {
+        let trimmed = sig_url.trim().trim_end_matches('/');
+        let no_ws = trimmed.strip_suffix("/ws").unwrap_or(trimmed);
+        if let Some(rest) = no_ws.strip_prefix("wss://") {
+            format!("https://{}", rest)
+        } else if let Some(rest) = no_ws.strip_prefix("ws://") {
+            format!("http://{}", rest)
+        } else if no_ws.starts_with("http://") || no_ws.starts_with("https://") {
+            no_ws.to_string()
+        } else {
+            "https://stun.raydrop.web.id".to_string()
+        }
+    };
     let tailscale_ip = tokio::task::spawn_blocking(detect_tailscale_ip)
         .await
         .ok()
         .flatten();
     Ok(json!({
         "local_ip": local_ip,
-        "tailscale_ip": tailscale_ip
+        "tailscale_ip": tailscale_ip,
+        "device_id": device_id,
+        "wan_http_base": wan_http_base
     }))
 }
 
@@ -1652,6 +1673,127 @@ pub fn handle_llm_bridge_relay_signal(
                 "body": { "providers": list }
             });
             let _ = send_llm_relay_packet(&st, &from_id, &sid, &ack).await;
+        });
+        return true;
+    }
+
+    if msg_type == "llm_http_req" {
+        let req_id = payload
+            .get("req_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let provider_id = payload
+            .get("provider_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("agy")
+            .to_string();
+        let method = payload
+            .get("method")
+            .and_then(|v| v.as_str())
+            .unwrap_or("POST")
+            .to_string();
+        let path = payload
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("/v1/chat/completions")
+            .to_string();
+        let bearer_token = payload
+            .get("bearer_token")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let req_body = payload.get("body").cloned().unwrap_or(Value::Null);
+
+        let st = state.clone();
+        let app_c = app.clone();
+        let sid = session_id.to_string();
+
+        tauri::async_runtime::spawn(async move {
+            let prov_opt = st
+                .llm_bridge
+                .providers
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|p| p.id == provider_id)
+                .cloned();
+
+            let (status, resp_body) = match prov_opt {
+                None => (
+                    404u16,
+                    openai_error("LLM provider not found on host", "invalid_request_error", "not_found"),
+                ),
+                Some(p) if !p.enabled => (
+                    503,
+                    openai_error(
+                        &format!("LLM Bridge '{}' is currently OFF on host", p.name),
+                        "server_error",
+                        "bridge_disabled",
+                    ),
+                ),
+                Some(p) if !p.api_key.trim().is_empty() && bearer_token.trim() != p.api_key.trim() => (
+                    401,
+                    openai_error("Invalid API key for WAN Relay", "authentication_error", "invalid_api_key"),
+                ),
+                Some(p) => {
+                    let url = format!("http://127.0.0.1:{}{}", p.port, path);
+                    let client = reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_secs(180))
+                        .build()
+                        .unwrap_or_else(|_| reqwest::Client::new());
+                    let builder = if method == "GET" {
+                        client.get(&url)
+                    } else {
+                        let mut clean_body = req_body.clone();
+                        if let Some(obj) = clean_body.as_object_mut() {
+                            obj.insert("stream".to_string(), json!(false));
+                        }
+                        client.post(&url).json(&clean_body)
+                    };
+                    match builder
+                        .header("Authorization", format!("Bearer {}", p.api_key))
+                        .send()
+                        .await
+                    {
+                        Ok(r) => {
+                            let code = r.status().as_u16();
+                            let val = r.json::<Value>().await.unwrap_or_else(|e| {
+                                openai_error(&format!("Invalid host response: {e}"), "server_error", "bad_gateway")
+                            });
+                            (code, val)
+                        }
+                        Err(e) => (
+                            502,
+                            openai_error(
+                                &format!("Host bridge forward error: {e}"),
+                                "server_error",
+                                "bad_gateway",
+                            ),
+                        ),
+                    }
+                }
+            };
+
+            emit_bridge_log(
+                &app_c,
+                &provider_id,
+                "WAN HTTP Relay",
+                &method,
+                &path,
+                "-",
+                status,
+                0,
+                "External WAN HTTP request handled",
+            );
+
+            let ack = json!({
+                "type": "llm_resp",
+                "req_id": req_id,
+                "status": status,
+                "body": resp_body
+            });
+            let _ = send_llm_relay_packet(&st, "__signal_http__", &sid, &ack).await;
         });
         return true;
     }

@@ -62,6 +62,8 @@
   let unlistenStatus: UnlistenFn | null = null;
   let tailscaleIp: string | null = null;
   let localIpNet: string = "";
+  let wanHttpBase: string = "https://stun.raydrop.web.id";
+  let myDeviceId: string = "";
 
   interface LlmPeerProxyInfo {
     id: string;
@@ -127,11 +129,16 @@
     loading = true;
     try {
       providers = await invoke<LlmBridgeProvider[]>("get_llm_bridge_status");
-      const net = await invoke<{ local_ip: string; tailscale_ip: string | null }>(
-        "get_llm_bridge_network_info",
-      );
+      const net = await invoke<{
+        local_ip: string;
+        tailscale_ip: string | null;
+        device_id?: string;
+        wan_http_base?: string;
+      }>("get_llm_bridge_network_info");
       localIpNet = net.local_ip || $networkInfo.localIp || "127.0.0.1";
       tailscaleIp = net.tailscale_ip;
+      if (net.device_id) myDeviceId = net.device_id;
+      if (net.wan_http_base) wanHttpBase = net.wan_http_base;
       peerProxies = await invoke<LlmPeerProxyInfo[]>("get_peer_llm_proxies");
     } catch (err) {
       console.warn("Failed to load LLM Bridge status:", err);
@@ -361,6 +368,28 @@
                     title="Copy Tailscale Base URL"
                   >
                     {#if copiedId === `${p.id}-ts`}
+                      <Check class="w-3 h-3 text-emerald-400" />
+                    {:else}
+                      <Copy class="w-3 h-3" />
+                    {/if}
+                  </button>
+                </div>
+              {/if}
+              {#if myDeviceId}
+                <div class="flex items-center gap-2 text-[11px] font-mono text-emerald-300">
+                  <Globe class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span class="truncate">WAN Relay: {`${wanHttpBase}/llm/${myDeviceId}/${p.id}/v1`}</span>
+                  <button
+                    type="button"
+                    on:click={() => {
+                      navigator.clipboard.writeText(`${wanHttpBase}/llm/${myDeviceId}/${p.id}/v1`);
+                      copiedId = `${p.id}-wan`;
+                      setTimeout(() => (copiedId = ""), 2000);
+                    }}
+                    class="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white transition active:scale-95 cursor-pointer shrink-0"
+                    title="Copy WAN Relay Base URL"
+                  >
+                    {#if copiedId === `${p.id}-wan`}
                       <Check class="w-3 h-3 text-emerald-400" />
                     {:else}
                       <Copy class="w-3 h-3" />
