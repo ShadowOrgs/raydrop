@@ -34,6 +34,8 @@ pub struct DbBackupSchedule {
     pub id: String,
     pub connection_id: String,
     pub interval_minutes: i64,
+    #[serde(default)]
+    pub cron_expr: String,
     pub keep_last: i64,
     pub enabled: bool,
     pub last_run_at: i64,
@@ -321,7 +323,7 @@ fn list_schedules(db: &Database) -> Result<Vec<DbBackupSchedule>, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, connection_id, interval_minutes, keep_last, enabled, last_run_at, last_status, created_at
+            "SELECT id, connection_id, interval_minutes, COALESCE(cron_expr, ''), keep_last, enabled, last_run_at, last_status, created_at
              FROM db_backup_schedules ORDER BY created_at DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -331,11 +333,12 @@ fn list_schedules(db: &Database) -> Result<Vec<DbBackupSchedule>, String> {
                 id: r.get(0)?,
                 connection_id: r.get(1)?,
                 interval_minutes: r.get(2)?,
-                keep_last: r.get(3)?,
-                enabled: r.get::<_, i64>(4)? != 0,
-                last_run_at: r.get(5)?,
-                last_status: r.get(6)?,
-                created_at: r.get(7)?,
+                cron_expr: r.get(3)?,
+                keep_last: r.get(4)?,
+                enabled: r.get::<_, i64>(5)? != 0,
+                last_run_at: r.get(6)?,
+                last_status: r.get(7)?,
+                created_at: r.get(8)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -615,7 +618,7 @@ pub async fn dbm_install_tool(
 }
 
 #[tauri::command]
-pub fn dbm_launch_admin(
+pub async fn dbm_launch_admin(
     state: State<'_, Arc<AppState>>,
     connection_id: String,
 ) -> Result<RunningDbAdmin, String> {
@@ -659,21 +662,15 @@ pub fn dbm_launch_admin(
         let php = tools
             .php_bin
             .ok_or_else(|| "PHP CLI is required to run Adminer/phpMyAdmin. Click 'Install PHP' first.".to_string())?;
-        let doc_root = if tool == "phpmyadmin" {
+        let (doc_root, env_driver, env_server) = if tool == "phpmyadmin" {
             if !tools.phpmyadmin_installed {
                 return Err("phpMyAdmin is not installed yet. Click 'Install phpMyAdmin' first.".to_string());
             }
             let pma_dir = root.join("phpmyadmin");
-            let esc_php = |s: &str| s.replace('\\', "\\\\").replace('\'', "\\'");
-            let pma_cfg = format!(
-                "<?php\n$cfg['blowfish_secret'] = 'raydrop_pma_autologin_secret_key_32b';\n$i = 0;\n$i++;\n$cfg['Servers'][$i]['auth_type'] = 'config';\n$cfg['Servers'][$i]['host'] = '{}';\n$cfg['Servers'][$i]['port'] = '{}';\n$cfg['Servers'][$i]['user'] = '{}';\n$cfg['Servers'][$i]['password'] = '{}';\n$cfg['Servers'][$i]['AllowNoPassword'] = true;\n$cfg['Servers'][$i]['compress'] = false;\n",
-                esc_php(&conn.host),
-                conn.port,
-                esc_php(&conn.username),
-                esc_php(&conn.password),
-            );
+            // Read per-process env vars and isolate PHP session name per connection so multiple ports never collide
+            let pma_cfg = "<?php\n$connId = preg_replace('/[^a-zA-Z0-9]/', '', getenv('RAYDROP_CONN_ID') ?: '1');\nini_set('session.name', 'PMA_' . $connId);\n$cfg['blowfish_secret'] = 'raydrop_pma_autologin_secret_key_32b';\n$i = 0;\n$i++;\n$cfg['Servers'][$i]['auth_type'] = 'config';\n$cfg['Servers'][$i]['host'] = getenv('RAYDROP_DB_HOST') ?: '127.0.0.1';\n$cfg['Servers'][$i]['port'] = getenv('RAYDROP_DB_PORT') ?: '3306';\n$cfg['Servers'][$i]['user'] = getenv('RAYDROP_DB_USER') ?: 'root';\n$cfg['Servers'][$i]['password'] = getenv('RAYDROP_DB_PASS') !== false ? getenv('RAYDROP_DB_PASS') : '';\n$cfg['Servers'][$i]['AllowNoPassword'] = true;\n$cfg['Servers'][$i]['compress'] = false;\n";
             let _ = std::fs::write(pma_dir.join("config.inc.php"), pma_cfg);
-            pma_dir
+            (pma_dir, "server".to_string(), format!("{}:{}", conn.host, conn.port))
         } else {
             if !tools.adminer_installed {
                 return Err("Adminer is not installed yet. Click 'Install Adminer' first.".to_string());
@@ -691,22 +688,9 @@ pub fn dbm_launch_admin(
             } else {
                 format!("{}:{}", conn.host, conn.port)
             };
-            let esc_html = |s: &str| {
-                s.replace('&', "&amp;")
-                    .replace('"', "&quot;")
-                    .replace('<', "&lt;")
-                    .replace('>', "&gt;")
-            };
-            let autologin_php = format!(
-                "<?php header('Content-Type: text/html; charset=utf-8'); ?>\n<!DOCTYPE html><html><body style=\"background:#020617;color:#e2e8f0;font-family:system-ui;padding:24px\">\n<p>Logging in to Adminer...</p>\n<form id=\"f\" method=\"post\" action=\"adminer.php\">\n<input type=\"hidden\" name=\"auth[driver]\" value=\"{}\">\n<input type=\"hidden\" name=\"auth[server]\" value=\"{}\">\n<input type=\"hidden\" name=\"auth[username]\" value=\"{}\">\n<input type=\"hidden\" name=\"auth[password]\" value=\"{}\">\n<input type=\"hidden\" name=\"auth[db]\" value=\"{}\">\n</form>\n<script>document.getElementById('f').submit();</script>\n</body></html>",
-                esc_html(driver),
-                esc_html(&server_str),
-                esc_html(&conn.username),
-                esc_html(&conn.password),
-                esc_html(&conn.database_name),
-            );
+            let autologin_php = "<?php\n$connId = preg_replace('/[^a-zA-Z0-9]/', '', getenv('RAYDROP_CONN_ID') ?: '1');\nini_set('session.name', 'ADM_' . $connId);\nheader('Content-Type: text/html; charset=utf-8');\n$e = fn($v) => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');\n?>\n<!DOCTYPE html><html><body style=\"background:#020617;color:#e2e8f0;font-family:system-ui;padding:24px\">\n<p>Logging in to Adminer...</p>\n<form id=\"f\" method=\"post\" action=\"adminer.php\">\n<input type=\"hidden\" name=\"auth[driver]\" value=\"<?= $e(getenv('RAYDROP_DB_DRIVER')) ?>\">\n<input type=\"hidden\" name=\"auth[server]\" value=\"<?= $e(getenv('RAYDROP_DB_SERVER')) ?>\">\n<input type=\"hidden\" name=\"auth[username]\" value=\"<?= $e(getenv('RAYDROP_DB_USER')) ?>\">\n<input type=\"hidden\" name=\"auth[password]\" value=\"<?= $e(getenv('RAYDROP_DB_PASS')) ?>\">\n<input type=\"hidden\" name=\"auth[db]\" value=\"<?= $e(getenv('RAYDROP_DB_NAME')) ?>\">\n</form>\n<script>document.getElementById('f').submit();</script>\n</body></html>";
             let _ = std::fs::write(adm_dir.join("_raydrop_autologin.php"), autologin_php);
-            adm_dir
+            (adm_dir, driver.to_string(), server_str)
         };
         let child = hidden_cmd(&php)
             .args([
@@ -715,6 +699,14 @@ pub fn dbm_launch_admin(
                 "-t",
                 &doc_root.to_string_lossy(),
             ])
+            .env("RAYDROP_CONN_ID", &conn.id)
+            .env("RAYDROP_DB_HOST", &conn.host)
+            .env("RAYDROP_DB_PORT", conn.port.to_string())
+            .env("RAYDROP_DB_USER", &conn.username)
+            .env("RAYDROP_DB_PASS", &conn.password)
+            .env("RAYDROP_DB_NAME", &conn.database_name)
+            .env("RAYDROP_DB_DRIVER", &env_driver)
+            .env("RAYDROP_DB_SERVER", &env_server)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -729,6 +721,23 @@ pub fn dbm_launch_admin(
         };
         (child, format!("http://127.0.0.1:{}/{}", port, entry_path))
     };
+
+    // Wait until the local DB Admin HTTP server is listening and responding (prevents 404 / connection refused on auto-open)
+    let probe_url = format!("http://127.0.0.1:{}/", port);
+    if let Ok(client) = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(400))
+        .build()
+    {
+        for _ in 0..40 {
+            if let Ok(resp) = client.get(&probe_url).send().await {
+                let code = resp.status().as_u16();
+                if code < 500 && code != 404 {
+                    break;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+        }
+    }
 
     let info = RunningDbAdmin {
         connection_id: connection_id.clone(),
@@ -1040,19 +1049,19 @@ pub async fn dbm_restore_backup(
     state: State<'_, Arc<AppState>>,
     connection_id: String,
     file_path: String,
-    allow_non_empty: Option<bool>,
+    _allow_non_empty: Option<bool>,
 ) -> Result<String, String> {
     let conn = get_connection_by_id(&state.db, &connection_id)?;
     let tools = detect_tools_status(&state.db_manager);
     let (eff_host, eff_port, tunnel_handle) = maybe_open_ssh_tunnel(&state.db, &conn).await?;
 
     let existing_tables = count_existing_tables(&conn, &eff_host, eff_port, &tools)?;
-    if existing_tables > 0 && !allow_non_empty.unwrap_or(false) {
+    if existing_tables > 0 {
         if let Some(h) = tunnel_handle {
             h.abort();
         }
         return Err(format!(
-            "SAFE_RESTORE_BLOCKED: Target database '{}' already contains {} table(s). Empty the database first so existing data is not overwritten.",
+            "SAFE_RESTORE_BLOCKED: Database '{}' masih memiliki {} tabel. Safe Restore dibatalkan — kosongkan database terlebih dahulu.",
             conn.database_name, existing_tables
         ));
     }
@@ -1141,29 +1150,33 @@ pub fn dbm_save_schedule(
     id: Option<String>,
     connection_id: String,
     interval_minutes: i64,
+    cron_expr: Option<String>,
     keep_last: i64,
     enabled: bool,
 ) -> Result<DbBackupSchedule, String> {
     let sid = id
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| format!("dbs_{}", uuid::Uuid::new_v4().simple()));
+    let cron = cron_expr.unwrap_or_default().trim().to_string();
     let now = now_unix_secs() as i64;
     let conn = state.db.conn.lock().map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO db_backup_schedules (id, connection_id, interval_minutes, keep_last, enabled, last_run_at, last_status, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, 0, '', ?6)
+        "INSERT INTO db_backup_schedules (id, connection_id, interval_minutes, cron_expr, keep_last, enabled, last_run_at, last_status, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, '', ?7)
          ON CONFLICT(id) DO UPDATE SET
            connection_id = excluded.connection_id,
            interval_minutes = excluded.interval_minutes,
+           cron_expr = excluded.cron_expr,
            keep_last = excluded.keep_last,
            enabled = excluded.enabled",
-        params![sid, connection_id, interval_minutes.max(1), keep_last.max(1), if enabled { 1 } else { 0 }, now],
+        params![sid, connection_id, interval_minutes.max(1), cron, keep_last.max(1), if enabled { 1 } else { 0 }, now],
     )
     .map_err(|e| e.to_string())?;
     Ok(DbBackupSchedule {
         id: sid,
         connection_id,
         interval_minutes: interval_minutes.max(1),
+        cron_expr: cron,
         keep_last: keep_last.max(1),
         enabled,
         last_run_at: 0,
@@ -1325,6 +1338,60 @@ pub async fn dbm_check_health(
     }
 }
 
+fn cron_field_matches(field: &str, value: i64) -> bool {
+    for part in field.split(',') {
+        let p = part.trim();
+        if p == "*" {
+            return true;
+        }
+        if let Some(step_str) = p.strip_prefix("*/") {
+            if let Ok(step) = step_str.parse::<i64>() {
+                if step > 0 && value % step == 0 {
+                    return true;
+                }
+            }
+        } else if let Some((a_str, b_str)) = p.split_once('-') {
+            if let (Ok(a), Ok(b)) = (a_str.trim().parse::<i64>(), b_str.trim().parse::<i64>()) {
+                if value >= a && value <= b {
+                    return true;
+                }
+            }
+        } else if let Ok(exact) = p.parse::<i64>() {
+            if value == exact {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn cron_matches_local_now(db: &Database, expr: &str) -> bool {
+    let parts: Vec<&str> = expr.split_whitespace().collect();
+    if parts.len() != 5 {
+        return false;
+    }
+    let Ok(conn) = db.conn.lock() else {
+        return false;
+    };
+    let res: Result<(i64, i64, i64, i64, i64), _> = conn.query_row(
+        "SELECT CAST(strftime('%M','now','localtime') AS INTEGER),
+                CAST(strftime('%H','now','localtime') AS INTEGER),
+                CAST(strftime('%d','now','localtime') AS INTEGER),
+                CAST(strftime('%m','now','localtime') AS INTEGER),
+                CAST(strftime('%w','now','localtime') AS INTEGER)",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+    );
+    let Ok((min, hour, dom, month, dow)) = res else {
+        return false;
+    };
+    cron_field_matches(parts[0], min)
+        && cron_field_matches(parts[1], hour)
+        && cron_field_matches(parts[2], dom)
+        && cron_field_matches(parts[3], month)
+        && cron_field_matches(parts[4], dow)
+}
+
 pub fn start_db_backup_scheduler(app: AppHandle, state: Arc<AppState>) {
     tauri::async_runtime::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -1336,7 +1403,12 @@ pub fn start_db_backup_scheduler(app: AppHandle, state: Arc<AppState>) {
                 if !sched.enabled {
                     continue;
                 }
-                if now - sched.last_run_at < sched.interval_minutes * 60 {
+                let due = if !sched.cron_expr.trim().is_empty() {
+                    now - sched.last_run_at >= 55 && cron_matches_local_now(&state.db, &sched.cron_expr)
+                } else {
+                    now - sched.last_run_at >= sched.interval_minutes * 60
+                };
+                if !due {
                     continue;
                 }
                 let tools = detect_tools_status(&state.db_manager);

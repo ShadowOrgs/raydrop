@@ -99,6 +99,8 @@ struct DeviceNode {
     pub is_online: bool,
     pub last_seen_at: u64,
     pub created_at: u64,
+    #[serde(default)]
+    pub app_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -160,6 +162,8 @@ enum SignalMessage {
         timestamp: u64,
         signature: String,
         auth_token: Option<String>,
+        #[serde(default)]
+        app_version: Option<String>,
     },
     #[serde(rename = "PEER_LOOKUP")]
     PeerLookup { target_device_id: String },
@@ -377,6 +381,7 @@ fn init_database(db_path: &str) -> Connection {
             created_at INTEGER NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
+        ALTER TABLE devices ADD COLUMN app_version TEXT;
 
         CREATE TABLE IF NOT EXISTS devices (
             device_id TEXT PRIMARY KEY,
@@ -401,6 +406,7 @@ fn init_database(db_path: &str) -> Connection {
         );
         ",
     );
+    let _ = conn.execute("ALTER TABLE devices ADD COLUMN app_version TEXT", []);
 
     info!("Initialized persistent SQLite database at {db_path}");
     conn
@@ -1053,7 +1059,7 @@ fn query_user_devices(
 ) -> Vec<DeviceNode> {
     let mut stmt = match conn.prepare(
         "SELECT d.device_id, d.user_id, u.email, u.name, d.device_name, d.os_type,
-                d.ed25519_pubkey, d.last_ip, d.last_seen_at, d.created_at
+                d.ed25519_pubkey, d.last_ip, d.last_seen_at, d.created_at, d.app_version
          FROM devices d
          JOIN users u ON u.id = d.user_id
          WHERE d.user_id = ?1
@@ -1078,6 +1084,7 @@ fn query_user_devices(
             is_online,
             last_seen_at: row.get::<_, i64>(8)? as u64,
             created_at: row.get::<_, i64>(9)? as u64,
+            app_version: row.get(10).ok().flatten(),
         })
     }) {
         Ok(r) => r,
@@ -1758,18 +1765,20 @@ async fn handle_socket(socket: WebSocket, client_ip: String, state: ServerState)
                         timestamp,
                         signature,
                         auth_token,
+                        app_version,
                     } => {
                         if verify_registration(&device_id, &ed25519_pubkey, timestamp, &signature) {
                             let mut uid_opt = None;
                             let mut email_opt = None;
                             let safe_alias: String = alias_name.trim().chars().take(64).collect();
+                            let safe_ver = app_version.map(|v| v.trim().chars().take(32).collect::<String>()).filter(|v| !v.is_empty());
 
                             if let Some(tok) = auth_token {
                                 let conn = state.db.lock().unwrap();
                                 if let Some(u) = authenticate_token(&conn, &tok) {
                                     let _ = conn.execute(
-                                        "UPDATE devices SET last_ip = ?1, last_seen_at = ?2 WHERE device_id = ?3 AND user_id = ?4",
-                                        params![&client_ip, now_secs() as i64, &device_id, &u.id],
+                                        "UPDATE devices SET last_ip = ?1, last_seen_at = ?2, app_version = COALESCE(?3, app_version) WHERE device_id = ?4 AND user_id = ?5",
+                                        params![&client_ip, now_secs() as i64, &safe_ver, &device_id, &u.id],
                                     );
                                     uid_opt = Some(u.id);
                                     email_opt = Some(u.email);

@@ -30,6 +30,8 @@ pub struct Contact {
     pub mac_address: Option<String>,
     #[serde(default = "default_mesh_status")]
     pub mesh_status: String, // "none", "pending_out", "pending_in", "approved"
+    #[serde(default)]
+    pub app_version: Option<String>,
 }
 
 fn default_mesh_status() -> String {
@@ -335,6 +337,8 @@ fn open_and_migrate_db(db_path: &std::path::Path) -> Result<Connection, String> 
     let _ = conn.execute("ALTER TABLE contacts ADD COLUMN rank_exp INTEGER DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE contacts ADD COLUMN mac_address TEXT", []);
     let _ = conn.execute("ALTER TABLE contacts ADD COLUMN mesh_status TEXT DEFAULT 'none'", []);
+    let _ = conn.execute("ALTER TABLE contacts ADD COLUMN app_version TEXT", []);
+    let _ = conn.execute("ALTER TABLE db_backup_schedules ADD COLUMN cron_expr TEXT NOT NULL DEFAULT ''", []);
     let _ = conn.execute("ALTER TABLE transfer_history ADD COLUMN source_paths TEXT", []);
     let _ = conn.execute("ALTER TABLE transfer_history ADD COLUMN error_reason TEXT", []);
     let _ = conn.execute("ALTER TABLE chat_messages ADD COLUMN sender_device_id TEXT", []);
@@ -944,8 +948,8 @@ impl Database {
             "INSERT INTO contacts (
                 device_id, alias_name, user_email, user_name, os_type, is_own_device,
                 ed25519_pubkey, network_type, last_known_ip, last_known_port,
-                trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash, rank_exp, mac_address, mesh_status
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+                trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash, rank_exp, mac_address, mesh_status, app_version
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
             ON CONFLICT(device_id) DO UPDATE SET
                 alias_name = excluded.alias_name,
                 user_email = COALESCE(excluded.user_email, contacts.user_email),
@@ -969,7 +973,8 @@ impl Database {
                 mesh_status = CASE
                     WHEN excluded.mesh_status != '' AND excluded.mesh_status != 'none' THEN excluded.mesh_status
                     ELSE COALESCE(contacts.mesh_status, 'none')
-                END",
+                END,
+                app_version = COALESCE(excluded.app_version, contacts.app_version)",
             params![
                 c.device_id,
                 c.alias_name,
@@ -990,6 +995,7 @@ impl Database {
                 c.rank_exp as i64,
                 c.mac_address,
                 if c.mesh_status.is_empty() { "none" } else { &c.mesh_status },
+                c.app_version,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -1211,7 +1217,7 @@ impl Database {
         conn.query_row(
             "SELECT device_id, alias_name, user_email, user_name, os_type, is_own_device,
                     ed25519_pubkey, network_type, last_known_ip, last_known_port,
-                    trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash, COALESCE(rank_exp, 0), mac_address, COALESCE(mesh_status, 'none')
+                    trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash, COALESCE(rank_exp, 0), mac_address, COALESCE(mesh_status, 'none'), app_version
              FROM contacts WHERE device_id = ?1",
             params![device_id],
             |row| {
@@ -1235,6 +1241,7 @@ impl Database {
                     rank_exp: row.get::<_, i64>(16).unwrap_or(0).max(0) as u64,
                     mac_address: row.get(17)?,
                     mesh_status: row.get::<_, String>(18).unwrap_or_else(|_| "none".to_string()),
+                    app_version: row.get(19).ok().flatten(),
                 })
             },
         )
@@ -1248,7 +1255,7 @@ impl Database {
             .prepare(
                 "SELECT device_id, alias_name, user_email, user_name, os_type, is_own_device,
                         ed25519_pubkey, network_type, last_known_ip, last_known_port,
-                        trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash, COALESCE(rank_exp, 0), mac_address, COALESCE(mesh_status, 'none')
+                        trust_level, is_online, last_seen_at, created_at, custom_name, avatar_hash, COALESCE(rank_exp, 0), mac_address, COALESCE(mesh_status, 'none'), app_version
                  FROM contacts ORDER BY is_online DESC, last_seen_at DESC",
             )
             .map_err(|e| e.to_string())?;
@@ -1275,6 +1282,7 @@ impl Database {
                     rank_exp: row.get::<_, i64>(16).unwrap_or(0).max(0) as u64,
                     mac_address: row.get(17)?,
                     mesh_status: row.get::<_, String>(18).unwrap_or_else(|_| "none".to_string()),
+                    app_version: row.get(19).ok().flatten(),
                 })
             })
             .map_err(|e| e.to_string())?;

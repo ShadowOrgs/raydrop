@@ -28,6 +28,7 @@ pub fn start_mdns_daemon(app: AppHandle, state: Arc<AppState>) {
         properties.insert("alias".to_string(), settings.alias_name.clone());
         properties.insert("pubkey".to_string(), state.identity.public_hex());
         properties.insert("os".to_string(), std::env::consts::OS.to_string());
+        properties.insert("app_version".to_string(), env!("CARGO_PKG_VERSION").to_string());
         if let Some(ref email) = settings.user_email {
             properties.insert("email".to_string(), email.clone());
         }
@@ -160,6 +161,7 @@ pub fn start_mdns_daemon(app: AppHandle, state: Arc<AppState>) {
                     } else {
                         None
                     };
+                    let peer_app_version = info.get_property_val_str("app_version").map(|s| s.to_string());
                     let contact = Contact {
                         device_id: peer_id.to_string(),
                         alias_name: alias,
@@ -180,6 +182,7 @@ pub fn start_mdns_daemon(app: AppHandle, state: Arc<AppState>) {
                         rank_exp: peer_rank_exp.max(existing.as_ref().map(|c| c.rank_exp).unwrap_or(0)),
                         mac_address: peer_mac.or_else(|| existing.as_ref().and_then(|c| c.mac_address.clone())),
                         mesh_status: existing.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
+                        app_version: peer_app_version.or_else(|| existing.as_ref().and_then(|c| c.app_version.clone())),
                     };
 
                     let _ = state.db.upsert_contact(&contact);

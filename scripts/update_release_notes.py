@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.100"
+    tag = clean_args[0] if clean_args else "v1.2.101"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: DevOps UX Polish, DB Auto-Login, Public Uptime Status & Smooth Game Mode"
+    title = f"Raydrop {tag}: MCP npx/uvx Windows Fix, DevOps UX Polish & Smooth Game Mode"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/ShadowOrgs/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: DevOps UX Polish, DB Auto-Login, Public Uptime Status & Smooth Game Mode</h2>
+<h2 align="center">Raydrop {tag}: MCP npx/uvx Windows Fix, DevOps UX Polish & Smooth Game Mode</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -125,6 +125,9 @@ if __name__ == "__main__":
 ---
 
 ### 🚀 What's New & Highlights in {tag}
+
+#### 🔌 MCP Library Windows `npx` / `uvx` Spawn Fix
+- **Automatic Windows `.cmd` & Tool PATH Discovery:** Fixed `Failed to spawn 'npx': program not found` on Windows by resolving `.exe`/`.cmd`/`.bat` shims (`npx`, `npm`, `pnpm`, `yarn`, `uvx`, `uv`, `python`, `pipx`) via an augmented `PATH` covering Node.js, npm, Volta, pnpm, Bun, `uv`, Python `Scripts`, WinGet, Scoop, and Chocolatey.
 
 #### 🛠️ Remote SSH, DB Auto-Login & Uptime Status Upgrades
 - **Remote SSH UX & Terminal Fixes:** Added loading spinners, touch feedback, and error toasts on SSH connect/health; added **Test Connection** in the server modal; fixed clicking an active SSH tab hiding the console; fixed terminal downward overflow; and added **`Ctrl+Shift+C`** / **`Ctrl+Shift+V`** copy/paste shortcuts.

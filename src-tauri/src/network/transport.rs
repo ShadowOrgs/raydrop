@@ -823,6 +823,7 @@ where
                 rank_exp: from_rank_exp.max(existing.as_ref().map(|e| e.rank_exp).unwrap_or(0)),
                 mac_address: existing.as_ref().and_then(|e| e.mac_address.clone()),
                 mesh_status: existing.as_ref().map(|e| e.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
+                app_version: existing.as_ref().and_then(|e| e.app_version.clone()),
             };
             let _ = state.db.upsert_contact(&c);
             let _ = app.emit("contacts_updated", ());
@@ -1145,6 +1146,7 @@ where
         rank_exp: existing_contact.as_ref().map(|c| c.rank_exp).unwrap_or(0),
         mac_address: existing_contact.as_ref().and_then(|c| c.mac_address.clone()),
         mesh_status: existing_contact.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
+        app_version: existing_contact.as_ref().and_then(|c| c.app_version.clone()),
     };
     let _ = state.db.upsert_contact(&contact);
     let _ = app.emit("contacts_updated", ());
@@ -2087,6 +2089,7 @@ async fn start_or_resume_transfer(
                 rank_exp: 0,
                 mac_address: None,
                 mesh_status: "none".to_string(),
+                app_version: None,
             };
             let _ = state.db.upsert_contact(&fallback);
             fallback

@@ -313,6 +313,7 @@ export interface Contact {
   rank_exp?: number;
   mac_address?: string | null;
   mesh_status?: 'none' | 'pending_out' | 'pending_in' | 'approved';
+  app_version?: string | null;
 }
 
 export interface CloudDeviceNode {
@@ -327,6 +328,7 @@ export interface CloudDeviceNode {
   is_online: boolean;
   last_seen_at: number;
   created_at: number;
+  app_version?: string | null;
 }
 
 export interface CloudContactGroup {

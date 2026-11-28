@@ -204,6 +204,7 @@ pub async fn sync_cloud_data_to_local(
                 rank_exp: existing.as_ref().map(|c| c.rank_exp).unwrap_or(0),
                 mac_address: existing.as_ref().and_then(|c| c.mac_address.clone()),
                 mesh_status: existing.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "approved".to_string()),
+                app_version: existing.as_ref().and_then(|c| c.app_version.clone()),
             };
             let _ = st.db.upsert_contact(&c);
         }
@@ -245,6 +246,7 @@ pub async fn sync_cloud_data_to_local(
                     rank_exp: existing.as_ref().map(|c| c.rank_exp).unwrap_or(0),
                     mac_address: existing.as_ref().and_then(|c| c.mac_address.clone()),
                     mesh_status: existing.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
+                    app_version: existing.as_ref().and_then(|c| c.app_version.clone()),
                 };
                 let _ = st.db.upsert_contact(&c);
             }
@@ -507,6 +509,7 @@ pub fn add_wan_contact(
         rank_exp: 0,
         mac_address: None,
         mesh_status: "none".to_string(),
+        app_version: None,
     };
     state.db.upsert_contact(&contact)?;
 
@@ -1310,6 +1313,20 @@ pub async fn download_and_install_update(
         let path_str = temp_file_path.to_string_lossy().to_string();
 
         if is_msi {
+            // Ensure all child DB admin processes & SSH sessions are closed before upgrading
+            if let Some(state) = app.try_state::<Arc<AppState>>() {
+                if let Ok(mut admins) = state.db_manager.admins.lock() {
+                    for (_, mut proc) in admins.drain() {
+                        let _ = proc.child.kill();
+                    }
+                }
+                if let Ok(mut sessions) = state.ssh_manager.sessions.lock() {
+                    for (_, tx) in sessions.drain() {
+                        let _ = tx.send(crate::ssh_manager::SshCmd::Close);
+                    }
+                }
+            }
+
             std::process::Command::new("msiexec.exe")
                 .arg("/i")
                 .arg(&path_str)
@@ -1318,11 +1335,12 @@ pub async fn download_and_install_update(
 
             let app_exit = app.clone();
             tokio::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
                 app_exit.exit(0);
+                std::process::exit(0);
             });
 
-            return Ok("Installer launched. Upgrading Raydrop...".to_string());
+            return Ok("Installer launched. Closing Raydrop for upgrade...".to_string());
         } else {
             std::process::Command::new("explorer.exe")
                 .arg(format!("/select,{}", path_str))
@@ -1550,6 +1568,7 @@ pub fn auto_add_contact_from_chat(
         rank_exp: existing.as_ref().map(|c| c.rank_exp).unwrap_or(0),
         mac_address: existing.as_ref().and_then(|c| c.mac_address.clone()),
         mesh_status: existing.as_ref().map(|c| c.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
+        app_version: existing.as_ref().and_then(|c| c.app_version.clone()),
     };
     let _ = state.db.upsert_contact(&contact);
     let _ = app.emit("contacts_updated", ());
@@ -3786,6 +3805,7 @@ pub async fn connect_peer_by_ip(
         rank_exp: existing.as_ref().map(|e| e.rank_exp).unwrap_or(0),
         mac_address: existing.as_ref().and_then(|e| e.mac_address.clone()),
         mesh_status: existing.as_ref().map(|e| e.mesh_status.clone()).unwrap_or_else(|| "none".to_string()),
+        app_version: existing.as_ref().and_then(|e| e.app_version.clone()),
     };
 
     state.db.upsert_contact(&contact)?;

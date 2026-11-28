@@ -328,6 +328,7 @@
     id: string;
     connection_id: string;
     interval_minutes: number;
+    cron_expr?: string;
     keep_last: number;
     enabled: boolean;
     last_run_at: number;
@@ -393,7 +394,14 @@
   };
 
   let showSchedModal = false;
-  let schedForm = { connection_id: "", interval_minutes: 1440, keep_last: 7, enabled: true };
+  let schedForm = {
+    connection_id: "",
+    cronPreset: "0 0 * * *",
+    cron_expr: "0 0 * * *",
+    interval_minutes: 1440,
+    keep_last: 7,
+    enabled: true,
+  };
 
   async function loadDbOverview() {
     try {
@@ -524,17 +532,19 @@
   }
 
   async function saveDbSchedule() {
+    const finalCron = schedForm.cronPreset === "custom" ? schedForm.cron_expr.trim() : schedForm.cronPreset;
     try {
       await invoke("dbm_save_schedule", {
         id: null,
         connectionId: schedForm.connection_id,
         intervalMinutes: Number(schedForm.interval_minutes) || 1440,
+        cronExpr: finalCron,
         keepLast: Number(schedForm.keep_last) || 7,
         enabled: schedForm.enabled,
       });
       showSchedModal = false;
       await loadDbOverview();
-      notifyToast("Schedule Saved", "Auto-backup schedule aktif", "emerald");
+      notifyToast("Schedule Saved", `Cron aktif: ${finalCron}`, "emerald");
     } catch (e) {
       notifyToast("Error", String(e), "rose");
     }
@@ -1029,7 +1039,14 @@
           <button
             type="button"
             on:click={() => {
-              schedForm = { connection_id: dbConns[0]?.id || "", interval_minutes: 1440, keep_last: 7, enabled: true };
+              schedForm = {
+                connection_id: dbConns[0]?.id || "",
+                cronPreset: "0 0 * * *",
+                cron_expr: "0 0 * * *",
+                interval_minutes: 1440,
+                keep_last: 7,
+                enabled: true,
+              };
               showSchedModal = true;
             }}
             disabled={dbConns.length === 0}
@@ -1204,7 +1221,7 @@
                 </span>
                 {#if connSched}
                   <span class="text-amber-300 font-mono">
-                    Auto: every {connSched.interval_minutes}m (keep {connSched.keep_last})
+                    Auto: {connSched.cron_expr || `every ${connSched.interval_minutes}m`} (keep {connSched.keep_last})
                   </span>
                 {/if}
               </div>
@@ -1247,7 +1264,7 @@
               <div class="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-950/70 border border-slate-800">
                 <div>
                   <span class="font-semibold text-white">{cname}</span>
-                  <span class="text-slate-400"> • every {sc.interval_minutes}m (keep {sc.keep_last})</span>
+                  <span class="text-slate-400"> • {sc.cron_expr || `every ${sc.interval_minutes}m`} (keep {sc.keep_last})</span>
                 </div>
                 <button
                   type="button"
@@ -1555,13 +1572,34 @@
       <select bind:value={schedForm.connection_id} class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
         {#each dbConns as c}<option value={c.id}>{c.name}</option>{/each}
       </select>
-      <div class="grid grid-cols-2 gap-2">
-        <input type="number" bind:value={schedForm.interval_minutes} placeholder="Interval (mins)" class="px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
-        <input type="number" bind:value={schedForm.keep_last} placeholder="Keep last N" class="px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+      <div class="space-y-1">
+        <label class="text-[11px] text-slate-400 font-semibold">Cron Schedule</label>
+        <select bind:value={schedForm.cronPreset} class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+          <option value="* * * * *">Every minute (* * * * *)</option>
+          <option value="*/15 * * * *">Every 15 minutes (*/15 * * * *)</option>
+          <option value="0 * * * *">Every hour (0 * * * *)</option>
+          <option value="0 0 * * *">Every day at midnight (0 0 * * *)</option>
+          <option value="0 0 * * 0">Every Sunday at midnight (0 0 * * 0)</option>
+          <option value="0 0 1 * *">Every month on the 1st at midnight (0 0 1 * *)</option>
+          <option value="0 0 * * 1-5">Every weekday at midnight (0 0 * * 1-5)</option>
+          <option value="custom">Custom Cron Expression</option>
+        </select>
+      </div>
+      {#if schedForm.cronPreset === "custom"}
+        <input
+          type="text"
+          bind:value={schedForm.cron_expr}
+          placeholder="min hour dom mon dow (e.g. 30 2 * * *)"
+          class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono"
+        />
+      {/if}
+      <div class="space-y-1">
+        <label class="text-[11px] text-slate-400 font-semibold">Keep Last N Backups</label>
+        <input type="number" bind:value={schedForm.keep_last} placeholder="Keep last N" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
       </div>
       <div class="flex justify-end gap-2 pt-1">
-        <button type="button" on:click={() => (showSchedModal = false)} class="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300">Cancel</button>
-        <button type="button" on:click={saveDbSchedule} class="px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 font-bold">Save</button>
+        <button type="button" on:click={() => (showSchedModal = false)} class="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300 cursor-pointer active:scale-95">Cancel</button>
+        <button type="button" on:click={saveDbSchedule} class="px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 font-bold cursor-pointer active:scale-95">Save</button>
       </div>
     </div>
   </div>

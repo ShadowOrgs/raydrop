@@ -682,6 +682,103 @@ async fn mcp_sse_session_call(
     }
 }
 
+#[cfg(target_os = "windows")]
+fn build_augmented_windows_path() -> String {
+    let mut dirs: Vec<String> = Vec::new();
+    if let Ok(p) = std::env::var("PATH") {
+        for part in p.split(';').filter(|s| !s.trim().is_empty()) {
+            dirs.push(part.trim().to_string());
+        }
+    }
+    let mut extra: Vec<String> = vec![
+        r"C:\Program Files\nodejs".to_string(),
+        r"C:\Program Files (x86)\nodejs".to_string(),
+        r"C:\ProgramData\chocolatey\bin".to_string(),
+    ];
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        extra.push(format!(r"{}\npm", appdata));
+        extra.push(format!(r"{}\uv\bin", appdata));
+        let py_roaming = std::path::Path::new(&appdata).join("Python");
+        if let Ok(entries) = std::fs::read_dir(py_roaming) {
+            for entry in entries.flatten() {
+                let scripts = entry.path().join("Scripts");
+                if scripts.is_dir() {
+                    extra.push(scripts.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        extra.push(format!(r"{}\Programs\nodejs", local));
+        extra.push(format!(r"{}\Volta\bin", local));
+        extra.push(format!(r"{}\pnpm", local));
+        extra.push(format!(r"{}\uv\bin", local));
+        extra.push(format!(r"{}\Microsoft\WinGet\Links", local));
+        let py_local = std::path::Path::new(&local).join("Programs").join("Python");
+        if let Ok(entries) = std::fs::read_dir(py_local) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    extra.push(p.to_string_lossy().to_string());
+                    let scripts = p.join("Scripts");
+                    if scripts.is_dir() {
+                        extra.push(scripts.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(profile) = std::env::var("USERPROFILE") {
+        extra.push(format!(r"{}\.local\bin", profile));
+        extra.push(format!(r"{}\.cargo\bin", profile));
+        extra.push(format!(r"{}\.bun\bin", profile));
+        extra.push(format!(r"{}\scoop\shims", profile));
+    }
+    if let Ok(nvm) = std::env::var("NVM_SYMLINK") {
+        extra.push(nvm);
+    }
+    for d in extra {
+        if !d.is_empty() && std::path::Path::new(&d).is_dir() && !dirs.iter().any(|x| x.eq_ignore_ascii_case(&d)) {
+            dirs.push(d);
+        }
+    }
+    dirs.join(";")
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_windows_command(raw_cmd: &str, path_env: &str) -> (String, bool) {
+    let trimmed = raw_cmd.trim();
+    let lower = trimmed.to_lowercase();
+    let p = std::path::Path::new(trimmed);
+
+    // Direct path given
+    if p.components().count() > 1 {
+        let is_batch = lower.ends_with(".cmd") || lower.ends_with(".bat");
+        return (trimmed.to_string(), is_batch);
+    }
+
+    let exts: &[&str] = if lower.ends_with(".exe") || lower.ends_with(".cmd") || lower.ends_with(".bat") {
+        &[""]
+    } else {
+        &[".exe", ".cmd", ".bat", ""]
+    };
+
+    for dir in path_env.split(';').filter(|s| !s.trim().is_empty()) {
+        for ext in exts {
+            let candidate = std::path::Path::new(dir.trim()).join(format!("{}{}", trimmed, ext));
+            if candidate.is_file() {
+                let s = candidate.to_string_lossy().to_string();
+                let sl = s.to_lowercase();
+                let is_batch = sl.ends_with(".cmd") || sl.ends_with(".bat");
+                return (s, is_batch);
+            }
+        }
+    }
+
+    let is_known_shim = matches!(lower.as_str(), "npx" | "npm" | "pnpm" | "pnpx" | "yarn" | "corepack");
+    (trimmed.to_string(), is_known_shim)
+}
+
 async fn mcp_stdio_call(
     item: &McpLibraryItem,
     method: &str,
@@ -691,19 +788,38 @@ async fn mcp_stdio_call(
         return Err("MCP stdio command is empty".to_string());
     }
 
-    let mut cmd = Command::new(item.command.trim());
-    cmd.args(&item.args)
-        .stdin(Stdio::piped())
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let aug_path = build_augmented_windows_path();
+        let (resolved, needs_cmd_shell) = resolve_windows_command(item.command.trim(), &aug_path);
+        let mut c = if needs_cmd_shell {
+            let mut shell = Command::new("cmd.exe");
+            shell.arg("/C").arg(&resolved).args(&item.args);
+            shell
+        } else {
+            let mut direct = Command::new(&resolved);
+            direct.args(&item.args);
+            direct
+        };
+        c.env("PATH", aug_path);
+        c.creation_flags(0x08000000);
+        c
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = {
+        let mut c = Command::new(item.command.trim());
+        c.args(&item.args);
+        c
+    };
+
+    cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     for (k, v) in &item.env {
         if !k.trim().is_empty() {
             cmd.env(k.trim(), v);
         }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(0x08000000);
     }
 
     let mut child = cmd

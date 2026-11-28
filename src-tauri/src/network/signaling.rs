@@ -77,7 +77,8 @@ pub fn start_signaling_daemon(app: AppHandle, state: Arc<AppState>) {
                         "timestamp": ts,
                         "signature": sig,
                         "auth_token": auth_token,
-                        "mac_address": local_mac
+                        "mac_address": local_mac,
+                        "app_version": env!("CARGO_PKG_VERSION")
                     })
                     .to_string();
                     let _ = tx.send(reg_msg);

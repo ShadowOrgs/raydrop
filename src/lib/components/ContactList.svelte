@@ -609,6 +609,14 @@
                     >
                       {dev.os_type}
                     </span>
+                    {#if dev.app_version}
+                      <span
+                        class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/25"
+                        title="Raydrop Version"
+                      >
+                        v{dev.app_version}
+                      </span>
+                    {/if}
                     {#if !isThisDevice && $lanStatusMap[dev.device_id]?.active}
                       {@const lanInfo = $lanStatusMap[dev.device_id]}
                       <button
@@ -996,6 +1004,9 @@
                               <span class="uppercase text-slate-500"
                                 >{cdev.os_type}</span
                               >
+                              {#if cdev.app_version}
+                                <span class="text-cyan-400 font-semibold"> • v{cdev.app_version}</span>
+                              {/if}
                               {#if cdev.last_ip}
                                 <span> • {cdev.last_ip}</span>
                               {/if}
@@ -1201,6 +1212,14 @@
                           >
                             {peer.os_type}
                           </span>
+                          {#if peer.app_version}
+                            <span
+                              class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/25"
+                              title="Raydrop Version"
+                            >
+                              v{peer.app_version}
+                            </span>
+                          {/if}
                           <span
                             class="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 border border-slate-700"
                           >
