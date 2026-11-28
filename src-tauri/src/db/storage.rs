@@ -540,6 +540,99 @@ fn open_and_migrate_db(db_path: &std::path::Path) -> Result<Connection, String> 
             updated_at INTEGER NOT NULL,
             PRIMARY KEY (source_project, target_project, relation_type)
         );
+
+        CREATE TABLE IF NOT EXISTS ssh_groups (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            color TEXT NOT NULL DEFAULT '#06b6d4',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS ssh_servers (
+            id TEXT PRIMARY KEY,
+            group_id TEXT NOT NULL DEFAULT '',
+            name TEXT NOT NULL,
+            host TEXT NOT NULL,
+            port INTEGER NOT NULL DEFAULT 22,
+            username TEXT NOT NULL,
+            auth_type TEXT NOT NULL DEFAULT 'password',
+            password TEXT NOT NULL DEFAULT '',
+            private_key_path TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            last_connected_at INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS db_connections (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            db_type TEXT NOT NULL,
+            host TEXT NOT NULL DEFAULT '127.0.0.1',
+            port INTEGER NOT NULL DEFAULT 3306,
+            username TEXT NOT NULL DEFAULT 'root',
+            password TEXT NOT NULL DEFAULT '',
+            database_name TEXT NOT NULL DEFAULT '',
+            ssh_server_id TEXT NOT NULL DEFAULT '',
+            admin_tool TEXT NOT NULL DEFAULT 'adminer',
+            backup_dir TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS db_backup_schedules (
+            id TEXT PRIMARY KEY,
+            connection_id TEXT NOT NULL,
+            interval_minutes INTEGER NOT NULL DEFAULT 1440,
+            keep_last INTEGER NOT NULL DEFAULT 7,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            last_run_at INTEGER NOT NULL DEFAULT 0,
+            last_status TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS db_backup_history (
+            id TEXT PRIMARY KEY,
+            connection_id TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL,
+            error_msg TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS uptime_groups (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            color TEXT NOT NULL DEFAULT '#10b981',
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS uptime_monitors (
+            id TEXT PRIMARY KEY,
+            group_id TEXT NOT NULL DEFAULT '',
+            name TEXT NOT NULL,
+            monitor_type TEXT NOT NULL DEFAULT 'http',
+            target TEXT NOT NULL,
+            interval_minutes INTEGER NOT NULL DEFAULT 5,
+            timeout_secs INTEGER NOT NULL DEFAULT 10,
+            expected_status INTEGER NOT NULL DEFAULT 200,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            current_status TEXT NOT NULL DEFAULT 'unknown',
+            last_latency_ms INTEGER NOT NULL DEFAULT 0,
+            last_checked_at INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS uptime_checks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            monitor_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            latency_ms INTEGER NOT NULL DEFAULT 0,
+            status_code INTEGER NOT NULL DEFAULT 0,
+            error_msg TEXT NOT NULL DEFAULT '',
+            checked_at INTEGER NOT NULL
+        );
         ",
     )
     .map_err(|e| e.to_string())?;

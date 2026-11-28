@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.98"
+    tag = clean_args[0] if clean_args else "v1.2.99"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: Snipping Image Editor, RayAmp Now-Playing, Remote RayBot & Mobile Fixes"
+    title = f"Raydrop {tag}: DevOps Suite (SSH, DB & Uptime), Discord-Style Chat Calls & Remote Fixes"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/ShadowOrgs/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: Snipping Image Editor, RayAmp Now-Playing, Remote RayBot & Mobile Fixes</h2>
+<h2 align="center">Raydrop {tag}: DevOps Suite (SSH, DB & Uptime), Discord-Style Chat Calls & Remote Fixes</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,25 +126,21 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### ✂️ Snipping-Tool Image Editor, RayAmp Now-Playing & Remote RayBot
-- **Snipping-Tool Image Editor (Copy History):** Edit captured images with Pen, Highlighter, Eraser, Arrow, Rectangle, Circle, Blur/Redact, Text, Crop, Undo/Redo, Save PNG, and Save & Copy.
-- **RayAmp Now-Playing Broadcast & Mobile Media:** Discord-style `Listening to ...` activity in Contacts & Chat, responsive full-screen mobile RayAmp, and Android local audio/video file picker support.
-- **Remote RayBot Device Switcher & Mobile/WebRTC Fixes:** Switch target device in RayBot Chat UI across your own online devices, fixed `createOffer ... signalingState is 'closed'` on Remote Desktop reconnect, fixed mobile Profile button & APK v1/v2/v3 signing, added Share Contact, global toast notifications, complete bottom menu, and fixed LLM Bridge button overflow.
+#### 🛠️ DevOps Suite (Remote SSH • DB Manager • Uptime Monitor)
+- **Persistent Remote SSH & Server Health:** Multi-group SSH terminal (Termius-style xterm.js with copy/paste & keepalive) plus one-click remote server CPU, RAM, Disk, and Load monitoring.
+- **Database Manager, Scheduled Backups & Safe Restore:** Multi-config MySQL/PostgreSQL manager with on-demand seamless client & DB Admin (Adminer / phpMyAdmin on conflict-free ports) download/install, DB health checks, scheduled cron `.sql.gz` backups, and safe restore (ensuring target DB is clean before restoring).
+- **Uptime Monitor & Alerts:** Grouped HTTP/endpoint uptime checks with configurable intervals, outage/recovery history, shareable status URL, and real-time notifications to Raydrop & Telegram Bot.
 
-#### ⚡ Startup Freeze & WebView2 CPU Hotfix
-- **Zero-Idle-CPU RayAmp Visualizer:** Stopped the 60fps `requestAnimationFrame` canvas gradient loop when RayAmp is paused/idle or hidden, eliminating background WebView2 GPU/Renderer CPU spikes on Windows.
-- **Non-Blocking Startup & Throttled Polling:** Moved `llm_bridge::init_from_db` off the Tokio async worker into `spawn_blocking`, disabled UI torrent/HTTP broadcast loops inside `--system-agent`, and relaxed frontend status/LAN polling to `10s`.
+#### 📞 Discord-Style Voice & Video Calls in Chat & Group Chat
+- **1-on-1 & Group Calls:** Separate **Voice Call** and **Video Call** buttons in both DM and Group Chat headers, ringing all member devices in the group via the built-in Meeting engine.
+- **Looping Ringtone & Auto-Focus Popup:** Discord-style incoming call popup (`z-[90]`) with looping Web Audio ringtone, outgoing ringback tone, and automatic window focus/attention.
 
-#### 💻 RayBot Multi-Project Coding Workspace & Cross-Project Relations
-- **Persistent Project Registry & Relations:** Configurable projects root folder (default `~`), auto-scan tech stacks, persistent SQLite memory & cross-project relations (`raybot_projects`, `raybot_project_relations`), and a quick Project Workspace bar in RayBot Chat UI.
-- **Scoped Coding & Workspace MCP Tools:** 13 new `project_*` and `code_*` tools (`project_set_root`, `project_scan`, `project_select`, `project_add_relation`, `project_save_memory`, `code_list_files`, `code_search`, `code_read_file`, `code_write_file`, `code_edit_file`, `code_run_command`) usable from both RayBot Chat UI and Telegram Bot.
+#### 🖥️ UI & Remote Desktop Fixes
+- **FloatingRail "More" Popup:** Kept primary navigation items in the left rail and grouped secondary tools (Copy History, Notes, Converter, Web Debugger, AI Skills, MCP Library, LLM Bridge, DevOps) into a sleek **Menu Lainnya** popover.
+- **Game Mode Cursor & Desktop Switch Fixes:** Clamped Chromium pointer-lock delta spikes and discarded initial warp outliers in Game Mode; cleanly exited pointer lock when switching back to Desktop Mode; added a manual Close (`X`) button to the `Ctrl+Alt+Shift+Q` banner.
+- **Global Host Remote Approval Popup:** Incoming PIN-less Remote Desktop requests now automatically bring Raydrop to the foreground and show the Allow/Decline modal on any active tab.
 
-#### 🧠 Direct RayBot Skills, MCP & Persistent Language Tutor
-- **Provider-Agnostic Skills & MCP:** Enable Skills & MCP servers directly on RayBot regardless of LLM provider (Ollama, LM Studio, KoboldCPP, OpenAI, Gemini, Claude, LLM Bridge).
-- **Language Tutor Skill (`language-tutor`):** Pre-existing installable skill supporting English, Japanese, Korean, Russian, German, Indonesian, and more with dynamic CEFR syllabus & persistent per-language SQLite progress.
-
-#### ⚙️ LLM Bridge CLI Execution Modes, Image Bridge, Local Vision & ComfyUI
-- **CLI Execution Modes & Extra Flags:** Per-provider `YOLO`, `Auto-Edit`, and `Safe` (read-only prompt guard) modes across `agy`, `claude`, `codex`, `gemini`, and `opencode`/custom CLIs, plus custom extra flags.
-- **Image Bridge, Local Vision & ComfyUI + Waifu Persona:** Host-side image storage & local path forwarding to CLIs, automatic Local LLM vision routing, ComfyUI image generation in RayBot Chat UI & Telegram Bot, and a new **Waifu Companion** persona style.
+#### ✂️ Previous Highlights (Snipping Image Editor, RayAmp, RayBot & Mobile)
+- **Snipping-Tool Image Editor (Copy History), RayAmp Now-Playing Broadcast, Remote RayBot Device Switcher, RayBot Multi-Project Coding Workspace, Direct Skills/MCP, and LLM Bridge CLI Execution Modes.**
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

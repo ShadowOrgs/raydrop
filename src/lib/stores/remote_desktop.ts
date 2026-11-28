@@ -1,5 +1,5 @@
 import { writable, get } from 'svelte/store';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow, UserAttentionType } from '@tauri-apps/api/window';
 import { raydropApi, type RemoteDesktopSettings } from '../utils/tauri-ipc';
 import { appSettings } from './state';
 import { contacts } from './contacts';
@@ -526,6 +526,17 @@ async function handleIncomingAuthRequest(
       sessionId,
       fromAlias: payload.fromAlias || 'Remote Client',
     });
+    try {
+      const win = getCurrentWindow();
+      await win.setAlwaysOnTop(true);
+      await win.show();
+      await win.unminimize();
+      await win.setFocus();
+      await win.requestUserAttention(UserAttentionType.Critical);
+      setTimeout(() => {
+        win.setAlwaysOnTop(false).catch(() => {});
+      }, 1800);
+    } catch (_) { }
     return;
   }
 

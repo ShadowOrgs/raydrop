@@ -2,61 +2,82 @@
   import {
     incomingInvite,
     joinMeetingRoom,
+    toggleCamera,
   } from '../stores/meeting';
+  import { stopIncomingCallRingtone } from '../stores/presence';
   import { activeMainTab } from '../stores/state';
-  import { Phone, PhoneOff, Radio, Users } from 'lucide-svelte';
+  import { Phone, PhoneOff, Video, Users } from 'lucide-svelte';
 
-  function handleAccept() {
+  async function handleAccept(withVideo = true) {
     if (!$incomingInvite) return;
     const inv = $incomingInvite;
+    stopIncomingCallRingtone();
     incomingInvite.set(null);
     activeMainTab.set('meeting');
-    joinMeetingRoom(inv.roomId, inv.roomTitle, inv.fromDeviceId);
+    await joinMeetingRoom(inv.roomId, inv.roomTitle, inv.fromDeviceId);
+    if (withVideo && inv.callType === 'video') {
+      await toggleCamera();
+    }
   }
 
   function handleDecline() {
+    stopIncomingCallRingtone();
     incomingInvite.set(null);
   }
 </script>
 
 {#if $incomingInvite}
+  {@const isVideo = $incomingInvite.callType === 'video'}
   <div
-    class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+    class="fixed inset-0 z-[90] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
     role="dialog"
     aria-modal="true"
   >
     <div
-      class="w-full max-w-sm bg-slate-900 border border-indigo-500/40 rounded-3xl p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-in zoom-in-95 duration-200"
+      class="w-full max-w-sm bg-slate-900 border border-emerald-500/40 rounded-3xl p-6 shadow-2xl shadow-emerald-500/10 flex flex-col items-center text-center gap-4 animate-in zoom-in-95 duration-200"
     >
-      <!-- Pulsing Caller Avatar -->
-      <div class="relative">
-        <div class="w-20 h-20 rounded-3xl bg-gradient-to-tr from-indigo-500/20 to-sky-500/20 border-2 border-indigo-500/60 flex items-center justify-center text-2xl font-bold text-indigo-300 shadow-xl overflow-hidden">
+      <!-- Discord-style Pulsing Caller Avatar -->
+      <div class="relative flex items-center justify-center my-1">
+        <span class="absolute w-24 h-24 rounded-full bg-emerald-500/20 animate-ping"></span>
+        <span class="absolute w-22 h-22 rounded-full border border-emerald-400/40 animate-pulse"></span>
+        <div class="relative w-20 h-20 rounded-full bg-gradient-to-tr from-indigo-500/30 to-emerald-500/30 border-2 border-emerald-400 flex items-center justify-center text-2xl font-bold text-white shadow-xl overflow-hidden">
           {#if $incomingInvite.fromAvatar}
             <img src={$incomingInvite.fromAvatar} alt={$incomingInvite.fromAlias} class="w-full h-full object-cover" />
           {:else}
             {$incomingInvite.fromAlias.slice(0, 2).toUpperCase()}
           {/if}
         </div>
-        <div class="absolute -bottom-1 -right-1 p-1.5 rounded-xl bg-indigo-500 text-slate-950 font-bold shadow-md">
-          <Radio class="w-4 h-4 animate-pulse" />
+        <div class="absolute -bottom-1 -right-1 p-1.5 rounded-full bg-emerald-500 text-slate-950 font-bold shadow-lg">
+          {#if isVideo}
+            <Video class="w-4 h-4 animate-pulse" />
+          {:else}
+            <Phone class="w-4 h-4 animate-pulse" />
+          {/if}
         </div>
       </div>
 
       <!-- Caller Details -->
-      <div class="space-y-1">
-        <h3 class="text-base font-bold text-white">{$incomingInvite.fromAlias}</h3>
-        <p class="text-xs text-indigo-300 font-medium">Inviting you to Voice & Online Meeting</p>
-        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400 mt-1">
-          <span>Room: {$incomingInvite.roomTitle}</span>
+      <div class="space-y-1.5">
+        <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+          {#if $incomingInvite.isGroupCall}
+            <Users class="w-3 h-3" />
+            <span>Incoming Group {isVideo ? 'Video' : 'Voice'} Call</span>
+          {:else}
+            <span>Incoming {isVideo ? 'Video' : 'Voice'} Call</span>
+          {/if}
         </div>
+        <h3 class="text-lg font-extrabold text-white tracking-tight">{$incomingInvite.fromAlias}</h3>
+        <p class="text-xs text-slate-400">
+          {$incomingInvite.roomTitle}
+        </p>
       </div>
 
-      <!-- Actions: Accept / Decline -->
-      <div class="flex items-center gap-3 w-full pt-2">
+      <!-- Actions: Decline / Accept -->
+      <div class="flex items-center justify-center gap-4 w-full pt-2">
         <button
           type="button"
           on:click={handleDecline}
-          class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-400 font-semibold text-xs border border-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
+          class="flex-1 py-2.5 rounded-2xl bg-rose-500 hover:bg-rose-400 text-white font-bold text-xs shadow-lg shadow-rose-500/25 transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
         >
           <PhoneOff class="w-4 h-4" />
           <span>Decline</span>
@@ -64,11 +85,16 @@
 
         <button
           type="button"
-          on:click={handleAccept}
-          class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+          on:click={() => handleAccept(true)}
+          class="flex-1 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/25 transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
         >
-          <Phone class="w-4 h-4" />
-          <span>Join Meeting</span>
+          {#if isVideo}
+            <Video class="w-4 h-4" />
+            <span>Join Video</span>
+          {:else}
+            <Phone class="w-4 h-4" />
+            <span>Answer</span>
+          {/if}
         </button>
       </div>
     </div>

@@ -1,9 +1,16 @@
 import { writable, get } from 'svelte/store';
+import { getCurrentWindow, UserAttentionType } from '@tauri-apps/api/window';
 import { raydropApi } from '../utils/tauri-ipc';
 import { appSettings, activeMainTab } from './state';
 import { myAvatar } from './avatars';
 import { contacts } from './contacts';
-import { playAppSound } from './presence';
+import {
+  playAppSound,
+  startIncomingCallRingtone,
+  stopIncomingCallRingtone,
+  startOutgoingRingbackTone,
+  stopOutgoingRingbackTone,
+} from './presence';
 
 export interface MeetingParticipant {
   deviceId: string;
@@ -31,6 +38,8 @@ export interface MeetingInvite {
   fromDeviceId: string;
   fromAlias: string;
   fromAvatar: string | null;
+  callType?: 'audio' | 'video';
+  isGroupCall?: boolean;
 }
 
 export const isInMeeting = writable<boolean>(false);
@@ -206,6 +215,8 @@ export async function joinMeetingRoom(roomId: string, title = 'Online Meeting', 
 }
 
 export function leaveMeetingRoom() {
+  stopOutgoingRingbackTone();
+  stopIncomingCallRingtone();
   const roomId = get(currentRoomId);
   if (roomId) {
     broadcastRoomSignal({
@@ -258,14 +269,17 @@ export function leaveMeetingRoom() {
   isHandRaised.set(false);
 }
 
-export async function inviteContactToMeeting(target: string | string[]) {
+export async function inviteContactToMeeting(
+  target: string | string[],
+  opts?: { callType?: 'audio' | 'video'; isGroupCall?: boolean }
+) {
   const ids = Array.isArray(target) ? target : [target];
   const roomId = get(currentRoomId);
   const title = get(currentRoomTitle);
   const me = getMyInfo();
 
   for (const targetDeviceId of ids) {
-    if (!targetDeviceId) continue;
+    if (!targetDeviceId || targetDeviceId === me.deviceId) continue;
     knownRoomPeers.add(targetDeviceId);
 
     await raydropApi.sendMeetingSignal(
@@ -278,9 +292,32 @@ export async function inviteContactToMeeting(target: string | string[]) {
         fromDeviceId: me.deviceId,
         fromAlias: me.alias,
         fromAvatar: me.avatar,
+        callType: opts?.callType || 'video',
+        isGroupCall: opts?.isGroupCall ?? false,
       }
     ).catch(() => { });
   }
+}
+
+export async function startChatCall(
+  target: string | string[],
+  title: string,
+  callType: 'audio' | 'video',
+  isGroupCall = false
+): Promise<string> {
+  const me = getMyInfo();
+  const validTargets = (Array.isArray(target) ? target : [target]).filter(
+    (id) => Boolean(id) && id !== me.deviceId
+  );
+  const roomId = await createMeetingRoom(title);
+  if (callType === 'video' && !get(isCameraOn)) {
+    await toggleCamera();
+  }
+  if (validTargets.length > 0) {
+    await inviteContactToMeeting(validTargets, { callType, isGroupCall });
+    startOutgoingRingbackTone();
+  }
+  return roomId;
 }
 
 export function toggleMicMute() {
@@ -1063,16 +1100,29 @@ export function setupMeetingSignalListener() {
     const data = event.payload;
     if (!data || !fromId) return;
 
-    // 1. Meeting Invite
+    // 1. Meeting Invite / Incoming Call
     if (data.type === 'meeting_invite') {
-      playAppSound('meeting_invite');
+      startIncomingCallRingtone();
       incomingInvite.set({
         roomId: data.roomId,
         roomTitle: data.roomTitle || 'Online Meeting',
         fromDeviceId: data.fromDeviceId || fromId,
         fromAlias: data.fromAlias || 'Contact',
         fromAvatar: data.fromAvatar || null,
+        callType: data.callType === 'audio' ? 'audio' : 'video',
+        isGroupCall: !!data.isGroupCall,
       });
+      try {
+        const win = getCurrentWindow();
+        await win.setAlwaysOnTop(true);
+        await win.show();
+        await win.unminimize();
+        await win.setFocus();
+        await win.requestUserAttention(UserAttentionType.Critical);
+        setTimeout(() => {
+          win.setAlwaysOnTop(false).catch(() => {});
+        }, 1800);
+      } catch (_) { }
       return;
     }
 
@@ -1082,6 +1132,7 @@ export function setupMeetingSignalListener() {
     // 2. Peer Joining Room
     if (data.type === 'room_join') {
       if (data.roomId && data.roomId !== myRoomId) return;
+      stopOutgoingRingbackTone();
 
       const u = data.user;
       const isNewJoiner = !knownRoomPeers.has(fromId);

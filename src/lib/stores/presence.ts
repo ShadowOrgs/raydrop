@@ -272,6 +272,109 @@ export function playAppSound(kind: AppSoundKind) {
   } catch (_) {}
 }
 
+let incomingRingTimer: ReturnType<typeof setInterval> | null = null;
+let incomingRingTimeout: ReturnType<typeof setTimeout> | null = null;
+let outgoingRingTimer: ReturnType<typeof setInterval> | null = null;
+let outgoingRingTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function playDiscordRingPattern() {
+  if (!get(presenceSoundEnabled)) return;
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!sharedAudioCtx) sharedAudioCtx = new AudioCtx();
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+    const ctx = sharedAudioCtx;
+    const now = ctx.currentTime;
+    const notes = [
+      { f: 659.25, t: 0.0, d: 0.13 },
+      { f: 880.0, t: 0.13, d: 0.13 },
+      { f: 987.77, t: 0.26, d: 0.13 },
+      { f: 1318.51, t: 0.39, d: 0.28 },
+      { f: 987.77, t: 0.72, d: 0.12 },
+      { f: 1318.51, t: 0.85, d: 0.3 },
+    ];
+    for (const n of notes) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(n.f, now + n.t);
+      gain.gain.setValueAtTime(0.0001, now + n.t);
+      gain.gain.exponentialRampToValueAtTime(0.11, now + n.t + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + n.t + n.d);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + n.t);
+      osc.stop(now + n.t + n.d + 0.02);
+    }
+  } catch (_) {}
+}
+
+function playOutgoingRingbackPattern() {
+  if (!get(presenceSoundEnabled)) return;
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!sharedAudioCtx) sharedAudioCtx = new AudioCtx();
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+    const ctx = sharedAudioCtx;
+    const now = ctx.currentTime;
+    for (const freq of [440, 480]) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.035, now + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.65);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.68);
+    }
+  } catch (_) {}
+}
+
+export function stopIncomingCallRingtone() {
+  if (incomingRingTimer) {
+    clearInterval(incomingRingTimer);
+    incomingRingTimer = null;
+  }
+  if (incomingRingTimeout) {
+    clearTimeout(incomingRingTimeout);
+    incomingRingTimeout = null;
+  }
+}
+
+export function startIncomingCallRingtone() {
+  stopIncomingCallRingtone();
+  playDiscordRingPattern();
+  incomingRingTimer = setInterval(playDiscordRingPattern, 2100);
+  incomingRingTimeout = setTimeout(stopIncomingCallRingtone, 45000);
+}
+
+export function stopOutgoingRingbackTone() {
+  if (outgoingRingTimer) {
+    clearInterval(outgoingRingTimer);
+    outgoingRingTimer = null;
+  }
+  if (outgoingRingTimeout) {
+    clearTimeout(outgoingRingTimeout);
+    outgoingRingTimeout = null;
+  }
+}
+
+export function startOutgoingRingbackTone() {
+  stopOutgoingRingbackTone();
+  playOutgoingRingbackPattern();
+  outgoingRingTimer = setInterval(playOutgoingRingbackPattern, 2500);
+  outgoingRingTimeout = setTimeout(stopOutgoingRingbackTone, 35000);
+}
+
 const prevTransferStatusMap = new Map<string, string>();
 
 function pushToast(toast: PresenceToast, timeoutMs = 4500) {

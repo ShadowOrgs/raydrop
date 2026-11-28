@@ -121,15 +121,20 @@
   let viewerContainerEl: HTMLDivElement | null = null;
   let videoCanvasWrapEl: HTMLDivElement | null = null;
   let isPointerLocked = false;
+  let pointerLockedAt = 0;
   let showGameModeToast = false;
-  let gameModeToastTimer: any = null;
 
   function triggerGameModeHintToast() {
     showGameModeToast = true;
-    if (gameModeToastTimer) clearTimeout(gameModeToastTimer);
-    gameModeToastTimer = setTimeout(() => {
-      showGameModeToast = false;
-    }, 3500);
+  }
+
+  $: if ($remoteSessionMode !== "game") {
+    isPointerLocked = false;
+    if (typeof document !== "undefined" && document.pointerLockElement) {
+      try {
+        document.exitPointerLock?.();
+      } catch (_) {}
+    }
   }
   let isFullscreen = false;
   let showToolbar = false;
@@ -1028,11 +1033,19 @@
     if (!videoEl || !isClientConnected || isSyntheticMouseAfterTouch()) return;
 
     if ($remoteSessionMode === "game" && document.pointerLockElement === videoCanvasWrapEl) {
-      if (e.movementX !== 0 || e.movementY !== 0) {
+      // Skip initial WebView2/Chromium pointer-lock warp delta right after locking
+      if (performance.now() - pointerLockedAt < 45) return;
+      const rawDx = e.movementX || 0;
+      const rawDy = e.movementY || 0;
+      // Discard known Chromium pointer-lock teleport spikes
+      if (Math.abs(rawDx) > 350 || Math.abs(rawDy) > 350) return;
+      const dx = Math.max(-120, Math.min(120, Math.round(rawDx)));
+      const dy = Math.max(-120, Math.min(120, Math.round(rawDy)));
+      if (dx !== 0 || dy !== 0) {
         sendInputToHost({
           t: "mm_rel",
-          dx: e.movementX,
-          dy: e.movementY,
+          dx,
+          dy,
         });
       }
       return;
@@ -1362,6 +1375,7 @@
 
   function handleSelectDesktopMode() {
     hideLocalCursor = false;
+    isPointerLocked = false;
     setRemoteSessionMode("desktop");
     if (document.pointerLockElement) {
       document.exitPointerLock?.();
@@ -1448,6 +1462,9 @@
   on:pointerlockchange={() => {
     const wasLocked = isPointerLocked;
     isPointerLocked = !!videoCanvasWrapEl && document.pointerLockElement === videoCanvasWrapEl;
+    if (isPointerLocked && !wasLocked) {
+      pointerLockedAt = performance.now();
+    }
     if (wasLocked && !isPointerLocked) {
       showToolbar = true;
     }
@@ -1551,10 +1568,10 @@
         </button>
       {/if}
 
-      <!-- Ephemeral 3.5s Non-Blocking Toast when entering Game Mode (auto-hides completely) -->
+      <!-- Game Mode Hint Banner with Manual Close Button -->
       {#if showGameModeToast && $remoteSessionMode === "game"}
         <div
-          class="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-full bg-slate-950/90 border border-purple-500/50 shadow-2xl backdrop-blur-md text-xs text-slate-100 animate-in fade-in duration-200"
+          class="pointer-events-auto absolute top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2 rounded-full bg-slate-950/95 border border-purple-500/50 shadow-2xl backdrop-blur-md text-xs text-slate-100 animate-in fade-in duration-200"
         >
           <Gamepad2 class="w-4 h-4 text-purple-400 shrink-0" />
           <span>
@@ -1562,6 +1579,15 @@
             <kbd class="px-1.5 py-0.5 mx-1 rounded bg-slate-800 border border-purple-400/40 font-mono text-[11px] text-purple-200">Ctrl+Alt+Shift+Q</kbd>
             untuk menu & disconnect
           </span>
+          <button
+            type="button"
+            on:click|stopPropagation={() => (showGameModeToast = false)}
+            class="ml-1 p-1 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+            title="Tutup pesan"
+            aria-label="Tutup pesan"
+          >
+            <X class="w-3.5 h-3.5" />
+          </button>
         </div>
       {/if}
 
@@ -3034,55 +3060,6 @@
             class="px-4 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-bold text-xs shadow transition cursor-pointer active:scale-95 capitalize"
           >
             Yes, {pendingPowerAction}
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  <!-- Incoming Remote Access Approval Modal (for requests without PIN) -->
-  {#if $pendingRemoteAuthRequest}
-    <div
-      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
-    >
-      <div
-        class="w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-cyan-500/40 p-5 shadow-2xl space-y-4"
-      >
-        <div class="flex items-center gap-3 pb-3 border-b border-slate-800">
-          <div
-            class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400"
-          >
-            <Laptop class="w-5 h-5" />
-          </div>
-          <div>
-            <h3 class="text-sm font-bold text-white">Remote Access Request</h3>
-            <p class="text-xs text-cyan-300 font-semibold">
-              {$pendingRemoteAuthRequest.fromAlias}
-            </p>
-          </div>
-        </div>
-
-        <p class="text-xs text-slate-300 leading-relaxed">
-          This device wants to remotely view and control your computer. Since no
-          PIN was entered, your explicit approval is required.
-        </p>
-
-        <div
-          class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800"
-        >
-          <button
-            type="button"
-            on:click={rejectPendingRemoteRequest}
-            class="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition cursor-pointer"
-          >
-            Decline
-          </button>
-          <button
-            type="button"
-            on:click={acceptPendingRemoteRequest}
-            class="px-4 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/20 transition cursor-pointer active:scale-95"
-          >
-            Allow Remote Control
           </button>
         </div>
       </div>

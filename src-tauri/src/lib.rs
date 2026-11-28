@@ -3,6 +3,7 @@ pub mod browser_bridge;
 pub mod commands;
 pub mod crypto;
 pub mod db;
+pub mod db_manager;
 pub mod folder_sync;
 pub mod http_downloader;
 pub mod image_tools;
@@ -19,11 +20,13 @@ pub mod remote_capture;
 pub mod remote_fs;
 pub mod remote_input;
 pub mod skills;
+pub mod ssh_manager;
 pub mod state;
 pub mod system_monitor;
 pub mod telegram_bot;
 pub mod torrent;
 pub mod tray_badge;
+pub mod uptime_monitor;
 pub mod win_service;
 
 use crate::db::storage::Database;
@@ -241,6 +244,8 @@ pub fn run() {
                 mcp_server: Arc::new(crate::mcp_server::McpServerManager::default()),
                 telegram_bot: Arc::new(crate::telegram_bot::TelegramBotManager::default()),
                 llm_bridge: Arc::new(crate::llm_bridge::LlmBridgeManager::default()),
+                ssh_manager: Arc::new(crate::ssh_manager::SshManager::default()),
+                db_manager: Arc::new(crate::db_manager::DbManagerState::default()),
             });
 
             let state_for_setup = app_state.clone();
@@ -598,7 +603,9 @@ pub fn run() {
                     })
                     .await;
                 });
-                browser_bridge::start_browser_bridge_daemon(handle, state_for_setup);
+                browser_bridge::start_browser_bridge_daemon(handle.clone(), state_for_setup.clone());
+                db_manager::start_db_backup_scheduler(handle.clone(), state_for_setup.clone());
+                uptime_monitor::start_uptime_monitor_loop(handle, state_for_setup);
             }
 
             Ok(())
@@ -854,6 +861,34 @@ pub fn run() {
             project_workspace::raybot_scan_projects,
             project_workspace::raybot_select_project,
             project_workspace::raybot_add_project_relation,
+            ssh_manager::ssh_list_workspace,
+            ssh_manager::ssh_save_group,
+            ssh_manager::ssh_delete_group,
+            ssh_manager::ssh_save_server,
+            ssh_manager::ssh_delete_server,
+            ssh_manager::ssh_connect,
+            ssh_manager::ssh_send_input,
+            ssh_manager::ssh_resize,
+            ssh_manager::ssh_disconnect,
+            ssh_manager::ssh_check_server_health,
+            db_manager::dbm_list_overview,
+            db_manager::dbm_save_connection,
+            db_manager::dbm_delete_connection,
+            db_manager::dbm_install_tool,
+            db_manager::dbm_launch_admin,
+            db_manager::dbm_stop_admin,
+            db_manager::dbm_backup_now,
+            db_manager::dbm_restore_backup,
+            db_manager::dbm_save_schedule,
+            db_manager::dbm_delete_schedule,
+            db_manager::dbm_check_health,
+            uptime_monitor::uptime_list_overview,
+            uptime_monitor::uptime_save_group,
+            uptime_monitor::uptime_delete_group,
+            uptime_monitor::uptime_save_monitor,
+            uptime_monitor::uptime_delete_monitor,
+            uptime_monitor::uptime_check_now,
+            uptime_monitor::uptime_export_status_html,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Raydrop Tauri application")

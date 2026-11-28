@@ -59,6 +59,8 @@ pub struct AppState {
     pub mcp_server: Arc<crate::mcp_server::McpServerManager>,
     pub telegram_bot: Arc<crate::telegram_bot::TelegramBotManager>,
     pub llm_bridge: Arc<crate::llm_bridge::LlmBridgeManager>,
+    pub ssh_manager: Arc<crate::ssh_manager::SshManager>,
+    pub db_manager: Arc<crate::db_manager::DbManagerState>,
 }
 
 impl AppState {

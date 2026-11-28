@@ -38,6 +38,7 @@
     Download,
     Loader2,
     Pencil,
+    Phone,
     Video,
     Music,
     Folder,
@@ -59,7 +60,7 @@
   } from "lucide-svelte";
   import VoiceNotePlayer from "./VoiceNotePlayer.svelte";
   import RemoteExplorerModal from "./RemoteExplorerModal.svelte";
-  import { createMeetingRoom, inviteContactToMeeting } from "../stores/meeting";
+  import { startChatCall } from "../stores/meeting";
   import {
     peerAvatars,
     peerAvatarHashes,
@@ -2094,19 +2095,34 @@
               <HardDrive class="w-4 h-4" />
             </button>
 
-            <!-- Start Voice / Video Meeting Button -->
+            <!-- Start Voice Call Button -->
             <button
               type="button"
               on:click={async () => {
                 if (activePeer) {
                   activeMainTab.set("meeting");
-                  const title = `Call with ${activePeer.customName || activePeer.name}`;
-                  await createMeetingRoom(title);
-                  await inviteContactToMeeting(activePeer.id);
+                  const title = `Voice Call • ${activePeer.customName || activePeer.name}`;
+                  await startChatCall(activePeer.id, title, "audio", false);
                 }
               }}
               class="p-1.5 rounded-xl transition cursor-pointer text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/15 border border-transparent hover:border-emerald-500/30"
-              title="Start P2P Voice & Video Meeting with this contact"
+              title="Voice Call (P2P Audio)"
+            >
+              <Phone class="w-4 h-4" />
+            </button>
+
+            <!-- Start Video Call Button -->
+            <button
+              type="button"
+              on:click={async () => {
+                if (activePeer) {
+                  activeMainTab.set("meeting");
+                  const title = `Video Call • ${activePeer.customName || activePeer.name}`;
+                  await startChatCall(activePeer.id, title, "video", false);
+                }
+              }}
+              class="p-1.5 rounded-xl transition cursor-pointer text-slate-400 hover:text-cyan-300 hover:bg-cyan-500/15 border border-transparent hover:border-cyan-500/30"
+              title="Video Call (P2P Voice & Video)"
             >
               <Video class="w-4 h-4" />
             </button>
@@ -2129,6 +2145,42 @@
               {/if}
             </button>
           {:else}
+            <!-- Group Voice Call Button -->
+            <button
+              type="button"
+              on:click={async () => {
+                if (activeGroup) {
+                  const memberIds = activeGroup.members
+                    .map((m) => m.device_id)
+                    .filter((id) => id && id !== $appSettings.device_id);
+                  activeMainTab.set("meeting");
+                  await startChatCall(memberIds, activeGroup.name, "audio", true);
+                }
+              }}
+              class="p-1.5 rounded-xl transition cursor-pointer text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/15 border border-transparent hover:border-emerald-500/30"
+              title="Group Voice Call (Panggil semua anggota grup)"
+            >
+              <Phone class="w-4 h-4" />
+            </button>
+
+            <!-- Group Video Call Button -->
+            <button
+              type="button"
+              on:click={async () => {
+                if (activeGroup) {
+                  const memberIds = activeGroup.members
+                    .map((m) => m.device_id)
+                    .filter((id) => id && id !== $appSettings.device_id);
+                  activeMainTab.set("meeting");
+                  await startChatCall(memberIds, activeGroup.name, "video", true);
+                }
+              }}
+              class="p-1.5 rounded-xl transition cursor-pointer text-slate-400 hover:text-cyan-300 hover:bg-cyan-500/15 border border-transparent hover:border-cyan-500/30"
+              title="Group Video Call (Panggil semua anggota grup dengan kamera)"
+            >
+              <Video class="w-4 h-4" />
+            </button>
+
             <!-- Leave Group Button -->
             <button
               type="button"

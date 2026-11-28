@@ -27,6 +27,7 @@
   import McpLibraryView from "./lib/components/McpLibraryView.svelte";
   import RayBotChatView from "./lib/components/RayBotChatView.svelte";
   import LlmBridgeView from "./lib/components/LlmBridgeView.svelte";
+  import DevOpsView from "./lib/components/DevOpsView.svelte";
   import {
     initWebDebuggerListeners,
     extensionUpdateInfo,
@@ -42,6 +43,9 @@
     loadRemoteDesktopSettings,
     activeRemoteSession,
     remoteConnectionStatus,
+    pendingRemoteAuthRequest,
+    acceptPendingRemoteRequest,
+    rejectPendingRemoteRequest,
   } from "./lib/stores/remote_desktop";
   import { initTorrentStore } from "./lib/stores/torrents";
   import { refreshLanStatuses } from "./lib/stores/contacts";
@@ -52,6 +56,7 @@
     playAppSound,
     presenceToasts,
     peerActivities,
+    notifyToast,
     removePresenceToast,
   } from "./lib/stores/presence";
   import { initAvatarStore, peerAvatars } from "./lib/stores/avatars";
@@ -160,6 +165,7 @@
     { id: "llmbridge", label: "LLM Bridge" },
     { id: "mcplibrary", label: "MCP Library" },
     { id: "webdebugger", label: "Web Debug" },
+    { id: "devops", label: "DevOps" },
   ] as const;
   type BottomMenuId = (typeof ALL_BOTTOM_MENUS)[number]["id"];
   const DEFAULT_BOTTOM_TAB_IDS: BottomMenuId[] = [
@@ -293,6 +299,35 @@
             updated_at: Date.now(),
           },
         }));
+      });
+
+      await raydropApi.listenEvent<{
+        name: string;
+        target: string;
+        status: string;
+        latency_ms: number;
+        error_msg: string;
+      }>("uptime_alert", (ev) => {
+        if (!ev) return;
+        const isUp = ev.status === "up";
+        notifyToast(
+          isUp ? `UP: ${ev.name}` : `DOWN: ${ev.name}`,
+          isUp ? `${ev.target} (${ev.latency_ms}ms)` : `${ev.target} — ${ev.error_msg || "Unreachable"}`,
+          isUp ? "emerald" : "rose",
+          6000
+        );
+      });
+
+      await raydropApi.listenEvent<{
+        ok: boolean;
+        status: string;
+      }>("dbm_backup_completed", (ev) => {
+        if (!ev) return;
+        notifyToast(
+          ev.ok ? "DB Auto-Backup" : "DB Backup Failed",
+          ev.ok ? "Scheduled .sql.gz backup selesai" : ev.status,
+          ev.ok ? "emerald" : "rose"
+        );
       });
 
       refreshLanStatuses();
@@ -1163,6 +1198,15 @@
             <LlmBridgeView />
           </div>
         {/if}
+        {#if visitedTabs.devops}
+          <div
+            class="h-full w-full {$activeMainTab === 'devops'
+              ? 'flex flex-col'
+              : 'hidden'}"
+          >
+            <DevOpsView />
+          </div>
+        {/if}
         {#if visitedTabs.lan || visitedTabs.devices || visitedTabs.contacts}
           <div
             class="h-full w-full {$activeMainTab === 'lan' ||
@@ -1508,6 +1552,54 @@
             class="flex-1 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-xs font-bold text-slate-950 transition cursor-pointer"
           >
             Approve Mesh
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if $pendingRemoteAuthRequest}
+    <div
+      class="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
+    >
+      <div
+        class="w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-cyan-500/40 p-5 shadow-2xl space-y-4"
+      >
+        <div class="flex items-center gap-3 pb-3 border-b border-slate-800">
+          <div
+            class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400"
+          >
+            <Laptop class="w-5 h-5" />
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">Remote Access Request</h3>
+            <p class="text-xs text-cyan-300 font-semibold">
+              {$pendingRemoteAuthRequest.fromAlias}
+            </p>
+          </div>
+        </div>
+
+        <p class="text-xs text-slate-300 leading-relaxed">
+          This device wants to remotely view and control your computer. Since no
+          PIN was entered, your explicit approval is required.
+        </p>
+
+        <div
+          class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800"
+        >
+          <button
+            type="button"
+            on:click={rejectPendingRemoteRequest}
+            class="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition cursor-pointer"
+          >
+            Decline
+          </button>
+          <button
+            type="button"
+            on:click={acceptPendingRemoteRequest}
+            class="px-4 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/20 transition cursor-pointer active:scale-95"
+          >
+            Allow Remote Control
           </button>
         </div>
       </div>
