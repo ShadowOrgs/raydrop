@@ -5,14 +5,29 @@ import { appSettings } from './state';
 import { contacts } from './contacts';
 import { playAppSound } from './presence';
 
-// ICE Servers for WebRTC peer connection (lean pool for fast startup)
+// ICE Servers for WebRTC peer connection (STUN + OpenRelay TURN/TURNS fallback for WAN/CGNAT/Tailscale)
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.raydrop.web.id:3478' },
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ],
-  iceCandidatePoolSize: 2,
+  iceCandidatePoolSize: 6,
 };
 
 export interface RemoteSessionInfo {
@@ -776,7 +791,7 @@ async function setupHostPeerConnection(
     if (activePeerConnection === pc && pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed' && pc.connectionState !== 'connected') {
       disconnectRemoteSession();
     }
-  }, 25000);
+  }, 35000);
 
   pc.onconnectionstatechange = () => {
     if (activePeerConnection !== pc) return;
@@ -1297,7 +1312,7 @@ async function handleIncomingOffer(
       remoteConnectionStatus.set('error');
       remoteErrorMessage.set(`P2P video handshake timed out (${state}). Ensure both devices are updated and UDP/Tailscale is reachable.`);
     }
-  }, 25000);
+  }, 35000);
 
   pc.onconnectionstatechange = () => {
     if (activePeerConnection !== pc) return;
