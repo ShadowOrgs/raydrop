@@ -2866,6 +2866,7 @@ pub fn copy_clipboard_history_item(
     id: String,
 ) -> Result<(), String> {
     if let Some(content) = state.db.get_clipboard_history_content(&id)? {
+        suppress_clipboard_watcher(2000);
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         write_clipboard_content(&content)?;
         let _ = state.db.record_clipboard_entry(&content);
@@ -2906,16 +2907,36 @@ pub fn clear_clipboard_history(
     Ok(())
 }
 
+static SUPPRESS_CLIPBOARD_UNTIL_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn suppress_clipboard_watcher(ms: u64) {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    SUPPRESS_CLIPBOARD_UNTIL_MS.store(now_ms.saturating_add(ms), std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn is_clipboard_watcher_suppressed() -> bool {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    now_ms < SUPPRESS_CLIPBOARD_UNTIL_MS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[tauri::command]
 pub fn update_clipboard_history_image(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
-    id: String,
+    _id: String,
     data_url: String,
     copy_to_clipboard: bool,
 ) -> Result<(), String> {
-    state.db.update_clipboard_image_entry(&id, &data_url)?;
+    // Keep original image intact; save edited image as a new history entry
+    let _ = state.db.record_clipboard_entry(&data_url)?;
     if copy_to_clipboard {
+        suppress_clipboard_watcher(2500);
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         write_clipboard_content(&data_url)?;
     }

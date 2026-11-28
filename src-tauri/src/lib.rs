@@ -419,6 +419,9 @@ pub fn run() {
                         let mut last_hash = String::new();
                         loop {
                             std::thread::sleep(std::time::Duration::from_millis(900));
+                            if commands::is_clipboard_watcher_suppressed() {
+                                continue;
+                            }
                             let seq = commands::get_clipboard_sequence_number();
                             if seq != 0 && seq == last_seq {
                                 continue;
@@ -867,6 +870,7 @@ pub fn run() {
             ssh_manager::ssh_save_server,
             ssh_manager::ssh_delete_server,
             ssh_manager::ssh_connect,
+            ssh_manager::ssh_test_connection,
             ssh_manager::ssh_send_input,
             ssh_manager::ssh_resize,
             ssh_manager::ssh_disconnect,
@@ -889,6 +893,7 @@ pub fn run() {
             uptime_monitor::uptime_delete_monitor,
             uptime_monitor::uptime_check_now,
             uptime_monitor::uptime_export_status_html,
+            uptime_monitor::uptime_publish_status_page,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Raydrop Tauri application")

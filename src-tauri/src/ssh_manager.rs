@@ -312,6 +312,32 @@ pub fn ssh_save_server(
 }
 
 #[tauri::command]
+pub async fn ssh_test_connection(input: SaveSshServerInput) -> Result<String, String> {
+    if input.host.trim().is_empty() || input.username.trim().is_empty() {
+        return Err("Host and username are required".to_string());
+    }
+    let srv = SshServer {
+        id: String::new(),
+        group_id: String::new(),
+        name: input.name,
+        host: input.host.trim().to_string(),
+        port: input.port.unwrap_or(22),
+        username: input.username.trim().to_string(),
+        auth_type: input.auth_type.unwrap_or_else(|| "password".to_string()),
+        password: input.password.unwrap_or_default(),
+        private_key_path: input.private_key_path.unwrap_or_default(),
+        notes: String::new(),
+        last_connected_at: 0,
+        created_at: 0,
+    };
+    let session = open_authenticated_session(&srv).await?;
+    let _ = session
+        .disconnect(russh::Disconnect::ByApplication, "", "en")
+        .await;
+    Ok(format!("Connected to {}@{}:{}", srv.username, srv.host, srv.port))
+}
+
+#[tauri::command]
 pub fn ssh_delete_server(state: State<'_, Arc<AppState>>, id: String) -> Result<(), String> {
     let conn = state.db.conn.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM ssh_servers WHERE id = ?1", params![id])

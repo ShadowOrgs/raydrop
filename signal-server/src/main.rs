@@ -48,6 +48,7 @@ struct ServerState {
     web_shares: Arc<DashMap<String, WebShareSession>>,
     pending_downloads: Arc<DashMap<String, mpsc::Sender<Result<axum::body::Bytes, String>>>>,
     pending_llm_requests: Arc<DashMap<String, tokio::sync::oneshot::Sender<(u16, serde_json::Value)>>>,
+    uptime_pages: Arc<DashMap<String, serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -421,6 +422,7 @@ async fn main() {
         web_shares: Arc::new(DashMap::new()),
         pending_downloads: Arc::new(DashMap::new()),
         pending_llm_requests: Arc::new(DashMap::new()),
+        uptime_pages: Arc::new(DashMap::new()),
     };
 
     // Periodically prune expired rate-limit entries every 10 minutes
@@ -492,6 +494,12 @@ async fn main() {
         )
         .route("/share/:share_id/api/info", get(web_share_info_handler))
         .route(
+            "/api/uptime/publish",
+            post(uptime_publish_handler).layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
+        )
+        .route("/api/uptime/status/:share_id", get(uptime_status_json_handler))
+        .route("/status/:share_id", get(uptime_status_page_handler))
+        .route(
             "/llm/:device_id/:provider_id/v1/*rest",
             post(llm_http_relay_handler)
                 .get(llm_http_relay_handler)
@@ -521,6 +529,99 @@ async fn health_handler() -> impl IntoResponse {
         "service": "raydrop-signal-server",
         "version": "2.1.0"
     }))
+}
+
+async fn uptime_publish_handler(
+    State(state): State<ServerState>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let share_id = payload
+        .get("share_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("all")
+        .trim()
+        .to_string();
+    if share_id.is_empty() || share_id.len() > 80 {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "invalid share_id" }))).into_response();
+    }
+    state.uptime_pages.insert(share_id.clone(), payload);
+    Json(json!({ "ok": true, "url": format!("/status/{share_id}") })).into_response()
+}
+
+async fn uptime_status_json_handler(
+    State(state): State<ServerState>,
+    Path(share_id): Path<String>,
+) -> impl IntoResponse {
+    match state.uptime_pages.get(&share_id) {
+        Some(v) => Json(v.clone()).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(json!({ "error": "Status page not found" }))).into_response(),
+    }
+}
+
+async fn uptime_status_page_handler(
+    State(state): State<ServerState>,
+    Path(share_id): Path<String>,
+) -> impl IntoResponse {
+    let group_name = state
+        .uptime_pages
+        .get(&share_id)
+        .and_then(|v| v.get("group_name").and_then(|g| g.as_str()).map(|s| s.to_string()))
+        .unwrap_or_else(|| "Raydrop Status".to_string());
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>{group_name} • Raydrop Uptime Status</title>
+<style>
+  body{{margin:0;background:#020617;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:24px}}
+  .wrap{{max-width:860px;margin:0 auto}}
+  .hdr{{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px}}
+  .card{{background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:16px;margin-bottom:12px}}
+  .row{{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}}
+  .badge{{padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;text-transform:uppercase}}
+  .up{{background:rgba(16,185,129,.15);color:#34d399;border:1px solid rgba(16,185,129,.4)}}
+  .down{{background:rgba(244,63,94,.15);color:#fb7185;border:1px solid rgba(244,63,94,.4)}}
+  .bars{{display:flex;gap:3px;height:26px;align-items:stretch}}
+  .bar{{flex:1;min-width:3px;border-radius:2px;background:#1e293b}}
+  .bar.up{{background:#10b981;border:none;padding:0}}
+  .bar.down{{background:#f43f5e;border:none;padding:0}}
+  .meta{{font-size:12px;color:#94a3b8;font-family:monospace}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div><h1 style="margin:0;font-size:20px">{group_name}</h1><div class="meta" id="updated">Loading...</div></div>
+    <span class="meta">Auto-refresh 15s</span>
+  </div>
+  <div id="list"></div>
+</div>
+<script>
+const sid = {share_id_json};
+async function load(){{
+  try{{
+    const r = await fetch('/api/uptime/status/' + encodeURIComponent(sid));
+    if(!r.ok){{ document.getElementById('list').innerHTML='<div class="card">Status page belum dipublish atau expired.</div>'; return; }}
+    const d = await r.json();
+    document.getElementById('updated').textContent = 'Updated: ' + new Date((d.updated_at||0)*1000).toLocaleString();
+    const checks = d.checks || [];
+    document.getElementById('list').innerHTML = (d.monitors||[]).map(m => {{
+      const mc = checks.filter(c => c.monitor_id === m.id).slice(0, 60).reverse();
+      const bars = mc.map(c => `<span class="bar ${{c.status==='up'?'up':'down'}}" title="${{c.status.toUpperCase()}} • ${{c.latency_ms}}ms • ${{new Date(c.checked_at*1000).toLocaleTimeString()}}"></span>`).join('');
+      return `<div class="card"><div class="row"><div><strong>${{m.name}}</strong><div class="meta">${{m.target}} • ${{m.last_latency_ms}}ms</div></div><span class="badge ${{m.current_status==='up'?'up':'down'}}">${{m.current_status}}</span></div><div class="bars">${{bars}}</div></div>`;
+    }}).join('');
+  }}catch(e){{}}
+}}
+load(); setInterval(load, 15000);
+</script>
+</body>
+</html>"#,
+        group_name = group_name.replace('<', "&lt;").replace('>', "&gt;"),
+        share_id_json = serde_json::to_string(&share_id).unwrap_or_else(|_| "\"all\"".to_string()),
+    );
+    axum::response::Html(html).into_response()
 }
 
 async fn llm_http_options_handler() -> impl IntoResponse {

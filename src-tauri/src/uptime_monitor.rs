@@ -105,7 +105,7 @@ pub fn uptime_list_overview(state: State<'_, Arc<AppState>>) -> Result<UptimeOve
         let mut stmt = conn
             .prepare(
                 "SELECT id, monitor_id, status, latency_ms, status_code, error_msg, checked_at
-                 FROM uptime_checks ORDER BY id DESC LIMIT 200",
+                 FROM uptime_checks ORDER BY id DESC LIMIT 1000",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
@@ -380,6 +380,91 @@ pub async fn uptime_check_now(
         .find(|m| m.id == monitor_id)
         .ok_or_else(|| "Monitor not found".to_string())?;
     Ok(run_single_uptime_check(&app, &state.db, &mon).await)
+}
+
+#[tauri::command]
+pub async fn uptime_publish_status_page(
+    state: State<'_, Arc<AppState>>,
+    group_id: Option<String>,
+    server_base_url: String,
+) -> Result<String, String> {
+    let base = server_base_url.trim().trim_end_matches('/').to_string();
+    if base.is_empty() {
+        return Err("Raydrop server URL is empty".to_string());
+    }
+    let gid = group_id.unwrap_or_default().trim().to_string();
+    let (group_name, group_color, share_id) = if gid.is_empty() {
+        ("All Monitors".to_string(), "#10b981".to_string(), "all".to_string())
+    } else {
+        let conn = state.db.conn.lock().map_err(|e| e.to_string())?;
+        let row: Option<(String, String)> = conn
+            .query_row(
+                "SELECT name, color FROM uptime_groups WHERE id = ?1",
+                params![gid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
+        let (gn, gc) = row.unwrap_or_else(|| ("Monitor Group".to_string(), "#10b981".to_string()));
+        (gn, gc, gid.clone())
+    };
+
+    let all_monitors = load_monitors(&state.db)?;
+    let monitors: Vec<UptimeMonitor> = all_monitors
+        .into_iter()
+        .filter(|m| gid.is_empty() || m.group_id == gid)
+        .collect();
+    let monitor_ids: std::collections::HashSet<String> =
+        monitors.iter().map(|m| m.id.clone()).collect();
+
+    let recent_checks: Vec<UptimeCheckRecord> = {
+        let conn = state.db.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, monitor_id, status, latency_ms, status_code, error_msg, checked_at
+                 FROM uptime_checks ORDER BY id DESC LIMIT 1000",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(UptimeCheckRecord {
+                    id: r.get(0)?,
+                    monitor_id: r.get(1)?,
+                    status: r.get(2)?,
+                    latency_ms: r.get(3)?,
+                    status_code: r.get(4)?,
+                    error_msg: r.get(5)?,
+                    checked_at: r.get(6)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.filter_map(|r| r.ok())
+            .filter(|c| monitor_ids.contains(&c.monitor_id))
+            .collect()
+    };
+
+    let payload = serde_json::json!({
+        "share_id": share_id,
+        "group_name": group_name,
+        "group_color": group_color,
+        "monitors": monitors,
+        "checks": recent_checks,
+        "updated_at": now_unix_secs(),
+    });
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .post(format!("{}/api/uptime/publish", base))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to publish to Raydrop server: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("Server returned HTTP {}", resp.status()));
+    }
+    Ok(format!("{}/status/{}", base, share_id))
 }
 
 #[tauri::command]

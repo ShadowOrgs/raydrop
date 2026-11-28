@@ -663,12 +663,50 @@ pub fn dbm_launch_admin(
             if !tools.phpmyadmin_installed {
                 return Err("phpMyAdmin is not installed yet. Click 'Install phpMyAdmin' first.".to_string());
             }
-            root.join("phpmyadmin")
+            let pma_dir = root.join("phpmyadmin");
+            let esc_php = |s: &str| s.replace('\\', "\\\\").replace('\'', "\\'");
+            let pma_cfg = format!(
+                "<?php\n$cfg['blowfish_secret'] = 'raydrop_pma_autologin_secret_key_32b';\n$i = 0;\n$i++;\n$cfg['Servers'][$i]['auth_type'] = 'config';\n$cfg['Servers'][$i]['host'] = '{}';\n$cfg['Servers'][$i]['port'] = '{}';\n$cfg['Servers'][$i]['user'] = '{}';\n$cfg['Servers'][$i]['password'] = '{}';\n$cfg['Servers'][$i]['AllowNoPassword'] = true;\n$cfg['Servers'][$i]['compress'] = false;\n",
+                esc_php(&conn.host),
+                conn.port,
+                esc_php(&conn.username),
+                esc_php(&conn.password),
+            );
+            let _ = std::fs::write(pma_dir.join("config.inc.php"), pma_cfg);
+            pma_dir
         } else {
             if !tools.adminer_installed {
                 return Err("Adminer is not installed yet. Click 'Install Adminer' first.".to_string());
             }
-            root.join("adminer")
+            let adm_dir = root.join("adminer");
+            let driver = if conn.db_type.contains("pg") || conn.db_type.contains("post") {
+                "pgsql"
+            } else if conn.db_type.contains("sqlite") {
+                "sqlite"
+            } else {
+                "server"
+            };
+            let server_str = if driver == "sqlite" {
+                String::new()
+            } else {
+                format!("{}:{}", conn.host, conn.port)
+            };
+            let esc_html = |s: &str| {
+                s.replace('&', "&amp;")
+                    .replace('"', "&quot;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;")
+            };
+            let autologin_php = format!(
+                "<?php header('Content-Type: text/html; charset=utf-8'); ?>\n<!DOCTYPE html><html><body style=\"background:#020617;color:#e2e8f0;font-family:system-ui;padding:24px\">\n<p>Logging in to Adminer...</p>\n<form id=\"f\" method=\"post\" action=\"adminer.php\">\n<input type=\"hidden\" name=\"auth[driver]\" value=\"{}\">\n<input type=\"hidden\" name=\"auth[server]\" value=\"{}\">\n<input type=\"hidden\" name=\"auth[username]\" value=\"{}\">\n<input type=\"hidden\" name=\"auth[password]\" value=\"{}\">\n<input type=\"hidden\" name=\"auth[db]\" value=\"{}\">\n</form>\n<script>document.getElementById('f').submit();</script>\n</body></html>",
+                esc_html(driver),
+                esc_html(&server_str),
+                esc_html(&conn.username),
+                esc_html(&conn.password),
+                esc_html(&conn.database_name),
+            );
+            let _ = std::fs::write(adm_dir.join("_raydrop_autologin.php"), autologin_php);
+            adm_dir
         };
         let child = hidden_cmd(&php)
             .args([
@@ -682,25 +720,14 @@ pub fn dbm_launch_admin(
             .spawn()
             .map_err(|e| format!("Failed to start PHP server: {}", e))?;
 
-        let query = if tool == "adminer" {
-            let driver = if conn.db_type.contains("pg") || conn.db_type.contains("post") {
-                "pgsql"
-            } else if conn.db_type.contains("sqlite") {
-                "sqlite"
-            } else {
-                "server"
-            };
-            format!(
-                "?{}={}&username={}&db={}",
-                driver,
-                urlencoding_simple(&format!("{}:{}", conn.host, conn.port)),
-                urlencoding_simple(&conn.username),
-                urlencoding_simple(&conn.database_name)
-            )
+        let entry_path = if tool == "adminer" {
+            "_raydrop_autologin.php".to_string()
+        } else if !conn.database_name.trim().is_empty() {
+            format!("index.php?route=/database/structure&db={}", urlencoding_simple(&conn.database_name))
         } else {
-            String::new()
+            "index.php".to_string()
         };
-        (child, format!("http://127.0.0.1:{}/{}", port, query))
+        (child, format!("http://127.0.0.1:{}/{}", port, entry_path))
     };
 
     let info = RunningDbAdmin {

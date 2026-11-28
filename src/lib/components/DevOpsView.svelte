@@ -8,6 +8,7 @@
   import { FitAddon } from "@xterm/addon-fit";
   import "@xterm/xterm/css/xterm.css";
   import { notifyToast } from "../stores/presence";
+  import { appSettings } from "../stores/state";
   import {
     Terminal,
     Database,
@@ -79,8 +80,10 @@
   }
   let termTabs: SshTermTab[] = [];
   let activeTermId = "";
-  let termContainerEl: HTMLDivElement | null = null;
   const termInstances = new Map<string, { term: XTerm; fit: FitAddon }>();
+  let connectingSshId = "";
+  let testingSsh = false;
+  let sshTestResult: { ok: boolean; msg: string } | null = null;
   let unlistenSshOut: UnlistenFn | null = null;
   let unlistenSshStatus: UnlistenFn | null = null;
 
@@ -148,7 +151,29 @@
     await loadSshWorkspace();
   }
 
+  async function testSshConnection() {
+    testingSsh = true;
+    sshTestResult = null;
+    try {
+      const msg = await invoke<string>("ssh_test_connection", {
+        input: {
+          ...serverForm,
+          id: serverForm.id || null,
+          port: Number(serverForm.port) || 22,
+        },
+      });
+      sshTestResult = { ok: true, msg };
+      notifyToast("SSH Test OK", msg, "emerald");
+    } catch (e) {
+      sshTestResult = { ok: false, msg: String(e) };
+      notifyToast("SSH Test Failed", String(e), "rose", 5000);
+    } finally {
+      testingSsh = false;
+    }
+  }
+
   async function connectSshServer(srv: SshServer) {
+    connectingSshId = srv.id;
     try {
       const sessionId = await invoke<string>("ssh_connect", {
         serverId: srv.id,
@@ -158,17 +183,28 @@
       termTabs = [...termTabs, { sessionId, server: srv, status: "connected" }];
       activeTermId = sessionId;
       await tick();
-      mountXtermForSession(sessionId);
+      fitActiveTerminal();
       notifyToast("SSH Connected", `${srv.username}@${srv.host}`, "emerald");
     } catch (e) {
-      notifyToast("SSH Connect Failed", String(e), "rose", 5000);
+      notifyToast("SSH Connect Failed", String(e), "rose", 6000);
+    } finally {
+      connectingSshId = "";
     }
   }
 
-  function mountXtermForSession(sessionId: string) {
-    if (!termContainerEl) return;
-    // Clear existing DOM children
-    termContainerEl.innerHTML = "";
+  function fitActiveTerminal() {
+    if (!activeTermId) return;
+    const entry = termInstances.get(activeTermId);
+    if (!entry) return;
+    setTimeout(() => {
+      try {
+        entry.fit.fit();
+        entry.term.focus();
+      } catch (_) {}
+    }, 30);
+  }
+
+  function attachXterm(node: HTMLDivElement, sessionId: string) {
     let entry = termInstances.get(sessionId);
     if (!entry) {
       const term = new XTerm({
@@ -183,6 +219,17 @@
       });
       const fit = new FitAddon();
       term.loadAddon(fit);
+      term.attachCustomKeyEventHandler((ev) => {
+        if (ev.type === "keydown" && ev.ctrlKey && ev.shiftKey && ev.code === "KeyC") {
+          copyTerminalSelection();
+          return false;
+        }
+        if (ev.type === "keydown" && ev.ctrlKey && ev.shiftKey && ev.code === "KeyV") {
+          pasteToTerminal();
+          return false;
+        }
+        return true;
+      });
       term.onData((data) => {
         const bytes = new TextEncoder().encode(data);
         let bin = "";
@@ -195,20 +242,25 @@
       });
       entry = { term, fit };
       termInstances.set(sessionId, entry);
+      term.open(node);
+      setTimeout(() => {
+        try {
+          fit.fit();
+          term.focus();
+        } catch (_) {}
+      }, 40);
     }
-    entry.term.open(termContainerEl);
-    setTimeout(() => {
-      try {
-        entry?.fit.fit();
-        entry?.term.focus();
-      } catch (_) {}
-    }, 40);
+    return {
+      destroy() {
+        // Disposed explicitly in closeTermTab / onDestroy
+      },
+    };
   }
 
   async function selectTermTab(sessionId: string) {
     activeTermId = sessionId;
     await tick();
-    mountXtermForSession(sessionId);
+    fitActiveTerminal();
   }
 
   async function closeTermTab(sessionId: string) {
@@ -221,7 +273,7 @@
       activeTermId = termTabs[0]?.sessionId || "";
       if (activeTermId) {
         await tick();
-        mountXtermForSession(activeTermId);
+        fitActiveTerminal();
       }
     }
   }
@@ -322,6 +374,8 @@
   let dbHealthMap: Record<string, DbHealth> = {};
   let checkingDbId = "";
   let backingUpDbId = "";
+  let launchingDbId = "";
+  let restoringDbId = "";
 
   let showDbModal = false;
   let dbForm = {
@@ -384,12 +438,13 @@
   }
 
   async function launchDbAdmin(conn: DbConnection) {
+    launchingDbId = conn.id;
     try {
       const res = await invoke<{ url: string; port: number; tool: string }>("dbm_launch_admin", {
         connectionId: conn.id,
       });
       await loadDbOverview();
-      notifyToast("DB Admin Ready", `${res.tool} berjalan di port ${res.port}`, "cyan");
+      notifyToast("DB Admin Ready", `${res.tool} auto-login di port ${res.port}`, "cyan");
       try {
         await openExternal(res.url);
       } catch (_) {
@@ -397,6 +452,8 @@
       }
     } catch (e) {
       notifyToast("Launch Admin Failed", String(e), "rose", 5000);
+    } finally {
+      launchingDbId = "";
     }
   }
 
@@ -435,6 +492,27 @@
     }
   }
 
+  async function restoreSpecificBackup(conn: DbConnection, filePath: string) {
+    restoringDbId = conn.id;
+    try {
+      const msg = await invoke<string>("dbm_restore_backup", {
+        connectionId: conn.id,
+        filePath,
+        allowNonEmpty: false,
+      });
+      notifyToast("Restore Complete", msg, "emerald");
+    } catch (e: any) {
+      const errStr = String(e);
+      if (errStr.includes("SAFE_RESTORE_BLOCKED")) {
+        notifyToast("Safe Restore Blocked", errStr, "amber", 8000);
+      } else {
+        notifyToast("Restore Failed", errStr, "rose", 6000);
+      }
+    } finally {
+      restoringDbId = "";
+    }
+  }
+
   async function restoreDbFile(conn: DbConnection) {
     const picked = await openDialog({
       multiple: false,
@@ -442,21 +520,7 @@
       filters: [{ name: "SQL / GZ Backup", extensions: ["gz", "sql"] }],
     });
     if (typeof picked !== "string" || !picked) return;
-    try {
-      const msg = await invoke<string>("dbm_restore_backup", {
-        connectionId: conn.id,
-        filePath: picked,
-        allowNonEmpty: false,
-      });
-      notifyToast("Restore Complete", msg, "emerald");
-    } catch (e: any) {
-      const errStr = String(e);
-      if (errStr.includes("SAFE_RESTORE_BLOCKED")) {
-        notifyToast("Safe Restore Guard", errStr, "amber", 7000);
-      } else {
-        notifyToast("Restore Failed", errStr, "rose", 6000);
-      }
-    }
+    await restoreSpecificBackup(conn, picked);
   }
 
   async function saveDbSchedule() {
@@ -586,13 +650,33 @@
     }
   }
 
-  async function exportStatusPage() {
+  let publishingStatus = false;
+  let sharedStatusUrl = "";
+
+  function getServerHttpBase(): string {
+    const raw = $appSettings.signaling_url || "wss://stun.raydrop.web.id/ws";
+    return raw
+      .replace(/^wss:\/\//i, "https://")
+      .replace(/^ws:\/\//i, "http://")
+      .replace(/\/ws\/?$/i, "")
+      .replace(/\/+$/, "");
+  }
+
+  async function shareGroupStatusPage() {
+    publishingStatus = true;
     try {
-      const htmlPath = await invoke<string>("uptime_export_status_html");
-      await navigator.clipboard.writeText(htmlPath);
-      notifyToast("Status Page Exported", `Saved & path copied: ${htmlPath}`, "cyan", 5000);
+      const serverBaseUrl = getServerHttpBase();
+      const url = await invoke<string>("uptime_publish_status_page", {
+        groupId: selectedUptimeGroupId || null,
+        serverBaseUrl,
+      });
+      sharedStatusUrl = url;
+      await navigator.clipboard.writeText(url).catch(() => {});
+      notifyToast("Public Status URL Ready", `Disalin ke clipboard: ${url}`, "emerald", 6000);
     } catch (e) {
-      notifyToast("Export Failed", String(e), "rose");
+      notifyToast("Share Status Failed", String(e), "rose", 5000);
+    } finally {
+      publishingStatus = false;
     }
   }
 
@@ -624,6 +708,8 @@
     termInstances.clear();
   });
 </script>
+
+<svelte:window on:resize={fitActiveTerminal} />
 
 <div class="h-full flex flex-col gap-3 overflow-hidden">
   <!-- Top Sub-Navigation -->
@@ -753,34 +839,45 @@
                 <div class="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
+                    disabled={connectingSshId === srv.id}
                     on:click={() => connectSshServer(srv)}
-                    class="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 text-[11px] font-bold cursor-pointer"
+                    class="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 text-[11px] font-bold cursor-pointer transition active:scale-95 disabled:opacity-60 flex items-center gap-1"
                   >
-                    Connect
+                    {#if connectingSshId === srv.id}
+                      <Loader2 class="w-3 h-3 animate-spin" />
+                      <span>Connecting...</span>
+                    {:else}
+                      <span>Connect</span>
+                    {/if}
                   </button>
                   <button
                     type="button"
                     on:click={() => checkSshHealth(srv)}
                     disabled={checkingSshHealthId === srv.id}
-                    class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 cursor-pointer"
+                    class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 cursor-pointer transition active:scale-95 disabled:opacity-60"
                     title="Check Remote Server Health"
                   >
-                    <HeartPulse class="w-3.5 h-3.5 {checkingSshHealthId === srv.id ? 'animate-pulse' : ''}" />
+                    {#if checkingSshHealthId === srv.id}
+                      <Loader2 class="w-3.5 h-3.5 animate-spin" />
+                    {:else}
+                      <HeartPulse class="w-3.5 h-3.5" />
+                    {/if}
                   </button>
                   <button
                     type="button"
                     on:click={() => {
                       serverForm = { ...srv };
+                      sshTestResult = null;
                       showServerModal = true;
                     }}
-                    class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                    class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer transition active:scale-95"
                   >
                     <Edit3 class="w-3 h-3" />
                   </button>
                   <button
                     type="button"
                     on:click={() => deleteSshServer(srv.id)}
-                    class="p-1 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-rose-400 cursor-pointer"
+                    class="p-1 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-rose-400 cursor-pointer transition active:scale-95"
                   >
                     <Trash2 class="w-3 h-3" />
                   </button>
@@ -845,22 +942,31 @@
                 <button
                   type="button"
                   on:click={copyTerminalSelection}
-                  class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] flex items-center gap-1 cursor-pointer"
+                  title="Copy selection (Ctrl+Shift+C)"
+                  class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] flex items-center gap-1 cursor-pointer transition active:scale-95"
                 >
-                  <Copy class="w-3 h-3" /> Copy
+                  <Copy class="w-3 h-3" /> Copy (Ctrl+Shift+C)
                 </button>
                 <button
                   type="button"
                   on:click={pasteToTerminal}
-                  class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] flex items-center gap-1 cursor-pointer"
+                  title="Paste to terminal (Ctrl+Shift+V)"
+                  class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] flex items-center gap-1 cursor-pointer transition active:scale-95"
                 >
-                  <ClipboardPaste class="w-3 h-3" /> Paste
+                  <ClipboardPaste class="w-3 h-3" /> Paste (Ctrl+Shift+V)
                 </button>
               </div>
             {/if}
           </div>
 
-          <div bind:this={termContainerEl} class="flex-1 min-h-0 p-2 overflow-hidden"></div>
+          <div class="flex-1 min-h-0 relative overflow-hidden">
+            {#each termTabs as tab (tab.sessionId)}
+              <div
+                use:attachXterm={tab.sessionId}
+                class="absolute inset-0 p-2 overflow-hidden {activeTermId === tab.sessionId ? 'block' : 'hidden'}"
+              ></div>
+            {/each}
+          </div>
         </div>
       </div>
     </div>
@@ -961,6 +1067,8 @@
         {#each dbConns as conn (conn.id)}
           {@const running = dbTools?.running_admins.find((a) => a.connection_id === conn.id)}
           {@const health = dbHealthMap[conn.id]}
+          {@const connBackups = dbHistory.filter((b) => b.connection_id === conn.id)}
+          {@const connSched = dbSchedules.find((s) => s.connection_id === conn.id)}
           <div class="bg-slate-900/75 border border-slate-800 rounded-2xl p-4 space-y-3">
             <div class="flex items-start justify-between gap-2">
               <div>
@@ -1031,10 +1139,17 @@
               {:else}
                 <button
                   type="button"
+                  disabled={launchingDbId === conn.id}
                   on:click={() => launchDbAdmin(conn)}
-                  class="px-2.5 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                  class="px-2.5 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold flex items-center gap-1 cursor-pointer transition active:scale-95 disabled:opacity-60"
                 >
-                  <ExternalLink class="w-3.5 h-3.5" /> Launch {conn.admin_tool}
+                  {#if launchingDbId === conn.id}
+                    <Loader2 class="w-3.5 h-3.5 animate-spin" />
+                    <span>Opening...</span>
+                  {:else}
+                    <ExternalLink class="w-3.5 h-3.5" />
+                    <span>Launch {conn.admin_tool}</span>
+                  {/if}
                 </button>
               {/if}
 
@@ -1042,32 +1157,81 @@
                 type="button"
                 disabled={checkingDbId === conn.id}
                 on:click={() => checkDbHealth(conn.id)}
-                class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-semibold flex items-center gap-1 cursor-pointer transition active:scale-95 disabled:opacity-60"
               >
-                <HeartPulse class="w-3.5 h-3.5" /> Health
+                {#if checkingDbId === conn.id}
+                  <Loader2 class="w-3.5 h-3.5 animate-spin" />
+                {:else}
+                  <HeartPulse class="w-3.5 h-3.5" />
+                {/if}
+                <span>Health</span>
               </button>
 
               <button
                 type="button"
                 disabled={backingUpDbId === conn.id}
                 on:click={() => backupDbNow(conn.id)}
-                class="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                class="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1 cursor-pointer transition active:scale-95 disabled:opacity-60"
               >
                 {#if backingUpDbId === conn.id}
                   <Loader2 class="w-3.5 h-3.5 animate-spin" />
                 {:else}
                   <Download class="w-3.5 h-3.5" />
                 {/if}
-                Backup .sql.gz
+                <span>Backup .sql.gz</span>
               </button>
 
               <button
                 type="button"
+                disabled={restoringDbId === conn.id}
                 on:click={() => restoreDbFile(conn)}
-                class="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                class="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1 cursor-pointer transition active:scale-95 disabled:opacity-60"
               >
-                <Upload class="w-3.5 h-3.5" /> Safe Restore
+                {#if restoringDbId === conn.id}
+                  <Loader2 class="w-3.5 h-3.5 animate-spin" />
+                {:else}
+                  <Upload class="w-3.5 h-3.5" />
+                {/if}
+                <span>Safe Restore</span>
               </button>
+            </div>
+
+            <!-- Per-Database Backup History (Manual + Scheduled) -->
+            <div class="pt-2 border-t border-slate-800/80 space-y-1.5">
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="font-semibold text-slate-300">
+                  Backup History ({connBackups.length})
+                </span>
+                {#if connSched}
+                  <span class="text-amber-300 font-mono">
+                    Auto: every {connSched.interval_minutes}m (keep {connSched.keep_last})
+                  </span>
+                {/if}
+              </div>
+              {#if connBackups.length === 0}
+                <div class="text-[11px] text-slate-500">Belum ada riwayat backup manual/otomatis.</div>
+              {:else}
+                <div class="max-h-28 overflow-y-auto space-y-1 pr-1">
+                  {#each connBackups.slice(0, 6) as bk (bk.id)}
+                    <div class="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-slate-950/75 border border-slate-800/80 text-[10px]">
+                      <div class="min-w-0">
+                        <div class="font-mono text-slate-300 truncate">{bk.file_path.split(/[\\/]/).pop()}</div>
+                        <div class="text-slate-500">
+                          {new Date(bk.created_at * 1000).toLocaleString()} • {Math.round(bk.size_bytes / 1024)} KB
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={restoringDbId === conn.id}
+                        on:click={() => restoreSpecificBackup(conn, bk.file_path)}
+                        class="px-2 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/30 text-amber-300 font-semibold shrink-0 cursor-pointer transition active:scale-95"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
             </div>
           </div>
         {/each}
@@ -1143,10 +1307,16 @@
         <div class="flex items-center gap-1.5">
           <button
             type="button"
-            on:click={exportStatusPage}
-            class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+            disabled={publishingStatus}
+            on:click={shareGroupStatusPage}
+            class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-semibold flex items-center gap-1 cursor-pointer transition active:scale-95 disabled:opacity-60"
           >
-            <Share2 class="w-3.5 h-3.5" /> Share Status Page
+            {#if publishingStatus}
+              <Loader2 class="w-3.5 h-3.5 animate-spin" />
+            {:else}
+              <Share2 class="w-3.5 h-3.5" />
+            {/if}
+            <span>Share Public Status</span>
           </button>
           <button
             type="button"
@@ -1181,9 +1351,28 @@
         </div>
       </div>
 
+      {#if sharedStatusUrl}
+        <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-xl px-3 py-2 flex items-center justify-between gap-2 text-xs">
+          <div class="min-w-0">
+            <span class="text-cyan-300 font-semibold">Public Status URL: </span>
+            <a href={sharedStatusUrl} target="_blank" rel="noreferrer" class="font-mono text-white underline truncate">{sharedStatusUrl}</a>
+          </div>
+          <button
+            type="button"
+            on:click={() => openExternal(sharedStatusUrl)}
+            class="px-2.5 py-1 rounded-lg bg-cyan-500 text-slate-950 font-bold text-[11px] shrink-0 cursor-pointer active:scale-95"
+          >
+            Open
+          </button>
+        </div>
+      {/if}
+
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         {#each uptimeMonitors.filter((m) => !selectedUptimeGroupId || m.group_id === selectedUptimeGroupId) as mon (mon.id)}
-          {@const history = uptimeChecks.filter((c) => c.monitor_id === mon.id).slice(0, 24).reverse()}
+          {@const dayCutoff = Math.floor(Date.now() / 1000) - 86400}
+          {@const history = uptimeChecks.filter((c) => c.monitor_id === mon.id && c.checked_at >= dayCutoff).slice(0, 72).reverse()}
+          {@const upCount = history.filter((c) => c.status === 'up').length}
+          {@const uptimePct = history.length > 0 ? ((upCount / history.length) * 100).toFixed(1) : '—'}
           <div class="bg-slate-900/75 border border-slate-800 rounded-2xl p-4 space-y-2.5">
             <div class="flex items-start justify-between gap-2">
               <div class="min-w-0">
@@ -1227,14 +1416,24 @@
               <div class="text-[11px] text-rose-300 font-mono truncate">{mon.last_error}</div>
             {/if}
 
-            <!-- Uptime Kuma-style History Pills -->
-            <div class="flex items-center gap-1 h-4">
-              {#each history as chk}
-                <span
-                  class="flex-1 h-full rounded-sm {chk.status === 'up' ? 'bg-emerald-400/80' : 'bg-rose-500/80'}"
-                  title="{chk.status.toUpperCase()} • {chk.latency_ms}ms"
-                ></span>
-              {/each}
+            <!-- 24h Per-Check Status Bars (Green = UP, Red = DOWN) -->
+            <div class="space-y-1">
+              <div class="flex items-center justify-between text-[10px] text-slate-400">
+                <span>24h Checks ({history.length})</span>
+                <span class="font-mono text-emerald-300">{uptimePct}% uptime</span>
+              </div>
+              <div class="flex items-center gap-[3px] h-6 overflow-hidden">
+                {#if history.length === 0}
+                  <div class="flex-1 h-full rounded bg-slate-800/70"></div>
+                {:else}
+                  {#each history as chk}
+                    <span
+                      class="flex-1 min-w-[3px] max-w-[10px] h-full rounded-[2px] transition-opacity hover:opacity-80 {chk.status === 'up' ? 'bg-emerald-400' : 'bg-rose-500'}"
+                      title="{chk.status.toUpperCase()} • {chk.latency_ms}ms • {new Date(chk.checked_at * 1000).toLocaleTimeString()}"
+                    ></span>
+                  {/each}
+                {/if}
+              </div>
             </div>
           </div>
         {/each}
@@ -1282,9 +1481,30 @@
         <input type="text" bind:value={serverForm.private_key_path} placeholder="Path to private key (id_ed25519 / .pem)" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
       {/if}
       <input type="password" bind:value={serverForm.password} placeholder={serverForm.auth_type === "key" ? "Key passphrase (optional)" : "SSH Password"} class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
-      <div class="flex justify-end gap-2 pt-1">
-        <button type="button" on:click={() => (showServerModal = false)} class="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300">Cancel</button>
-        <button type="button" on:click={saveSshServer} class="px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 font-bold">Save</button>
+      {#if sshTestResult}
+        <div class="px-2.5 py-1.5 rounded-xl text-[11px] font-mono border {sshTestResult.ok ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300'}">
+          {sshTestResult.msg}
+        </div>
+      {/if}
+      <div class="flex items-center justify-between gap-2 pt-1">
+        <button
+          type="button"
+          disabled={testingSsh}
+          on:click={testSshConnection}
+          class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold flex items-center gap-1.5 cursor-pointer transition active:scale-95 disabled:opacity-60"
+        >
+          {#if testingSsh}
+            <Loader2 class="w-3.5 h-3.5 animate-spin" />
+            <span>Testing...</span>
+          {:else}
+            <Play class="w-3.5 h-3.5" />
+            <span>Test Connection</span>
+          {/if}
+        </button>
+        <div class="flex items-center gap-2">
+          <button type="button" on:click={() => (showServerModal = false)} class="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300 cursor-pointer active:scale-95">Cancel</button>
+          <button type="button" on:click={saveSshServer} class="px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 font-bold cursor-pointer active:scale-95">Save</button>
+        </div>
       </div>
     </div>
   </div>

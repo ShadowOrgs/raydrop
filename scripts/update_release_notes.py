@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.99"
+    tag = clean_args[0] if clean_args else "v1.2.100"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: DevOps Suite (SSH, DB & Uptime), Discord-Style Chat Calls & Remote Fixes"
+    title = f"Raydrop {tag}: DevOps UX Polish, DB Auto-Login, Public Uptime Status & Smooth Game Mode"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/ShadowOrgs/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: DevOps Suite (SSH, DB & Uptime), Discord-Style Chat Calls & Remote Fixes</h2>
+<h2 align="center">Raydrop {tag}: DevOps UX Polish, DB Auto-Login, Public Uptime Status & Smooth Game Mode</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,21 +126,16 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🛠️ DevOps Suite (Remote SSH • DB Manager • Uptime Monitor)
-- **Persistent Remote SSH & Server Health:** Multi-group SSH terminal (Termius-style xterm.js with copy/paste & keepalive) plus one-click remote server CPU, RAM, Disk, and Load monitoring.
-- **Database Manager, Scheduled Backups & Safe Restore:** Multi-config MySQL/PostgreSQL manager with on-demand seamless client & DB Admin (Adminer / phpMyAdmin on conflict-free ports) download/install, DB health checks, scheduled cron `.sql.gz` backups, and safe restore (ensuring target DB is clean before restoring).
-- **Uptime Monitor & Alerts:** Grouped HTTP/endpoint uptime checks with configurable intervals, outage/recovery history, shareable status URL, and real-time notifications to Raydrop & Telegram Bot.
+#### 🛠️ Remote SSH, DB Auto-Login & Uptime Status Upgrades
+- **Remote SSH UX & Terminal Fixes:** Added loading spinners, touch feedback, and error toasts on SSH connect/health; added **Test Connection** in the server modal; fixed clicking an active SSH tab hiding the console; fixed terminal downward overflow; and added **`Ctrl+Shift+C`** / **`Ctrl+Shift+V`** copy/paste shortcuts.
+- **DB Admin Auto-Login & Per-DB Backup History:** Launching **phpMyAdmin** or **Adminer** now auto-logs in with your configured host, port, username, password, and database; added button loaders and per-database **Backup History** (manual + scheduled `.sql.gz`) with one-click Restore.
+- **Uptime 24h Per-Check Bars & Public Group Status Page:** Replaced single bars with 24-hour per-check green/red vertical bars and added **Share Public Status** powered by Raydrop Server (`/status/<group_id>`).
 
-#### 📞 Discord-Style Voice & Video Calls in Chat & Group Chat
-- **1-on-1 & Group Calls:** Separate **Voice Call** and **Video Call** buttons in both DM and Group Chat headers, ringing all member devices in the group via the built-in Meeting engine.
-- **Looping Ringtone & Auto-Focus Popup:** Discord-style incoming call popup (`z-[90]`) with looping Web Audio ringtone, outgoing ringback tone, and automatic window focus/attention.
+#### 🎮 Smooth Game Mode Cursor & Copy History Image Editor Fix
+- **Game Mode Smooth Cursor:** Switched Game Mode to use the same lightweight, freeze-free absolute cursor as Desktop Mode while keeping 60 FPS DXGI, 30 Mbps bitrate, Gamepad support, and Auto Fullscreen.
+- **Copy History Save & Copy Fix:** Saving an edited image now preserves the original image and saves + copies the edited image as a single new entry without creating duplicates.
 
-#### 🖥️ UI & Remote Desktop Fixes
-- **FloatingRail "More" Popup:** Kept primary navigation items in the left rail and grouped secondary tools (Copy History, Notes, Converter, Web Debugger, AI Skills, MCP Library, LLM Bridge, DevOps) into a sleek **Menu Lainnya** popover.
-- **Game Mode Cursor & Desktop Switch Fixes:** Clamped Chromium pointer-lock delta spikes and discarded initial warp outliers in Game Mode; cleanly exited pointer lock when switching back to Desktop Mode; added a manual Close (`X`) button to the `Ctrl+Alt+Shift+Q` banner.
-- **Global Host Remote Approval Popup:** Incoming PIN-less Remote Desktop requests now automatically bring Raydrop to the foreground and show the Allow/Decline modal on any active tab.
-
-#### ✂️ Previous Highlights (Snipping Image Editor, RayAmp, RayBot & Mobile)
-- **Snipping-Tool Image Editor (Copy History), RayAmp Now-Playing Broadcast, Remote RayBot Device Switcher, RayBot Multi-Project Coding Workspace, Direct Skills/MCP, and LLM Bridge CLI Execution Modes.**
+#### 📞 Previous Highlights (Discord-Style Calls, FloatingRail & DevOps Suite)
+- **Discord-Style 1-on-1 & Group Voice/Video Calls with Looping Ringtone, FloatingRail "Menu Lainnya" Popover, Global Host Remote Approval Popup, and Full DevOps Suite.**
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

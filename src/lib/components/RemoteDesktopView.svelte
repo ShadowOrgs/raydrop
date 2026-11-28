@@ -1070,9 +1070,8 @@
   function handleMouseDown(e: MouseEvent) {
     if (!isClientConnected || isSyntheticMouseAfterTouch()) return;
     resumeClientAudio();
-    if ($remoteSessionMode === "game" && videoCanvasWrapEl && document.pointerLockElement !== videoCanvasWrapEl) {
+    if ($remoteSessionMode === "game") {
       showToolbar = false;
-      videoCanvasWrapEl.requestPointerLock?.();
     }
     const button =
       e.button === 0 ? "left" : e.button === 2 ? "right" : "middle";

@@ -1088,9 +1088,8 @@ function setupHostDataChannel(dc: RTCDataChannel) {
       if (data.t === 'set_mode' && (data.mode === 'desktop' || data.mode === 'game')) {
         remoteSessionMode.set(data.mode);
         const isGameNow = data.mode === 'game';
-        // In Game Mode, client uses pointer lock (hides local cursor), so restore Host OS cursor
-        // so desktop/menu/2D game cursors remain visible; in Desktop Mode hide Host cursor to avoid double cursor.
-        raydropApi.setHostCursorHidden(!isGameNow).catch(() => { });
+        // Use consistent smooth absolute cursor in both Desktop & Game Mode (hide Host OS cursor to avoid double cursor)
+        raydropApi.setHostCursorHidden(true).catch(() => { });
         if (activeVideoSender) {
           try {
             const p = activeVideoSender.getParameters();
