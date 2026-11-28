@@ -32,6 +32,8 @@
     available_models: string[];
     supports_image_gen: boolean;
     is_public: boolean;
+    execution_mode?: string;
+    extra_args?: string;
     cli_installed: boolean;
     running: boolean;
     last_error: string | null;
@@ -92,10 +94,70 @@
     is_public: boolean;
     api_key: string | null;
   }> = [];
+  let activeRemotePeers: Array<{
+    id: string;
+    name: string;
+    bridges: typeof discoveredPeerBridges;
+  }> = [];
+  let initialPeerScanDone = false;
+
+  $: if (!initialPeerScanDone && authorizedPeers.some((p) => p.online)) {
+    initialPeerScanDone = true;
+    scanAllActivePeerBridges();
+  }
+
+  async function scanAllActivePeerBridges() {
+    const onlinePeers = authorizedPeers.filter((ap) => ap.online);
+    if (onlinePeers.length === 0) {
+      activeRemotePeers = [];
+      discoveredPeerBridges = [];
+      return;
+    }
+    peerScanning = true;
+    peerError = "";
+    try {
+      const results = await Promise.allSettled(
+        onlinePeers.map(async (ap) => {
+          const bridges = await invoke<typeof discoveredPeerBridges>(
+            "discover_peer_llm_bridges",
+            { peerDeviceId: ap.id },
+          );
+          return { id: ap.id, name: ap.name, bridges };
+        }),
+      );
+      activeRemotePeers = results
+        .filter(
+          (r): r is PromiseFulfilledResult<{ id: string; name: string; bridges: typeof discoveredPeerBridges }> =>
+            r.status === "fulfilled" && Array.isArray(r.value.bridges) && r.value.bridges.length > 0,
+        )
+        .map((r) => r.value);
+
+      if (selectedPeerId) {
+        const found = activeRemotePeers.find((p) => p.id === selectedPeerId);
+        if (found) {
+          discoveredPeerBridges = found.bridges;
+        } else {
+          selectedPeerId = "";
+          discoveredPeerBridges = [];
+        }
+      }
+    } finally {
+      peerScanning = false;
+    }
+  }
 
   async function scanPeerBridges() {
     if (!selectedPeerId) {
       discoveredPeerBridges = [];
+      return;
+    }
+    const cached = activeRemotePeers.find((p) => p.id === selectedPeerId);
+    if (cached) {
+      discoveredPeerBridges = cached.bridges;
+      if (cached.bridges.length > 0) {
+        selectedPeerProvider = cached.bridges[0].id;
+        peerRemoteApiKey = cached.bridges[0].api_key || "";
+      }
       return;
     }
     peerScanning = true;
@@ -140,6 +202,7 @@
       if (net.device_id) myDeviceId = net.device_id;
       if (net.wan_http_base) wanHttpBase = net.wan_http_base;
       peerProxies = await invoke<LlmPeerProxyInfo[]>("get_peer_llm_proxies");
+      scanAllActivePeerBridges();
     } catch (err) {
       console.warn("Failed to load LLM Bridge status:", err);
     } finally {
@@ -206,6 +269,8 @@
           default_model: p.default_model,
           cli_command: p.cli_command,
           is_public: nextPublic,
+          execution_mode: p.execution_mode || "yolo",
+          extra_args: p.extra_args || "",
         },
       });
     } catch (err: any) {
@@ -499,6 +564,35 @@
               </div>
             </div>
 
+            <div class="sm:col-span-5">
+              <label class="block text-[10px] font-semibold text-slate-400 uppercase mb-1">
+                Execution Mode
+              </label>
+              <select
+                value={p.execution_mode || "yolo"}
+                on:change={(e) => {
+                  p.execution_mode = e.currentTarget.value;
+                }}
+                class="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-white text-xs outline-none focus:border-cyan-400"
+              >
+                <option value="yolo">YOLO (Auto-Approve / Headless)</option>
+                <option value="auto">Auto-Edit (Workspace Safe)</option>
+                <option value="safe">Safe (Read-Only / No Bypass)</option>
+              </select>
+            </div>
+
+            <div class="sm:col-span-7">
+              <label class="block text-[10px] font-semibold text-slate-400 uppercase mb-1">
+                Extra CLI Flags (Opsional)
+              </label>
+              <input
+                type="text"
+                bind:value={p.extra_args}
+                placeholder="misal: --print-timeout 60s"
+                class="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-white font-mono text-xs outline-none focus:border-cyan-400"
+              />
+            </div>
+
             <div class="sm:col-span-12">
               <div class="flex items-center justify-between mb-1">
                 <label class="text-[10px] font-semibold text-slate-400 uppercase">API Key (Bearer Token)</label>
@@ -591,9 +685,18 @@
           <span>Remote Peer LLM Bridges (Raydrop WAN / LAN Relay)</span>
         </h3>
         <p class="text-[11px] text-slate-400 mt-0.5">
-          Akses LLM Bridge milik perangkat lain (user sama / trusted auto-accept) lewat server Raydrop tanpa perlu Tailscale.
+          Hanya menampilkan device online yang LLM Bridge-nya sedang ON dan diizinkan (Public atau Private milik sendiri / Auto-Accept).
         </p>
       </div>
+      <button
+        type="button"
+        disabled={peerScanning}
+        on:click={scanAllActivePeerBridges}
+        class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition active:scale-[0.97] cursor-pointer"
+      >
+        <RefreshCw class="w-3.5 h-3.5 {peerScanning ? 'animate-spin' : ''}" />
+        <span>{peerScanning ? "Scanning..." : "Scan Active"}</span>
+      </button>
     </div>
 
     <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 text-xs">
@@ -604,9 +707,15 @@
           on:change={scanPeerBridges}
           class="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-white text-xs outline-none focus:border-indigo-400"
         >
-          <option value="">-- Pilih Device --</option>
-          {#each authorizedPeers as ap}
-            <option value={ap.id}>{ap.name} {ap.online ? "• Online" : ""}</option>
+          <option value="">
+            {peerScanning
+              ? "Scanning active bridges..."
+              : activeRemotePeers.length === 0
+              ? "-- Tidak ada bridge aktif --"
+              : `-- Pilih Device (${activeRemotePeers.length} aktif) --`}
+          </option>
+          {#each activeRemotePeers as ap}
+            <option value={ap.id}>{ap.name} • {ap.bridges.length} ON</option>
           {/each}
         </select>
       </div>
@@ -646,9 +755,12 @@
             type="button"
             disabled={peerConnecting || !selectedPeerId}
             on:click={connectPeerProxy}
-            class="px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs cursor-pointer shrink-0"
+            class="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 disabled:opacity-45 disabled:cursor-not-allowed text-slate-950 font-bold text-xs flex items-center gap-1 transition active:scale-[0.97] cursor-pointer shrink-0"
           >
-            {peerConnecting ? "..." : "Connect"}
+            {#if peerConnecting}
+              <Loader2 class="w-3.5 h-3.5 animate-spin" />
+            {/if}
+            <span>{peerConnecting ? "Connecting..." : "Connect"}</span>
           </button>
         </div>
       </div>

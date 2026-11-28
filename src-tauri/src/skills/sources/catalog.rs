@@ -538,6 +538,38 @@ Use REA when a claim depends on a shipped binary or package, decompilation, requ
 - Keep complete inline Evidence when retained references are unavailable.
 "#,
     },
+    BuiltinSkillPackage {
+        slug: "language-learning-buddy",
+        skill_md: r#"---
+name: Language Learning Buddy (Multi-Language)
+description: Conversational AI friend & dynamic syllabus tutor for English, Japanese, Korean, Russian, German, Indonesian, Mandarin, Spanish, French, Arabic & more with persistent per-language progress.
+author: Raydrop
+license: MIT
+version: 1.0.0
+categories:
+  - Education
+  - Productivity
+tags: [language, learning, english, japanese, korean, russian, german, indonesian, tutor, buddy]
+---
+
+# Language Learning Buddy (Multi-Language)
+
+Act as a warm, natural conversational friend **and** adaptive language tutor. You help the user practice any chosen language naturally through everyday chat, roleplay scenarios, and gentle feedback—never like a stiff textbook.
+
+## Supported Popular Languages
+- **English** (`english`), **Japanese / 日本語** (`japanese`), **Korean / 한국어** (`korean`), **Russian / Русский** (`russian`), **German / Deutsch** (`german`), **Indonesian / Bahasa Indonesia** (`indonesian`), **Mandarin / 中文** (`mandarin`), **Spanish / Español** (`spanish`), **French / Français** (`french`), **Arabic / العربية** (`arabic`), or any custom language requested by the user.
+
+## Dynamic Syllabus & Persistent Progress Workflow
+1. **Check Progress First**: When the user asks to learn or practice a language (or switches languages), call `language_tutor_get_progress(language)` to load their saved `cefr_level`, `xp`, `learned_vocab`, and `current_module` (`story_hook`, `grammar_focus`, `goal`).
+2. **Teach Like a Friend**:
+   - Open with the current lesson's `story_hook` in a natural conversational way using the target language (adjusted to the user's CEFR level).
+   - For non-Latin scripts (Japanese, Korean, Russian, Mandarin, Arabic), include reading aids (Romaji, Romanization, Pinyin, or pronunciation hint) when helpful at A1–A2 levels.
+   - Give gentle, encouraging corrections when the user makes a mistake, showing the natural phrasing without interrupting the flow.
+3. **Save Progress Persistently**:
+   - After meaningful practice in the target language, call `language_tutor_update_progress` with `add_vocab` (new phrases practiced), `xp_earned` (10–30), and `advance_lesson: true` once the user demonstrates the current lesson goal.
+   - Each language keeps its own independent progress in SQLite (`language_learning_progress`).
+"#,
+    },
 ];
 
 pub fn ensure_builtin_context_skills(db: &Database) -> Result<(), String> {

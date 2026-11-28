@@ -13,6 +13,7 @@ pub mod media_converter;
 pub mod media_player;
 pub mod network;
 pub mod os;
+pub mod project_workspace;
 pub mod remote_audio;
 pub mod remote_capture;
 pub mod remote_fs;
@@ -606,6 +607,7 @@ pub fn run() {
             llm_bridge::get_peer_llm_proxies,
             llm_bridge::start_peer_llm_proxy,
             llm_bridge::stop_peer_llm_proxy,
+            llm_bridge::detect_local_ai_services,
             mcp_library::mcp_library_list,
             mcp_library::mcp_library_supported_agents,
             mcp_library::mcp_library_inspect,
@@ -835,6 +837,13 @@ pub fn run() {
             skills::commands::skills_delete_preset,
             skills::commands::skills_get_settings,
             skills::commands::skills_update_settings,
+            skills::commands::skills_get_raybot_enabled,
+            skills::commands::skills_toggle_raybot,
+            project_workspace::raybot_get_projects_overview,
+            project_workspace::raybot_set_projects_root,
+            project_workspace::raybot_scan_projects,
+            project_workspace::raybot_select_project,
+            project_workspace::raybot_add_project_relation,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Raydrop Tauri application")

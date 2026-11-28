@@ -59,9 +59,24 @@
       defaultModel: "openai/gpt-4o-mini",
     },
     ollama: {
-      label: "Ollama (Local)",
-      baseUrl: "http://localhost:11434/v1",
+      label: "Ollama (Local :11434)",
+      baseUrl: "http://127.0.0.1:11434/v1",
       defaultModel: "llama3.2",
+    },
+    lmstudio: {
+      label: "LM Studio (Local :1234)",
+      baseUrl: "http://127.0.0.1:1234/v1",
+      defaultModel: "local-model",
+    },
+    koboldcpp: {
+      label: "KoboldCpp (Local :5001)",
+      baseUrl: "http://127.0.0.1:5001/v1",
+      defaultModel: "koboldcpp",
+    },
+    llamacpp: {
+      label: "llama.cpp / LocalAI (:8080)",
+      baseUrl: "http://127.0.0.1:8080/v1",
+      defaultModel: "local-model",
     },
     custom: {
       label: "Custom OpenAI-Compatible",
@@ -120,16 +135,41 @@
     local_port: number;
     remote_api_key: string;
   }> = [];
+  let localAiServices: Array<{
+    id: string;
+    name: string;
+    base_url: string;
+    api_key: string;
+    running: boolean;
+    models: string[];
+  }> = [];
+  let scanningLocalAi = false;
+
+  async function scanLocalAiServices() {
+    scanningLocalAi = true;
+    try {
+      localAiServices = await invoke("detect_local_ai_services");
+      const firstRunning = localAiServices.find((s) => s.running && s.id !== "comfyui");
+      if (firstRunning) {
+        feedbackMsg = `Detected ${firstRunning.name} running at ${firstRunning.base_url}`;
+      }
+    } catch (_) {
+    } finally {
+      scanningLocalAi = false;
+    }
+  }
 
   onMount(async () => {
-    const [cfgRes, rtRes, bridgesRes, proxiesRes] = await Promise.allSettled([
+    const [cfgRes, rtRes, bridgesRes, proxiesRes, localRes] = await Promise.allSettled([
       raydropApi.getAiMcpConfig(),
       raydropApi.getAiMcpRuntimeStatus(),
       invoke<typeof localBridges>("get_llm_bridge_status"),
       invoke<typeof peerProxies>("get_peer_llm_proxies"),
+      invoke<typeof localAiServices>("detect_local_ai_services"),
     ]);
     if (bridgesRes.status === "fulfilled") localBridges = bridgesRes.value;
     if (proxiesRes.status === "fulfilled") peerProxies = proxiesRes.value;
+    if (localRes.status === "fulfilled") localAiServices = localRes.value;
     if (rtRes.status === "fulfilled") runtime = rtRes.value;
     if (cfgRes.status === "fulfilled") {
       config = { persona_avatar: "", ...cfgRes.value };
@@ -157,6 +197,20 @@
         config.llm_model = found.provider_id;
       }
       return;
+    }
+    const detectedSvc = localAiServices.find((s) => s.running && s.id === providerKey);
+    if (detectedSvc) {
+      config.llm_base_url = detectedSvc.base_url;
+      if (detectedSvc.api_key) config.llm_api_key = detectedSvc.api_key;
+      if (detectedSvc.models.length > 0) {
+        config.llm_model = detectedSvc.models[0];
+        return;
+      }
+    }
+    if (providerKey === "koboldcpp") {
+      config.llm_api_key = config.llm_api_key || "kobold";
+    } else if (providerKey === "lmstudio") {
+      config.llm_api_key = config.llm_api_key || "lm-studio";
     }
     const preset = PROVIDER_PRESETS[providerKey];
     if (preset && providerKey !== "custom") {
@@ -377,15 +431,26 @@
         <Sparkles class="w-3.5 h-3.5" />
         <span>2. LLM Provider (Common &amp; Custom OpenAI-Compatible)</span>
       </span>
-      <button
-        type="button"
-        disabled={testingLlm}
-        on:click={handleTestLlm}
-        class="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
-      >
-        <RefreshCw class="w-3 h-3 {testingLlm ? 'animate-spin' : ''}" />
-        <span>{testingLlm ? "Testing..." : "Test LLM"}</span>
-      </button>
+      <div class="flex items-center gap-1.5">
+        <button
+          type="button"
+          disabled={scanningLocalAi}
+          on:click={scanLocalAiServices}
+          class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+        >
+          <RefreshCw class="w-3 h-3 {scanningLocalAi ? 'animate-spin' : ''}" />
+          <span>{scanningLocalAi ? "Scanning..." : "Scan Local AI"}</span>
+        </button>
+        <button
+          type="button"
+          disabled={testingLlm}
+          on:click={handleTestLlm}
+          class="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+        >
+          <RefreshCw class="w-3 h-3 {testingLlm ? 'animate-spin' : ''}" />
+          <span>{testingLlm ? "Testing..." : "Test LLM"}</span>
+        </button>
+      </div>
     </div>
 
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -410,6 +475,15 @@
               {#each peerProxies as px}
                 <option value={`peer:${px.id}`}>
                   Peer Bridge: {px.peer_alias} ({px.provider_id}) [:{px.local_port}]
+                </option>
+              {/each}
+            </optgroup>
+          {/if}
+          {#if localAiServices.some((s) => s.running)}
+            <optgroup label="Detected Running Local AI">
+              {#each localAiServices.filter((s) => s.running && s.id !== "comfyui") as svc}
+                <option value={svc.id}>
+                  ● {svc.name} ({svc.models[0] || "ready"})
                 </option>
               {/each}
             </optgroup>
@@ -563,6 +637,7 @@
           <option value="assistant">Professional Assistant</option>
           <option value="friendly">Friendly &amp; Casual</option>
           <option value="concise">Concise Tech</option>
+          <option value="waifu">Waifu Companion</option>
           <option value="custom">Custom Only</option>
         </select>
       </div>

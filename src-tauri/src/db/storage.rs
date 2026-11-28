@@ -508,6 +508,38 @@ fn open_and_migrate_db(db_path: &std::path::Path) -> Result<Connection, String> 
             attachments_json TEXT NOT NULL DEFAULT '[]',
             created_at INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS language_learning_progress (
+            language TEXT PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            cefr_level TEXT NOT NULL DEFAULT 'A1',
+            current_unit INTEGER NOT NULL DEFAULT 1,
+            current_lesson INTEGER NOT NULL DEFAULT 1,
+            xp INTEGER NOT NULL DEFAULT 0,
+            completed_lessons_json TEXT NOT NULL DEFAULT '[]',
+            learned_vocab_json TEXT NOT NULL DEFAULT '[]',
+            notes TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS raybot_projects (
+            name TEXT PRIMARY KEY,
+            path TEXT NOT NULL,
+            tech_stack TEXT NOT NULL DEFAULT '',
+            summary TEXT NOT NULL DEFAULT '',
+            pending_tasks_json TEXT NOT NULL DEFAULT '[]',
+            is_active INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS raybot_project_relations (
+            source_project TEXT NOT NULL,
+            target_project TEXT NOT NULL,
+            relation_type TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (source_project, target_project, relation_type)
+        );
         ",
     )
     .map_err(|e| e.to_string())?;

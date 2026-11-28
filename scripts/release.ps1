@@ -148,11 +148,10 @@ $bodyText = @"
 - **Windows Setup Installer (`.msi`):** \`Raydrop_${ver}_x64_en-US.msi\`
 
 ### Features & Highlights in $tag
-- **Android CI/CD Build Hotfix:** Isolated BitTorrent engine to desktop targets, eliminating OpenSSL cross-compilation errors on Android.
-- **Transfer Dashboard UI Overhaul:** Compact action toolbar and dedicated full-width drag-and-drop zone strip.
-- **Complete English Localization (i18n):** 100% English tutorial and application UI strings.
-- **Official Browser Extension (Manifest V3):** Automatic download interception in Chrome, Edge, Brave, and Opera with in-app 1-click installer.
-- **IDM-Style HTTP Multi-Segment Accelerator & BitTorrent Swarm Engine:** Parallel chunk downloading with zero temporary stitching and embedded BitTorrent swarm downloading.
+- **RayBot Persistent Coding Workspace & Cross-Project Relations:** Configurable projects root (default `~`), persistent SQLite project registry & relation graph (`raybot_projects`, `raybot_project_relations`), Chat UI workspace bar, and 13 scoped `project_*` / `code_*` MCP tools for Chat UI & Telegram Bot.
+- **Direct RayBot Skills, MCP & Language Tutor Skill:** Install Skills & MCP servers directly onto RayBot across any LLM provider, plus a built-in `language-tutor` skill with dynamic CEFR syllabus and persistent per-language SQLite progress.
+- **LLM Bridge CLI Execution Modes & Extra Flags:** Per-provider execution modes (`YOLO`, `Auto-Edit`, `Safe` with read-only prompt guard) across `agy`, `claude`, `codex`, `gemini`, and `opencode`/custom CLIs, plus custom extra flags.
+- **Image Bridge, Local Vision & ComfyUI + Waifu Persona:** Host-side image storage & local path forwarding to CLIs, automatic Local LLM vision routing, ComfyUI image generation in RayBot Chat UI & Telegram Bot, and a **Waifu Companion** persona style.
 "@
 
 # 7. Create or Get GitHub Release

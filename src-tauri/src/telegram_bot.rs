@@ -1,4 +1,4 @@
-use crate::ai_agent::{chat_with_mcp_tools, load_ai_mcp_config};
+use crate::ai_agent::{chat_with_mcp_tools_with_media, load_ai_mcp_config};
 use crate::mcp_server::execute_mcp_tool;
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
@@ -129,6 +129,41 @@ async fn send_telegram_message(client: &reqwest::Client, token: &str, chat_id: i
             .send()
             .await;
     }
+}
+
+async fn send_telegram_photo(
+    client: &reqwest::Client,
+    token: &str,
+    chat_id: i64,
+    image_path: &str,
+) {
+    let Ok(bytes) = std::fs::read(image_path) else {
+        return;
+    };
+    let boundary = format!("----raydropBoundary{}", uuid::Uuid::new_v4().simple());
+    let mut body = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n{chat_id}\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"generated.png\"\r\nContent-Type: image/png\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(&bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let url = format!("https://api.telegram.org/bot{}/sendPhoto", token);
+    let _ = client
+        .post(&url)
+        .header("Content-Type", format!("multipart/form-data; boundary={boundary}"))
+        .body(body)
+        .send()
+        .await;
 }
 
 async fn run_telegram_polling_loop(
@@ -306,12 +341,16 @@ async fn run_telegram_polling_loop(
             });
 
             let history = chat_histories.entry(chat_id).or_default();
-            let ai_res = chat_with_mcp_tools(&app, &state, &cfg, history, text).await;
+            let mut generated_images: Vec<String> = Vec::new();
+            let ai_res = chat_with_mcp_tools_with_media(&app, &state, &cfg, history, text, &mut generated_images).await;
             typing_stop.store(true, Ordering::Relaxed);
 
             match ai_res {
                 Ok(reply) => {
                     send_telegram_message(&client, &token, chat_id, &reply).await;
+                    for img_path in generated_images {
+                        send_telegram_photo(&client, &token, chat_id, &img_path).await;
+                    }
                 }
                 Err(err) => {
                     send_telegram_message(

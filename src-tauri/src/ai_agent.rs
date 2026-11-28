@@ -95,6 +95,7 @@ pub fn build_persona_system_prompt(cfg: &AiMcpConfig) -> String {
     let style_hint = match cfg.persona_preset.as_str() {
         "friendly" => "Use a warm, friendly, and casual conversational tone.",
         "concise" => "Be ultra-concise, direct, and technical. Avoid filler.",
+        "waifu" => "Adopt a warm, expressive, playful, and affectionate anime waifu companion persona. Be supportive, charming, and engaging while still accurately helping with tasks and using tools when needed.",
         "custom" => "",
         _ => "Be polite, clear, and structured like a reliable personal assistant.",
     };
@@ -112,6 +113,32 @@ pub fn build_persona_system_prompt(cfg: &AiMcpConfig) -> String {
         lang_hint,
         cfg.persona_system_prompt.trim()
     )
+}
+
+fn build_persona_system_prompt_with_skills(state: &Arc<AppState>, cfg: &AiMcpConfig) -> String {
+    let mut base = build_persona_system_prompt(cfg);
+    let projects_ctx = crate::project_workspace::build_projects_prompt_context(&state.db);
+    base.push_str(&projects_ctx);
+
+    let enabled_ids = crate::skills::commands::load_raybot_enabled_skill_ids(&state.db);
+    if enabled_ids.is_empty() {
+        return base;
+    }
+
+    let mut lines = Vec::new();
+    for id in enabled_ids {
+        if let Ok(Some(skill)) = crate::skills::storage::get_skill_by_id(&state.db, &id) {
+            lines.push(format!(
+                "- {} (id: `{}`, slug: `{}`): {}",
+                skill.name, skill.id, skill.slug, skill.description
+            ));
+        }
+    }
+    if !lines.is_empty() {
+        base.push_str("\n\nEnabled RayBot Skills (call `skill_read` with the skill id or slug when a task matches):\n");
+        base.push_str(&lines.join("\n"));
+    }
+    base
 }
 
 pub async fn test_llm_connection(cfg: &AiMcpConfig) -> Result<String, String> {
@@ -180,12 +207,24 @@ pub async fn chat_with_mcp_tools(
     history: &mut Vec<Value>,
     user_message: &str,
 ) -> Result<String, String> {
+    let mut ignored = Vec::new();
+    chat_with_mcp_tools_with_media(app, state, cfg, history, user_message, &mut ignored).await
+}
+
+pub async fn chat_with_mcp_tools_with_media(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    cfg: &AiMcpConfig,
+    history: &mut Vec<Value>,
+    user_message: &str,
+    out_images: &mut Vec<String>,
+) -> Result<String, String> {
     if cfg.llm_provider == "anthropic" {
-        chat_anthropic_loop(app, state, cfg, history, user_message).await
+        chat_anthropic_loop(app, state, cfg, history, user_message, out_images).await
     } else if cfg.llm_prompt_tool_mode {
-        chat_prompt_tool_loop(app, state, cfg, history, user_message).await
+        chat_prompt_tool_loop(app, state, cfg, history, user_message, out_images).await
     } else {
-        match chat_openai_compatible_loop(app, state, cfg, history, user_message).await {
+        match chat_openai_compatible_loop(app, state, cfg, history, user_message, out_images).await {
             Ok(res) => Ok(res),
             Err(err)
                 if err.contains("timed out")
@@ -194,7 +233,7 @@ pub async fn chat_with_mcp_tools(
                     || err.contains("HTTP 422") =>
             {
                 // Auto-fallback to Prompt-Based Tool Calling if proxy doesn't support OpenAI `tools`
-                chat_prompt_tool_loop(app, state, cfg, history, user_message).await
+                chat_prompt_tool_loop(app, state, cfg, history, user_message, out_images).await
             }
             Err(err) => Err(err),
         }
@@ -277,12 +316,33 @@ fn extract_prompt_tool_call(text: &str) -> Option<(String, Value)> {
     Some((name, args))
 }
 
+async fn execute_bot_tool_with_media(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    name: &str,
+    args: &Value,
+    out_images: &mut Vec<String>,
+) -> Result<String, String> {
+    let res = execute_bot_tool(app, state, name, args).await?;
+    if name == "generate_image" {
+        if let Ok(val) = serde_json::from_str::<Value>(&res) {
+            if let Some(p) = val.get("image_path").and_then(|v| v.as_str()) {
+                if !p.trim().is_empty() {
+                    out_images.push(p.to_string());
+                }
+            }
+        }
+    }
+    Ok(res)
+}
+
 async fn chat_prompt_tool_loop(
     app: &AppHandle,
     state: &Arc<AppState>,
     cfg: &AiMcpConfig,
     history: &mut Vec<Value>,
     user_message: &str,
+    out_images: &mut Vec<String>,
 ) -> Result<String, String> {
     let base = cfg.llm_base_url.trim().trim_end_matches('/');
     if base.is_empty() || cfg.llm_model.trim().is_empty() {
@@ -310,7 +370,7 @@ async fn chat_prompt_tool_loop(
 
     let system_prompt = format!(
         "{}\n\nYou have access to RayDrop MCP tools:\n{}\n\nWhen you need to call a tool, respond ONLY with:\n<tool_call>{{\"name\":\"tool_name\",\"arguments\":{{...}}}}</tool_call>\nAfter receiving the tool result, answer the user clearly.",
-        build_persona_system_prompt(cfg),
+        build_persona_system_prompt_with_skills(state, cfg),
         tool_specs.join("\n")
     );
 
@@ -362,7 +422,7 @@ async fn chat_prompt_tool_loop(
         history.push(json!({ "role": "assistant", "content": reply_text }));
 
         if let Some((fn_name, args_val)) = extract_prompt_tool_call(&reply_text) {
-            let tool_out = match execute_bot_tool(app, state, &fn_name, &args_val).await {
+            let tool_out = match execute_bot_tool_with_media(app, state, &fn_name, &args_val, out_images).await {
                 Ok(out) => out,
                 Err(e) => format!("Tool error: {}", e),
             };
@@ -396,6 +456,7 @@ async fn chat_openai_compatible_loop(
     cfg: &AiMcpConfig,
     history: &mut Vec<Value>,
     user_message: &str,
+    out_images: &mut Vec<String>,
 ) -> Result<String, String> {
     let base = cfg.llm_base_url.trim().trim_end_matches('/');
     if base.is_empty() || cfg.llm_model.trim().is_empty() {
@@ -409,7 +470,7 @@ async fn chat_openai_compatible_loop(
         history.drain(0..drain);
     }
 
-    let system_prompt = build_persona_system_prompt(cfg);
+    let system_prompt = build_persona_system_prompt_with_skills(state, cfg);
     let tools = to_all_openai_tools(state);
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(20))
@@ -498,7 +559,7 @@ async fn chat_openai_compatible_loop(
                 .unwrap_or("{}");
             let args_val: Value = serde_json::from_str(args_raw).unwrap_or(json!({}));
 
-            let tool_out = match execute_bot_tool(app, state, fn_name, &args_val).await {
+            let tool_out = match execute_bot_tool_with_media(app, state, fn_name, &args_val, out_images).await {
                 Ok(out) => out,
                 Err(e) => format!("Tool error: {}", e),
             };
@@ -520,6 +581,7 @@ async fn chat_anthropic_loop(
     cfg: &AiMcpConfig,
     history: &mut Vec<Value>,
     user_message: &str,
+    out_images: &mut Vec<String>,
 ) -> Result<String, String> {
     let base = cfg.llm_base_url.trim().trim_end_matches('/');
     let url = format!("{}/messages", base);
@@ -530,7 +592,7 @@ async fn chat_anthropic_loop(
         history.drain(0..drain);
     }
 
-    let system_prompt = build_persona_system_prompt(cfg);
+    let system_prompt = build_persona_system_prompt_with_skills(state, cfg);
     let anthropic_tools: Vec<Value> = get_all_bot_tool_definitions(state)
         .into_iter()
         .map(|t| {
@@ -596,7 +658,7 @@ async fn chat_anthropic_loop(
                     let id = block["id"].as_str().unwrap_or("tool_0");
                     let name = block["name"].as_str().unwrap_or("");
                     let input = block.get("input").cloned().unwrap_or(json!({}));
-                    let out = match execute_bot_tool(app, state, name, &input).await {
+                    let out = match execute_bot_tool_with_media(app, state, name, &input, out_images).await {
                         Ok(s) => s,
                         Err(e) => format!("Tool error: {}", e),
                     };
@@ -792,6 +854,24 @@ fn build_attachment_context(attachments: &[RaybotAttachment]) -> (String, Vec<St
                 notes.push(format!("[Attached Image: {}]", label));
                 if !att.data_url.trim().is_empty() {
                     image_urls.push(att.data_url.clone());
+                } else if !att.path.trim().is_empty() {
+                    if let Ok(bytes) = std::fs::read(att.path.trim()) {
+                        if bytes.len() <= 5 * 1024 * 1024 {
+                            use base64::Engine as _;
+                            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                            let lower = att.path.to_lowercase();
+                            let mime = if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+                                "image/jpeg"
+                            } else if lower.ends_with(".webp") {
+                                "image/webp"
+                            } else if lower.ends_with(".gif") {
+                                "image/gif"
+                            } else {
+                                "image/png"
+                            };
+                            image_urls.push(format!("data:{};base64,{}", mime, b64));
+                        }
+                    }
                 }
             }
             "voice" => {
@@ -944,6 +1024,7 @@ pub async fn raybot_send_message(
     };
 
     // If images are attached and using OpenAI-compatible vision mode, try multimodal first
+    let mut generated_images: Vec<String> = Vec::new();
     let reply = if !image_urls.is_empty() && cfg.llm_provider != "anthropic" && !cfg.llm_prompt_tool_mode {
         let mut parts = vec![json!({ "type": "text", "text": combined_prompt })];
         for img in &image_urls {
@@ -963,7 +1044,7 @@ pub async fn raybot_send_message(
         if !cfg.llm_api_key.trim().is_empty() {
             req = req.bearer_auth(cfg.llm_api_key.trim());
         }
-        let mut msgs = vec![json!({ "role": "system", "content": build_persona_system_prompt(&cfg) })];
+        let mut msgs = vec![json!({ "role": "system", "content": build_persona_system_prompt_with_skills(state.inner(), &cfg) })];
         msgs.extend(vision_history);
         let vision_res = req
             .json(&json!({
@@ -993,18 +1074,39 @@ pub async fn raybot_send_message(
         }
         match handled_vision {
             Some(r) => r,
-            None => chat_with_mcp_tools(&app, state.inner(), &cfg, &mut history, &combined_prompt).await?,
+            None => chat_with_mcp_tools_with_media(&app, state.inner(), &cfg, &mut history, &combined_prompt, &mut generated_images).await?,
         }
     } else {
-        chat_with_mcp_tools(&app, state.inner(), &cfg, &mut history, &combined_prompt).await?
+        chat_with_mcp_tools_with_media(&app, state.inner(), &cfg, &mut history, &combined_prompt, &mut generated_images).await?
     };
+
+    let mut assistant_atts = Vec::new();
+    for img_path in generated_images {
+        if let Ok(bytes) = std::fs::read(&img_path) {
+            use base64::Engine as _;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            let fname = std::path::Path::new(&img_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("generated.png")
+                .to_string();
+            assistant_atts.push(RaybotAttachment {
+                kind: "image".to_string(),
+                name: fname,
+                path: img_path,
+                mime: "image/png".to_string(),
+                data_url: format!("data:image/png;base64,{}", b64),
+                size_bytes: bytes.len() as u64,
+            });
+        }
+    }
 
     let assistant_msg = RaybotMessage {
         id: format!("rbm_{}", uuid::Uuid::new_v4().simple()),
         session_id: session_id.clone(),
         role: "assistant".to_string(),
         content: reply,
-        attachments: Vec::new(),
+        attachments: assistant_atts,
         created_at: now_unix_secs(),
     };
     insert_raybot_message(&state.db, &assistant_msg)?;

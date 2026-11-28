@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
   import {
     Sparkles,
+    Bot,
     Search,
     FolderOpen,
     FileArchive,
@@ -106,6 +108,29 @@
   let newPresetDesc = "";
   let newPresetSkillIds: string[] = [];
 
+  let raybotEnabledIds: string[] = [];
+
+  async function loadRaybotSkills() {
+    try {
+      raybotEnabledIds = await invoke<string[]>("skills_get_raybot_enabled");
+    } catch (_) {}
+  }
+
+  async function toggleRaybotSkill(skillId: string) {
+    busyKey = `raybot:${skillId}`;
+    try {
+      const nextEnabled = !raybotEnabledIds.includes(skillId);
+      raybotEnabledIds = await invoke<string[]>("skills_toggle_raybot", {
+        skillId,
+        enabled: nextEnabled,
+      });
+    } catch (e) {
+      errorBanner = String(e);
+    } finally {
+      busyKey = null;
+    }
+  }
+
   onMount(async () => {
     loading = true;
     try {
@@ -117,6 +142,7 @@
         loadInstalled(),
         loadPresets(),
         loadSettings(),
+        loadRaybotSkills(),
       ]);
     } catch (e) {
       errorBanner = String(e);
@@ -757,6 +783,23 @@
                     <span>Inspect</span>
                   </button>
                   {#if skill.local_package_path}
+                    {@const rbOn = raybotEnabledIds.includes(skill.id)}
+                    <button
+                      type="button"
+                      disabled={busyKey === `raybot:${skill.id}`}
+                      on:click={() => toggleRaybotSkill(skill.id)}
+                      title={rbOn ? "Disable skill for RayBot" : "Enable skill for RayBot"}
+                      class="px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition active:scale-[0.97] disabled:opacity-50 cursor-pointer {rbOn
+                        ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}"
+                    >
+                      {#if busyKey === `raybot:${skill.id}`}
+                        <Loader2 class="w-3 h-3 animate-spin" />
+                      {:else}
+                        <Bot class="w-3 h-3" />
+                      {/if}
+                      <span>RayBot</span>
+                    </button>
                     <button
                       type="button"
                       on:click={() => (shareSkill = skill)}

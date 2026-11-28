@@ -22,6 +22,9 @@
     Sparkles,
     FileText,
     MessageSquare,
+    FolderOpen,
+    RefreshCw,
+    FolderGit2,
   } from "lucide-svelte";
 
   interface RaybotAttachment {
@@ -54,6 +57,86 @@
     user_message: RaybotMessage;
     assistant_message: RaybotMessage;
     session: RaybotSession;
+  }
+
+  interface ProjectEntry {
+    name: string;
+    path: string;
+    tech_stack: string;
+    summary: string;
+    pending_tasks: string[];
+    is_active: boolean;
+    updated_at: number;
+  }
+
+  interface ProjectsOverview {
+    root_dir: string;
+    active_project: string | null;
+    projects: ProjectEntry[];
+    relations: Array<{
+      source_project: string;
+      target_project: string;
+      relation_type: string;
+      description: string;
+    }>;
+  }
+
+  let projectsOverview: ProjectsOverview | null = null;
+  let scanningProjects = false;
+
+  async function loadProjectsOverview() {
+    try {
+      projectsOverview = await invoke<ProjectsOverview>("raybot_get_projects_overview");
+    } catch (e) {
+      console.error("Failed to load projects overview:", e);
+    }
+  }
+
+  async function pickProjectsRoot() {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        defaultPath: projectsOverview?.root_dir || undefined,
+      });
+      if (typeof selected === "string" && selected.trim()) {
+        scanningProjects = true;
+        projectsOverview = await invoke<ProjectsOverview>("raybot_set_projects_root", {
+          rootDir: selected,
+        });
+      }
+    } catch (e) {
+      errorMsg = String(e);
+    } finally {
+      scanningProjects = false;
+    }
+  }
+
+  async function scanProjects() {
+    scanningProjects = true;
+    try {
+      projectsOverview = await invoke<ProjectsOverview>("raybot_scan_projects");
+    } catch (e) {
+      errorMsg = String(e);
+    } finally {
+      scanningProjects = false;
+    }
+  }
+
+  async function selectActiveProject(name: string) {
+    if (!name) return;
+    try {
+      projectsOverview = await invoke<ProjectsOverview>("raybot_select_project", { name });
+    } catch (e) {
+      errorMsg = String(e);
+    }
+  }
+
+  function handleProjectSelectChange(e: Event) {
+    const target = e.currentTarget as HTMLSelectElement | null;
+    if (target?.value) {
+      void selectActiveProject(target.value);
+    }
   }
 
   let sessions: RaybotSession[] = [];
@@ -101,6 +184,9 @@
   ];
 
   async function loadSessions(selectFirstIfNone = true) {
+    if (!projectsOverview) {
+      void loadProjectsOverview();
+    }
     loadingSessions = true;
     try {
       sessions = await invoke<RaybotSession[]>("raybot_list_sessions");
@@ -572,7 +658,7 @@
   <!-- Main Chat Area -->
   <div class="flex-1 flex flex-col min-w-0">
     <!-- Top Header -->
-    <div class="px-5 py-3 border-b border-slate-800/80 bg-slate-900/30 flex items-center justify-between gap-3">
+    <div class="px-5 py-3 border-b border-slate-800/80 bg-slate-900/30 flex flex-wrap items-center justify-between gap-3">
       <div class="min-w-0">
         <h2 class="text-sm font-bold text-white truncate">
           {activeSession ? activeSession.title : "RayBot Assistant"}
@@ -584,6 +670,53 @@
           <span>•</span>
           <span>Attach files, paste images (Ctrl+V), or record voice</span>
         </div>
+      </div>
+
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/80 border border-slate-800 text-xs">
+          <FolderGit2 class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+          <select
+            value={projectsOverview?.active_project || ""}
+            on:change={handleProjectSelectChange}
+            class="bg-transparent text-slate-200 text-xs outline-none cursor-pointer max-w-[160px]"
+            title={projectsOverview ? `Root: ${projectsOverview.root_dir}` : "Coding Project"}
+          >
+            <option value="" class="bg-slate-900 text-slate-400">
+              {projectsOverview?.projects.length ? "Select project..." : "No projects scanned"}
+            </option>
+            {#each projectsOverview?.projects || [] as p}
+              <option value={p.name} class="bg-slate-900 text-slate-100">
+                {p.name}{p.tech_stack ? ` (${p.tech_stack})` : ""}
+              </option>
+            {/each}
+          </select>
+        </div>
+
+        <button
+          type="button"
+          on:click={pickProjectsRoot}
+          disabled={scanningProjects}
+          class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs transition active:scale-[0.97] disabled:opacity-50 cursor-pointer"
+          title={projectsOverview ? `Projects Root: ${projectsOverview.root_dir}` : "Set Projects Root Folder"}
+        >
+          <FolderOpen class="w-3.5 h-3.5 text-amber-400" />
+          <span>Root</span>
+        </button>
+
+        <button
+          type="button"
+          on:click={scanProjects}
+          disabled={scanningProjects}
+          class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs transition active:scale-[0.97] disabled:opacity-50 cursor-pointer"
+          title="Scan Projects Root"
+        >
+          {#if scanningProjects}
+            <Loader2 class="w-3.5 h-3.5 animate-spin text-cyan-400" />
+          {:else}
+            <RefreshCw class="w-3.5 h-3.5 text-cyan-400" />
+          {/if}
+          <span>Scan</span>
+        </button>
       </div>
     </div>
 

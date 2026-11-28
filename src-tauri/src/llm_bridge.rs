@@ -13,6 +13,10 @@ use tracing::{info, warn};
 
 const SETTINGS_KEY: &str = "llm_bridge_providers";
 
+fn default_execution_mode() -> String {
+    "yolo".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmBridgeProvider {
     pub id: String,
@@ -26,6 +30,10 @@ pub struct LlmBridgeProvider {
     pub supports_image_gen: bool,
     #[serde(default)]
     pub is_public: bool,
+    #[serde(default = "default_execution_mode")]
+    pub execution_mode: String,
+    #[serde(default)]
+    pub extra_args: String,
     pub cli_installed: bool,
     pub running: bool,
     pub last_error: Option<String>,
@@ -113,6 +121,8 @@ fn default_providers() -> Vec<LlmBridgeProvider> {
             ],
             supports_image_gen: true,
             is_public: false,
+            execution_mode: default_execution_mode(),
+            extra_args: String::new(),
             cli_installed: false,
             running: false,
             last_error: None,
@@ -134,6 +144,8 @@ fn default_providers() -> Vec<LlmBridgeProvider> {
             ],
             supports_image_gen: false,
             is_public: false,
+            execution_mode: default_execution_mode(),
+            extra_args: String::new(),
             cli_installed: false,
             running: false,
             last_error: None,
@@ -154,6 +166,8 @@ fn default_providers() -> Vec<LlmBridgeProvider> {
             ],
             supports_image_gen: false,
             is_public: false,
+            execution_mode: default_execution_mode(),
+            extra_args: String::new(),
             cli_installed: false,
             running: false,
             last_error: None,
@@ -173,6 +187,8 @@ fn default_providers() -> Vec<LlmBridgeProvider> {
             ],
             supports_image_gen: false,
             is_public: false,
+            execution_mode: default_execution_mode(),
+            extra_args: String::new(),
             cli_installed: false,
             running: false,
             last_error: None,
@@ -188,6 +204,8 @@ fn default_providers() -> Vec<LlmBridgeProvider> {
             available_models: vec!["default".to_string()],
             supports_image_gen: false,
             is_public: false,
+            execution_mode: default_execution_mode(),
+            extra_args: String::new(),
             cli_installed: false,
             running: false,
             last_error: None,
@@ -234,6 +252,7 @@ fn build_hidden_command(program: &str, args: &[&str]) -> std::process::Command {
             for a in args {
                 cmd.arg(a);
             }
+            cmd.stdin(std::process::Stdio::null());
             cmd.creation_flags(CREATE_NO_WINDOW);
             cmd
         } else {
@@ -241,6 +260,7 @@ fn build_hidden_command(program: &str, args: &[&str]) -> std::process::Command {
             for a in args {
                 cmd.arg(a);
             }
+            cmd.stdin(std::process::Stdio::null());
             cmd.creation_flags(CREATE_NO_WINDOW);
             cmd
         }
@@ -251,6 +271,7 @@ fn build_hidden_command(program: &str, args: &[&str]) -> std::process::Command {
         for a in args {
             cmd.arg(a);
         }
+        cmd.stdin(std::process::Stdio::null());
         cmd
     }
 }
@@ -676,12 +697,12 @@ Connection: close\r\n\r\n";
         return Ok(());
     }
 
-    // Read body for POST requests (up to 4 MB)
-    if content_length > 4 * 1024 * 1024 {
+    // Read body for POST requests (up to 16 MB)
+    if content_length > 16 * 1024 * 1024 {
         send_http_json(
             &mut writer_half,
             "413 Payload Too Large",
-            &openai_error("Request body exceeds 4 MB limit", "invalid_request_error", "payload_too_large"),
+            &openai_error("Request body exceeds 16 MB limit", "invalid_request_error", "payload_too_large"),
         )
         .await;
         return Ok(());
@@ -721,9 +742,9 @@ Connection: close\r\n\r\n";
             return Ok(());
         }
 
-        if !provider.supports_image_gen {
+        if !provider.supports_image_gen && !is_comfyui_running().await {
             let msg = format!(
-                "{} does not support image generation. Use AGY (Antigravity) bridge for image generation.",
+                "{} does not support image generation (and local ComfyUI at 127.0.0.1:8188 is not running). Use AGY bridge or start ComfyUI.",
                 provider.name
             );
             emit_bridge_log(
@@ -755,11 +776,15 @@ Connection: close\r\n\r\n";
         let prompt_clone = prompt.clone();
         let model_clone = model.clone();
 
-        let img_res = tokio::task::spawn_blocking(move || {
-            run_cli_image_generation(&prov_clone, &prompt_clone, &model_clone)
-        })
-        .await
-        .map_err(|e| format!("Image task failed: {e}"))?;
+        let img_res = if is_comfyui_running().await {
+            run_comfyui_image_generation(&prompt_clone).await
+        } else {
+            tokio::task::spawn_blocking(move || {
+                run_cli_image_generation(&prov_clone, &prompt_clone, &model_clone)
+            })
+            .await
+            .map_err(|e| format!("Image task failed: {e}"))?
+        };
 
         match img_res {
             Ok(b64_png) => {
@@ -1025,6 +1050,262 @@ Connection: close\r\n\r\n: keep-alive\n\n";
     Ok(())
 }
 
+fn save_vision_image_to_temp(raw_url: &str) -> Option<String> {
+    let trimmed = raw_url.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let dir = std::env::temp_dir().join("raydrop_llm_images");
+    let _ = std::fs::create_dir_all(&dir);
+
+    if let Some(rest) = trimmed.strip_prefix("data:image/") {
+        let mut parts = rest.splitn(2, ";base64,");
+        let ext_raw = parts.next().unwrap_or("png").trim();
+        let b64_data = parts.next()?.trim();
+        let ext = match ext_raw {
+            "jpeg" | "jpg" => "jpg",
+            "webp" => "webp",
+            "gif" => "gif",
+            _ => "png",
+        };
+        let bytes = base64::engine::general_purpose::STANDARD.decode(b64_data).ok()?;
+        let path = dir.join(format!("vision_{}.{}", uuid::Uuid::new_v4().simple(), ext));
+        std::fs::write(&path, &bytes).ok()?;
+        return Some(path.to_string_lossy().to_string());
+    }
+    None
+}
+
+async fn is_comfyui_running() -> bool {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(800))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    client
+        .get("http://127.0.0.1:8188/system_stats")
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
+async fn run_comfyui_image_generation(prompt: &str) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let obj_info: Value = client
+        .get("http://127.0.0.1:8188/object_info/CheckpointLoaderSimple")
+        .send()
+        .await
+        .map_err(|e| format!("ComfyUI object_info failed: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("ComfyUI object_info parse failed: {e}"))?;
+
+    let ckpt = obj_info
+        .pointer("/CheckpointLoaderSimple/input/required/ckpt_name/0/0")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "No checkpoints found in ComfyUI".to_string())?
+        .to_string();
+
+    let seed: u64 = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+        % 2_147_483_647) as u64;
+
+    let workflow = json!({
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": seed,
+                "steps": 20,
+                "cfg": 7.0,
+                "sampler_name": "euler_ancestral",
+                "scheduler": "normal",
+                "denoise": 1.0,
+                "model": ["4", 0],
+                "positive": ["6", 0],
+                "negative": ["7", 0],
+                "latent_image": ["5", 0]
+            }
+        },
+        "4": {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": { "ckpt_name": ckpt }
+        },
+        "5": {
+            "class_type": "EmptyLatentImage",
+            "inputs": { "width": 768, "height": 768, "batch_size": 1 }
+        },
+        "6": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": prompt, "clip": ["4", 1] }
+        },
+        "7": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "lowres, blurry, bad anatomy, worst quality", "clip": ["4", 1] }
+        },
+        "8": {
+            "class_type": "VAEDecode",
+            "inputs": { "samples": ["3", 0], "vae": ["4", 2] }
+        },
+        "9": {
+            "class_type": "SaveImage",
+            "inputs": { "filename_prefix": "raydrop", "images": ["8", 0] }
+        }
+    });
+
+    let queue_resp: Value = client
+        .post("http://127.0.0.1:8188/prompt")
+        .json(&json!({ "prompt": workflow }))
+        .send()
+        .await
+        .map_err(|e| format!("ComfyUI prompt failed: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("ComfyUI prompt parse failed: {e}"))?;
+
+    let prompt_id = queue_resp
+        .get("prompt_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("ComfyUI did not return prompt_id: {}", queue_resp))?
+        .to_string();
+
+    for _ in 0..90 {
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        let Ok(hist_resp) = client
+            .get(format!("http://127.0.0.1:8188/history/{}", prompt_id))
+            .send()
+            .await
+        else {
+            continue;
+        };
+        let Ok(hist_json) = hist_resp.json::<Value>().await else {
+            continue;
+        };
+        if let Some(img) = hist_json.pointer(&format!("/{}/outputs/9/images/0", prompt_id)) {
+            let filename = img.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+            let subfolder = img.get("subfolder").and_then(|v| v.as_str()).unwrap_or("");
+            let img_type = img.get("type").and_then(|v| v.as_str()).unwrap_or("output");
+            if !filename.is_empty() {
+                let bytes = client
+                    .get("http://127.0.0.1:8188/view")
+                    .query(&[("filename", filename), ("subfolder", subfolder), ("type", img_type)])
+                    .send()
+                    .await
+                    .map_err(|e| format!("ComfyUI view failed: {e}"))?
+                    .bytes()
+                    .await
+                    .map_err(|e| format!("ComfyUI view bytes failed: {e}"))?;
+                return Ok(base64::engine::general_purpose::STANDARD.encode(&bytes));
+            }
+        }
+    }
+
+    Err("ComfyUI image generation timed out".to_string())
+}
+
+pub async fn generate_image_via_bridge(
+    state: &Arc<crate::state::AppState>,
+    prompt: &str,
+) -> Result<String, String> {
+    if is_comfyui_running().await {
+        return run_comfyui_image_generation(prompt).await;
+    }
+
+    let prov_opt = {
+        let guard = state.llm_bridge.providers.lock().map_err(|e| e.to_string())?;
+        guard
+            .iter()
+            .find(|p| p.supports_image_gen && p.cli_installed && p.enabled)
+            .cloned()
+            .or_else(|| {
+                guard
+                    .iter()
+                    .find(|p| p.supports_image_gen && p.cli_installed)
+                    .cloned()
+            })
+    };
+
+    let Some(prov) = prov_opt else {
+        return Err("No image generator available. Start ComfyUI at 127.0.0.1:8188 or install/enable AGY CLI Bridge.".to_string());
+    };
+
+    let prompt_c = prompt.to_string();
+    let model_c = prov.default_model.clone();
+    tokio::task::spawn_blocking(move || run_cli_image_generation(&prov, &prompt_c, &model_c))
+        .await
+        .map_err(|e| format!("Image generation task failed: {e}"))?
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAiServiceInfo {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub running: bool,
+    pub models: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn detect_local_ai_services() -> Result<Vec<LocalAiServiceInfo>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(1200))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let candidates = [
+        ("ollama", "Ollama", "http://127.0.0.1:11434/v1", ""),
+        ("lmstudio", "LM Studio", "http://127.0.0.1:1234/v1", "lm-studio"),
+        ("koboldcpp", "KoboldCpp (Uncensored / Local)", "http://127.0.0.1:5001/v1", "kobold"),
+        ("llamacpp", "llama.cpp / LocalAI", "http://127.0.0.1:8080/v1", ""),
+    ];
+
+    let mut out = Vec::new();
+    for (id, name, base_url, api_key) in candidates {
+        let mut running = false;
+        let mut models = Vec::new();
+        if let Ok(resp) = client.get(format!("{}/models", base_url)).send().await {
+            if resp.status().is_success() {
+                running = true;
+                if let Ok(val) = resp.json::<Value>().await {
+                    if let Some(arr) = val.get("data").and_then(|d| d.as_array()) {
+                        for m in arr {
+                            if let Some(mid) = m.get("id").and_then(|v| v.as_str()) {
+                                models.push(mid.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out.push(LocalAiServiceInfo {
+            id: id.to_string(),
+            name: name.to_string(),
+            base_url: base_url.to_string(),
+            api_key: api_key.to_string(),
+            running,
+            models,
+        });
+    }
+
+    let comfy_running = is_comfyui_running().await;
+    out.push(LocalAiServiceInfo {
+        id: "comfyui".to_string(),
+        name: "ComfyUI (Image Generation)".to_string(),
+        base_url: "http://127.0.0.1:8188".to_string(),
+        api_key: String::new(),
+        running: comfy_running,
+        models: Vec::new(),
+    });
+
+    Ok(out)
+}
+
 fn build_cli_prompt(messages: &[Value], tools: Option<&[Value]>, has_tools: bool) -> String {
     let mut prompt = String::new();
     for msg in messages {
@@ -1039,7 +1320,19 @@ fn build_cli_prompt(messages: &[Value], tools: Option<&[Value]>, has_tools: bool
                     if ptype == "text" {
                         p.get("text").and_then(|v| v.as_str()).map(|s| s.to_string())
                     } else if ptype == "image_url" {
-                        Some("[Attached Image]".to_string())
+                        let raw_url = p
+                            .pointer("/image_url/url")
+                            .and_then(|v| v.as_str())
+                            .or_else(|| p.get("image_url").and_then(|v| v.as_str()))
+                            .unwrap_or("");
+                        if let Some(saved_path) = save_vision_image_to_temp(raw_url) {
+                            Some(format!(
+                                "[Attached Image File: {} — read/inspect this local image file directly to answer the user]",
+                                saved_path
+                            ))
+                        } else {
+                            Some("[Attached Image]".to_string())
+                        }
                     } else {
                         None
                     }
@@ -1165,6 +1458,29 @@ fn parse_tool_calls_from_response(response_text: &str) -> Option<Vec<Value>> {
     None
 }
 
+fn split_extra_args(raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    for ch in raw.chars() {
+        match quote {
+            Some(q) if ch == q => quote = None,
+            Some(_) => current.push(ch),
+            None if ch == '"' || ch == '\'' => quote = Some(ch),
+            None if ch.is_whitespace() => {
+                if !current.is_empty() {
+                    out.push(std::mem::take(&mut current));
+                }
+            }
+            None => current.push(ch),
+        }
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+    out
+}
+
 fn run_cli_prompt(
     provider: &LlmBridgeProvider,
     prompt: &str,
@@ -1177,12 +1493,30 @@ fn run_cli_prompt(
         ));
     }
 
+    let mode = provider.execution_mode.trim().to_lowercase();
+    let mode = match mode.as_str() {
+        "auto" | "safe" | "yolo" => mode.as_str(),
+        _ => "yolo",
+    };
+
+    let effective_prompt = if mode == "safe" {
+        format!(
+            "[SAFE / READ-ONLY MODE: Do not modify files or execute mutating shell commands. Answer, analyze, or provide code/diff suggestions in text only.]\n\n{}",
+            prompt
+        )
+    } else {
+        prompt.to_string()
+    };
+
     let mut args: Vec<String> = Vec::new();
     match provider.id.as_str() {
         "agy" => {
             args.push("-p".to_string());
-            args.push(prompt.to_string());
-            args.push("--dangerously-skip-permissions".to_string());
+            args.push(effective_prompt.clone());
+            args.push("--disable-slash-commands".to_string());
+            if mode == "yolo" {
+                args.push("--dangerously-skip-permissions".to_string());
+            }
             if !model.is_empty() {
                 args.push("--model".to_string());
                 args.push(model.to_string());
@@ -1190,10 +1524,21 @@ fn run_cli_prompt(
         }
         "claude" => {
             args.push("-p".to_string());
-            args.push(prompt.to_string());
+            args.push(effective_prompt.clone());
             args.push("--output-format".to_string());
             args.push("text".to_string());
-            args.push("--dangerously-skip-permissions".to_string());
+            match mode {
+                "yolo" => args.push("--dangerously-skip-permissions".to_string()),
+                "auto" => {
+                    args.push("--permission-mode".to_string());
+                    args.push("acceptEdits".to_string());
+                }
+                "safe" => {
+                    args.push("--permission-mode".to_string());
+                    args.push("plan".to_string());
+                }
+                _ => {}
+            }
             if !model.is_empty() {
                 args.push("--model".to_string());
                 args.push(model.to_string());
@@ -1201,15 +1546,32 @@ fn run_cli_prompt(
         }
         "codex" => {
             args.push("exec".to_string());
+            match mode {
+                "yolo" => args.push("--dangerously-bypass-approvals-and-sandbox".to_string()),
+                "auto" => args.push("--full-auto".to_string()),
+                "safe" => {
+                    args.push("--sandbox".to_string());
+                    args.push("read-only".to_string());
+                }
+                _ => {}
+            }
             if !model.is_empty() {
                 args.push("--model".to_string());
                 args.push(model.to_string());
             }
-            args.push(prompt.to_string());
+            args.push(effective_prompt.clone());
         }
         "gemini" => {
             args.push("-p".to_string());
-            args.push(prompt.to_string());
+            args.push(effective_prompt.clone());
+            match mode {
+                "yolo" => args.push("--yolo".to_string()),
+                "auto" => {
+                    args.push("--approval-mode".to_string());
+                    args.push("auto_edit".to_string());
+                }
+                _ => {}
+            }
             if !model.is_empty() {
                 args.push("-m".to_string());
                 args.push(model.to_string());
@@ -1217,12 +1579,16 @@ fn run_cli_prompt(
         }
         _ => {
             args.push("-p".to_string());
-            args.push(prompt.to_string());
+            args.push(effective_prompt.clone());
             if !model.is_empty() && model != "default" {
                 args.push("--model".to_string());
                 args.push(model.to_string());
             }
         }
+    }
+
+    for extra in split_extra_args(&provider.extra_args) {
+        args.push(extra);
     }
 
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
@@ -1256,6 +1622,12 @@ fn run_cli_image_generation(
     prompt: &str,
     model: &str,
 ) -> Result<String, String> {
+    if provider.execution_mode.trim().eq_ignore_ascii_case("safe") {
+        return Err(
+            "Image generation requires YOLO or Auto-Edit execution mode (provider is currently in Safe/Read-Only mode)."
+                .to_string(),
+        );
+    }
     let tmp_dir: PathBuf = std::env::temp_dir().join(format!(
         "raydrop_img_{}_{}",
         provider.id,
@@ -1375,6 +1747,10 @@ pub struct UpdateLlmBridgeProviderInput {
     pub cli_command: String,
     #[serde(default)]
     pub is_public: bool,
+    #[serde(default)]
+    pub execution_mode: Option<String>,
+    #[serde(default)]
+    pub extra_args: Option<String>,
 }
 
 #[tauri::command]
@@ -1405,6 +1781,16 @@ pub async fn update_llm_bridge_provider(
         target.default_model = input.default_model.trim().to_string();
         target.cli_command = input.cli_command.trim().to_string();
         target.is_public = input.is_public;
+        if let Some(mode) = input.execution_mode {
+            let norm = mode.trim().to_lowercase();
+            target.execution_mode = match norm.as_str() {
+                "yolo" | "auto" | "safe" => norm,
+                _ => "yolo".to_string(),
+            };
+        }
+        if let Some(extra) = input.extra_args {
+            target.extra_args = extra.trim().to_string();
+        }
         target.last_error = None;
         if !target.default_model.is_empty()
             && !target.available_models.contains(&target.default_model)

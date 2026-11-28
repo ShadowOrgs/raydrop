@@ -199,6 +199,213 @@ pub fn get_mcp_tool_definitions() -> Vec<Value> {
             "inputSchema": { "type": "object", "properties": {} }
         }),
         json!({
+            "name": "generate_image",
+            "description": "Generate an image from a text prompt using local ComfyUI (if running) or RayDrop AGY CLI Bridge, and return the saved image file path.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "prompt": { "type": "string", "description": "Detailed image generation prompt" }
+                },
+                "required": ["prompt"]
+            }
+        }),
+        json!({
+            "name": "skill_read",
+            "description": "Read the full SKILL.md instructions for an enabled RayBot skill by its id or slug.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "skill_id_or_slug": { "type": "string", "description": "Skill id or slug from the Enabled RayBot Skills list" }
+                },
+                "required": ["skill_id_or_slug"]
+            }
+        }),
+        json!({
+            "name": "language_tutor_list_languages",
+            "description": "List commonly learned languages supported by the Language Learning Buddy (English, Japanese, Korean, Russian, German, Indonesian, Mandarin, Spanish, French, Arabic) along with the user's saved progress summary.",
+            "inputSchema": { "type": "object", "properties": {} }
+        }),
+        json!({
+            "name": "language_tutor_get_progress",
+            "description": "Get persistent learning progress and the current dynamic syllabus lesson (story hook, grammar focus, target vocab, goal) for a specific language.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "language": { "type": "string", "description": "Language key or name, e.g. english, japanese, korean, russian, german, indonesian, mandarin, spanish, french, arabic" }
+                },
+                "required": ["language"]
+            }
+        }),
+        json!({
+            "name": "language_tutor_update_progress",
+            "description": "Save persistent language learning progress (XP, learned vocabulary, notes, CEFR level, or advance to the next dynamic lesson) for a specific language.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "language": { "type": "string", "description": "Target language key, e.g. english, japanese, korean, russian, german, indonesian" },
+                    "advance_lesson": { "type": "boolean", "description": "Set true when the user completes the current lesson goal to unlock the next lesson" },
+                    "add_vocab": { "type": "array", "items": { "type": "string" }, "description": "Newly practiced words/phrases to save" },
+                    "xp_earned": { "type": "integer", "description": "XP points earned in this exchange (e.g. 10-30)" },
+                    "cefr_level": { "type": "string", "description": "Optional CEFR level update (A1, A2, B1, B2, C1)" },
+                    "notes": { "type": "string", "description": "Optional tutor notes on strengths or areas to reinforce" }
+                },
+                "required": ["language"]
+            }
+        }),
+        json!({
+            "name": "project_get_root",
+            "description": "Get the configured projects root directory (defaults to user home), active project, and registered projects count.",
+            "inputSchema": { "type": "object", "properties": {} }
+        }),
+        json!({
+            "name": "project_set_root",
+            "description": "Set the root workspace folder where coding projects live (e.g. 'C:\\Users\\user\\projects' or '~'), and scan it for projects.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "root_dir": { "type": "string", "description": "Absolute path or '~' path to the projects root directory" }
+                },
+                "required": ["root_dir"]
+            }
+        }),
+        json!({
+            "name": "project_scan",
+            "description": "Scan the projects root directory (or a specified root_dir) to discover and register projects and their tech stacks persistently.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "root_dir": { "type": "string", "description": "Optional new root directory to set before scanning" }
+                }
+            }
+        }),
+        json!({
+            "name": "project_list",
+            "description": "List all persistently registered projects, the currently active project, and all cross-project relations.",
+            "inputSchema": { "type": "object", "properties": {} }
+        }),
+        json!({
+            "name": "project_select",
+            "description": "Select the active coding project by registered name or directory path.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": { "type": "string", "description": "Project name (e.g. 'raydrop') or directory path" }
+                },
+                "required": ["project"]
+            }
+        }),
+        json!({
+            "name": "project_add_relation",
+            "description": "Save a persistent relationship between two projects (e.g. 'raydrop-web' consumes_api 'raydrop-server', or 'waifu-on-telegram' inspired 'raydrop').",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source_project": { "type": "string", "description": "Source project name" },
+                    "target_project": { "type": "string", "description": "Target project name" },
+                    "relation_type": { "type": "string", "description": "Relationship type (e.g. depends_on, consumes_api, shares_schema, forks, deploys_with)" },
+                    "description": { "type": "string", "description": "Short explanation of how the two projects relate" }
+                },
+                "required": ["source_project", "target_project", "relation_type"]
+            }
+        }),
+        json!({
+            "name": "project_save_memory",
+            "description": "Persistently save an architecture summary and/or pending tasks for a project so RayBot remembers it across conversations.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": { "type": "string", "description": "Project name (defaults to active project)" },
+                    "summary": { "type": "string", "description": "Concise architecture/purpose summary" },
+                    "pending_tasks": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "List of pending tasks or TODOs for this project"
+                    }
+                }
+            }
+        }),
+        json!({
+            "name": "code_list_files",
+            "description": "List files inside a project directory (skipping .git, node_modules, target, dist, __pycache__).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": { "type": "string", "description": "Optional project name (defaults to active project)" },
+                    "subdir": { "type": "string", "description": "Optional subdirectory relative to project root" },
+                    "max_entries": { "type": "integer", "description": "Maximum files to return (default 200, max 500)" }
+                }
+            }
+        }),
+        json!({
+            "name": "code_search",
+            "description": "Search for a text pattern across source files in a project.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Substring to search for" },
+                    "project": { "type": "string", "description": "Optional project name (defaults to active project)" },
+                    "subdir": { "type": "string", "description": "Optional subdirectory relative to project root" },
+                    "case_sensitive": { "type": "boolean", "description": "Case-sensitive search (default false)" },
+                    "max_matches": { "type": "integer", "description": "Maximum matches to return (default 50, max 150)" }
+                },
+                "required": ["query"]
+            }
+        }),
+        json!({
+            "name": "code_read_file",
+            "description": "Read a text file inside a project with line numbers.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "File path relative to project root (or absolute inside project)" },
+                    "project": { "type": "string", "description": "Optional project name (defaults to active project)" },
+                    "start_line": { "type": "integer", "description": "1-indexed start line (default 1)" },
+                    "end_line": { "type": "integer", "description": "1-indexed end line (default start_line + 249)" }
+                },
+                "required": ["path"]
+            }
+        }),
+        json!({
+            "name": "code_write_file",
+            "description": "Create or overwrite a file inside a project directory.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "File path relative to project root" },
+                    "content": { "type": "string", "description": "Full file content to write" },
+                    "project": { "type": "string", "description": "Optional project name (defaults to active project)" }
+                },
+                "required": ["path", "content"]
+            }
+        }),
+        json!({
+            "name": "code_edit_file",
+            "description": "Edit an existing file in a project by replacing an exact unique old_text block with new_text.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "File path relative to project root" },
+                    "old_text": { "type": "string", "description": "Exact existing text to replace (must match uniquely)" },
+                    "new_text": { "type": "string", "description": "Replacement text" },
+                    "project": { "type": "string", "description": "Optional project name (defaults to active project)" }
+                },
+                "required": ["path", "old_text", "new_text"]
+            }
+        }),
+        json!({
+            "name": "code_run_command",
+            "description": "Run a shell command inside the active (or specified) project directory (e.g., tests, build, git status).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string", "description": "Command to execute in the project root" },
+                    "project": { "type": "string", "description": "Optional project name (defaults to active project)" },
+                    "timeout_secs": { "type": "integer", "description": "Timeout in seconds (default 60, max 180)" }
+                },
+                "required": ["command"]
+            }
+        }),
+        json!({
             "name": "device_wake_on_lan",
             "description": "Send a Wake-on-LAN Magic Packet to wake up a PC on LAN or WAN.",
             "inputSchema": {
@@ -449,6 +656,622 @@ pub async fn execute_mcp_tool(
             }
             let items = state.db.list_media_playlist_items(pid)?;
             serde_json::to_string_pretty(&items).map_err(|e| e.to_string())
+        }
+        "generate_image" => {
+            let prompt = args["prompt"].as_str().unwrap_or("").trim();
+            if prompt.is_empty() {
+                return Err("`prompt` is required".to_string());
+            }
+            let b64 = crate::llm_bridge::generate_image_via_bridge(state, prompt).await?;
+            use base64::Engine as _;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(b64.trim())
+                .map_err(|e| format!("Failed decoding generated image: {e}"))?;
+            let out_dir = std::env::temp_dir().join("raydrop_generated");
+            std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
+            let out_path = out_dir.join(format!("gen_{}.png", uuid::Uuid::new_v4().simple()));
+            std::fs::write(&out_path, &bytes).map_err(|e| e.to_string())?;
+            let path_str = out_path.to_string_lossy().to_string();
+            Ok(json!({
+                "status": "generated",
+                "image_path": path_str,
+                "prompt": prompt
+            })
+            .to_string())
+        }
+        "skill_read" => {
+            let key = args["skill_id_or_slug"].as_str().unwrap_or("").trim();
+            if key.is_empty() {
+                return Err("`skill_id_or_slug` is required".to_string());
+            }
+            let rec = match crate::skills::storage::get_skill_by_id(&state.db, key)? {
+                Some(s) => s,
+                None => {
+                    let all = crate::skills::storage::search_skills(
+                        &state.db,
+                        &crate::skills::models::SkillsSearchQuery::default(),
+                    )?;
+                    all.into_iter()
+                        .find(|s| s.slug.eq_ignore_ascii_case(key) || s.name.eq_ignore_ascii_case(key))
+                        .ok_or_else(|| format!("Skill '{}' not found", key))?
+                }
+            };
+            if let Some(ref pkg_dir) = rec.local_package_path {
+                let p = std::path::Path::new(pkg_dir).join("SKILL.md");
+                if let Ok(md) = std::fs::read_to_string(&p) {
+                    return Ok(md);
+                }
+            }
+            let preview =
+                crate::skills::storage::read_skill_file_preview(&state.db, &rec.id, "SKILL.md")?;
+            Ok(preview.content.unwrap_or_else(|| rec.description.clone()))
+        }
+        "language_tutor_list_languages" => {
+            let langs = supported_languages();
+            let conn = state.db.conn.lock().map_err(|e| e.to_string())?;
+            let mut progress_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+            if let Ok(mut stmt) = conn.prepare(
+                "SELECT language, cefr_level, current_unit, current_lesson, xp FROM language_learning_progress",
+            ) {
+                if let Ok(rows) = stmt.query_map([], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        json!({
+                            "cefr_level": r.get::<_, String>(1)?,
+                            "current_unit": r.get::<_, i64>(2)?,
+                            "current_lesson": r.get::<_, i64>(3)?,
+                            "xp": r.get::<_, i64>(4)?
+                        }),
+                    ))
+                }) {
+                    for row in rows.flatten() {
+                        progress_map.insert(row.0, row.1);
+                    }
+                }
+            }
+            let list: Vec<Value> = langs
+                .into_iter()
+                .map(|(key, name, native)| {
+                    json!({
+                        "key": key,
+                        "name": name,
+                        "native_name": native,
+                        "progress": progress_map.get(key).cloned().unwrap_or(Value::Null)
+                    })
+                })
+                .collect();
+            serde_json::to_string_pretty(&list).map_err(|e| e.to_string())
+        }
+        "language_tutor_get_progress" => {
+            let raw_lang = args["language"].as_str().unwrap_or("english");
+            let (lang_key, display_name) = normalize_language_key(raw_lang);
+            let now = crate::db::storage::now_unix_secs() as i64;
+            let conn = state.db.conn.lock().map_err(|e| e.to_string())?;
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO language_learning_progress (language, display_name, cefr_level, current_unit, current_lesson, xp, completed_lessons_json, learned_vocab_json, notes, updated_at)
+                 VALUES (?1, ?2, 'A1', 1, 1, 0, '[]', '[]', '', ?3)",
+                rusqlite::params![lang_key, display_name, now],
+            );
+            let row = conn
+                .query_row(
+                    "SELECT cefr_level, current_unit, current_lesson, xp, completed_lessons_json, learned_vocab_json, notes, updated_at
+                     FROM language_learning_progress WHERE language = ?1",
+                    rusqlite::params![lang_key],
+                    |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, i64>(1)? as u32,
+                            r.get::<_, i64>(2)? as u32,
+                            r.get::<_, i64>(3)? as u32,
+                            r.get::<_, String>(4)?,
+                            r.get::<_, String>(5)?,
+                            r.get::<_, String>(6)?,
+                            r.get::<_, i64>(7)? as u64,
+                        ))
+                    },
+                )
+                .map_err(|e| e.to_string())?;
+            let lesson = get_syllabus_lesson(row.1, row.2);
+            serde_json::to_string_pretty(&json!({
+                "language": lang_key,
+                "display_name": display_name,
+                "cefr_level": row.0,
+                "current_unit": row.1,
+                "current_lesson": row.2,
+                "xp": row.3,
+                "completed_lessons": serde_json::from_str::<Vec<String>>(&row.4).unwrap_or_default(),
+                "learned_vocab": serde_json::from_str::<Vec<String>>(&row.5).unwrap_or_default(),
+                "notes": row.6,
+                "updated_at": row.7,
+                "current_module": lesson
+            }))
+            .map_err(|e| e.to_string())
+        }
+        "language_tutor_update_progress" => {
+            let raw_lang = args["language"].as_str().unwrap_or("english");
+            let (lang_key, display_name) = normalize_language_key(raw_lang);
+            let advance = args["advance_lesson"].as_bool().unwrap_or(false);
+            let xp_add = args["xp_earned"].as_u64().unwrap_or(15) as i64;
+            let new_cefr = args["cefr_level"].as_str().map(|s| s.trim().to_string());
+            let new_notes = args["notes"].as_str().map(|s| s.trim().to_string());
+            let add_vocab: Vec<String> = args["add_vocab"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let now = crate::db::storage::now_unix_secs() as i64;
+            let conn = state.db.conn.lock().map_err(|e| e.to_string())?;
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO language_learning_progress (language, display_name, cefr_level, current_unit, current_lesson, xp, completed_lessons_json, learned_vocab_json, notes, updated_at)
+                 VALUES (?1, ?2, 'A1', 1, 1, 0, '[]', '[]', '', ?3)",
+                rusqlite::params![lang_key, display_name, now],
+            );
+
+            let (mut cefr, mut unit, mut lesson, mut xp, comp_raw, vocab_raw, mut notes) = conn
+                .query_row(
+                    "SELECT cefr_level, current_unit, current_lesson, xp, completed_lessons_json, learned_vocab_json, notes
+                     FROM language_learning_progress WHERE language = ?1",
+                    rusqlite::params![lang_key],
+                    |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, i64>(1)? as u32,
+                            r.get::<_, i64>(2)? as u32,
+                            r.get::<_, i64>(3)?,
+                            r.get::<_, String>(4)?,
+                            r.get::<_, String>(5)?,
+                            r.get::<_, String>(6)?,
+                        ))
+                    },
+                )
+                .map_err(|e| e.to_string())?;
+
+            let mut completed: Vec<String> = serde_json::from_str(&comp_raw).unwrap_or_default();
+            let mut vocab: Vec<String> = serde_json::from_str(&vocab_raw).unwrap_or_default();
+
+            for w in add_vocab {
+                if !vocab.iter().any(|x| x.eq_ignore_ascii_case(&w)) {
+                    vocab.push(w);
+                }
+            }
+            if vocab.len() > 200 {
+                let drain = vocab.len() - 200;
+                vocab.drain(0..drain);
+            }
+            xp += xp_add.max(0);
+            if let Some(c) = new_cefr.filter(|s| !s.is_empty()) {
+                cefr = c;
+            }
+            if let Some(n) = new_notes.filter(|s| !s.is_empty()) {
+                notes = n;
+            }
+            if advance {
+                let code = format!("{}.{}", unit, lesson);
+                if !completed.contains(&code) {
+                    completed.push(code);
+                }
+                if lesson < 3 {
+                    lesson += 1;
+                } else if unit < 4 {
+                    unit += 1;
+                    lesson = 1;
+                    cefr = match unit {
+                        2 => "A2".to_string(),
+                        3 => "B1".to_string(),
+                        _ => "B2".to_string(),
+                    };
+                }
+            }
+
+            let comp_json = serde_json::to_string(&completed).unwrap_or_else(|_| "[]".to_string());
+            let vocab_json = serde_json::to_string(&vocab).unwrap_or_else(|_| "[]".to_string());
+            conn.execute(
+                "UPDATE language_learning_progress
+                 SET cefr_level = ?1, current_unit = ?2, current_lesson = ?3, xp = ?4,
+                     completed_lessons_json = ?5, learned_vocab_json = ?6, notes = ?7, updated_at = ?8
+                 WHERE language = ?9",
+                rusqlite::params![cefr, unit as i64, lesson as i64, xp, comp_json, vocab_json, notes, now, lang_key],
+            )
+            .map_err(|e| e.to_string())?;
+
+            let next_module = get_syllabus_lesson(unit, lesson);
+            serde_json::to_string_pretty(&json!({
+                "status": "updated",
+                "language": lang_key,
+                "display_name": display_name,
+                "cefr_level": cefr,
+                "current_unit": unit,
+                "current_lesson": lesson,
+                "xp": xp,
+                "completed_lessons": completed,
+                "learned_vocab_count": vocab.len(),
+                "current_module": next_module
+            }))
+            .map_err(|e| e.to_string())
+        }
+        "project_get_root" => {
+            let overview = crate::project_workspace::get_projects_overview(&state.db)?;
+            serde_json::to_string_pretty(&json!({
+                "root_dir": overview.root_dir,
+                "active_project": overview.active_project,
+                "projects_count": overview.projects.len(),
+                "relations_count": overview.relations.len()
+            }))
+            .map_err(|e| e.to_string())
+        }
+        "project_set_root" => {
+            let root_dir = args
+                .get("root_dir")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing 'root_dir'")?;
+            let overview = crate::project_workspace::set_projects_root(&state.db, root_dir)?;
+            serde_json::to_string_pretty(&overview).map_err(|e| e.to_string())
+        }
+        "project_scan" => {
+            let overview = if let Some(root_dir) = args
+                .get("root_dir")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                crate::project_workspace::set_projects_root(&state.db, root_dir)?
+            } else {
+                crate::project_workspace::scan_projects_in_root(&state.db)?
+            };
+            serde_json::to_string_pretty(&overview).map_err(|e| e.to_string())
+        }
+        "project_list" => {
+            let overview = crate::project_workspace::get_projects_overview(&state.db)?;
+            serde_json::to_string_pretty(&overview).map_err(|e| e.to_string())
+        }
+        "project_select" => {
+            let project = args
+                .get("project")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing 'project'")?;
+            let entry = crate::project_workspace::select_active_project(&state.db, project)?;
+            serde_json::to_string_pretty(&entry).map_err(|e| e.to_string())
+        }
+        "project_add_relation" => {
+            let src = args
+                .get("source_project")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing 'source_project'")?;
+            let dst = args
+                .get("target_project")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing 'target_project'")?;
+            let rel = args
+                .get("relation_type")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing 'relation_type'")?;
+            let desc = args
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let saved =
+                crate::project_workspace::add_project_relation(&state.db, src, dst, rel, desc)?;
+            serde_json::to_string_pretty(&saved).map_err(|e| e.to_string())
+        }
+        "project_save_memory" => {
+            let project = args.get("project").and_then(|v| v.as_str());
+            let summary = args.get("summary").and_then(|v| v.as_str());
+            let pending_tasks = args.get("pending_tasks").and_then(|v| {
+                v.as_array().map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<String>>()
+                })
+            });
+            let updated = crate::project_workspace::save_project_memory(
+                &state.db,
+                project,
+                summary,
+                pending_tasks,
+            )?;
+            serde_json::to_string_pretty(&updated).map_err(|e| e.to_string())
+        }
+        "code_list_files" => {
+            let project = args.get("project").and_then(|v| v.as_str());
+            let subdir = args.get("subdir").and_then(|v| v.as_str());
+            let max_entries = args
+                .get("max_entries")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(200)
+                .clamp(1, 500) as usize;
+            let (proj, target_dir) =
+                crate::project_workspace::resolve_project_path(&state.db, project, subdir)?;
+            if !target_dir.is_dir() {
+                return Err(format!("'{}' is not a directory", target_dir.display()));
+            }
+            let proj_root = dunce::canonicalize(&proj.path)
+                .unwrap_or_else(|_| std::path::PathBuf::from(&proj.path));
+            let mut files = Vec::new();
+            let walker = walkdir::WalkDir::new(&target_dir)
+                .into_iter()
+                .filter_entry(|e| {
+                    let name = e.file_name().to_string_lossy();
+                    !matches!(
+                        name.as_ref(),
+                        ".git" | "node_modules" | "target" | "__pycache__" | ".venv" | "dist" | "build"
+                    )
+                });
+            for entry in walker.flatten() {
+                if entry.file_type().is_file() {
+                    let rel = entry
+                        .path()
+                        .strip_prefix(&proj_root)
+                        .unwrap_or(entry.path())
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    files.push(rel);
+                    if files.len() >= max_entries {
+                        break;
+                    }
+                }
+            }
+            serde_json::to_string_pretty(&json!({
+                "project": proj.name,
+                "root": proj.path,
+                "count": files.len(),
+                "truncated": files.len() >= max_entries,
+                "files": files
+            }))
+            .map_err(|e| e.to_string())
+        }
+        "code_search" => {
+            let query = args
+                .get("query")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .ok_or("Missing non-empty 'query'")?;
+            let project = args.get("project").and_then(|v| v.as_str());
+            let subdir = args.get("subdir").and_then(|v| v.as_str());
+            let case_sensitive = args
+                .get("case_sensitive")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let max_matches = args
+                .get("max_matches")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(50)
+                .clamp(1, 150) as usize;
+            let (proj, target_dir) =
+                crate::project_workspace::resolve_project_path(&state.db, project, subdir)?;
+            let proj_root = dunce::canonicalize(&proj.path)
+                .unwrap_or_else(|_| std::path::PathBuf::from(&proj.path));
+            let needle = if case_sensitive {
+                query.to_string()
+            } else {
+                query.to_lowercase()
+            };
+
+            let mut matches = Vec::new();
+            let walker = walkdir::WalkDir::new(&target_dir)
+                .into_iter()
+                .filter_entry(|e| {
+                    let name = e.file_name().to_string_lossy();
+                    !matches!(
+                        name.as_ref(),
+                        ".git" | "node_modules" | "target" | "__pycache__" | ".venv" | "dist" | "build"
+                    )
+                });
+            for entry in walker.flatten() {
+                if !entry.file_type().is_file() {
+                    continue;
+                }
+                if entry.metadata().map(|m| m.len() > 1_048_576).unwrap_or(true) {
+                    continue;
+                }
+                let Ok(bytes) = std::fs::read(entry.path()) else {
+                    continue;
+                };
+                if bytes.iter().take(512).any(|&b| b == 0) {
+                    continue;
+                }
+                let text = String::from_utf8_lossy(&bytes);
+                let rel = entry
+                    .path()
+                    .strip_prefix(&proj_root)
+                    .unwrap_or(entry.path())
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                for (idx, line) in text.lines().enumerate() {
+                    let hay = if case_sensitive {
+                        line.to_string()
+                    } else {
+                        line.to_lowercase()
+                    };
+                    if hay.contains(&needle) {
+                        let snippet: String = line.chars().take(200).collect();
+                        matches.push(json!({
+                            "file": rel,
+                            "line": idx + 1,
+                            "text": snippet
+                        }));
+                        if matches.len() >= max_matches {
+                            break;
+                        }
+                    }
+                }
+                if matches.len() >= max_matches {
+                    break;
+                }
+            }
+            serde_json::to_string_pretty(&json!({
+                "project": proj.name,
+                "query": query,
+                "match_count": matches.len(),
+                "matches": matches
+            }))
+            .map_err(|e| e.to_string())
+        }
+        "code_read_file" => {
+            let path = args
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing 'path'")?;
+            let project = args.get("project").and_then(|v| v.as_str());
+            let start_line = args
+                .get("start_line")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(1)
+                .max(1) as usize;
+            let end_line = args
+                .get("end_line")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(start_line + 249)
+                .min(start_line + 399);
+
+            let (proj, file_path) =
+                crate::project_workspace::resolve_project_path(&state.db, project, Some(path))?;
+            if !file_path.is_file() {
+                return Err(format!("File not found: '{}'", file_path.display()));
+            }
+            let content = std::fs::read_to_string(&file_path)
+                .map_err(|e| format!("Failed to read '{}': {}", file_path.display(), e))?;
+            let lines: Vec<&str> = content.lines().collect();
+            let total_lines = lines.len();
+            let s_idx = (start_line - 1).min(total_lines);
+            let e_idx = end_line.min(total_lines);
+            let numbered = lines[s_idx..e_idx]
+                .iter()
+                .enumerate()
+                .map(|(i, l)| format!("{}: {}", s_idx + i + 1, l))
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            serde_json::to_string_pretty(&json!({
+                "project": proj.name,
+                "path": path,
+                "start_line": start_line,
+                "end_line": e_idx,
+                "total_lines": total_lines,
+                "content": numbered
+            }))
+            .map_err(|e| e.to_string())
+        }
+        "code_write_file" => {
+            let path = args
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing 'path'")?;
+            let content = args
+                .get("content")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing 'content'")?;
+            let project = args.get("project").and_then(|v| v.as_str());
+            let (proj, file_path) =
+                crate::project_workspace::resolve_project_path(&state.db, project, Some(path))?;
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("Failed to create parent dir: {}", e))?;
+            }
+            std::fs::write(&file_path, content.as_bytes())
+                .map_err(|e| format!("Failed to write '{}': {}", file_path.display(), e))?;
+            serde_json::to_string_pretty(&json!({
+                "status": "written",
+                "project": proj.name,
+                "path": file_path.to_string_lossy(),
+                "bytes": content.len()
+            }))
+            .map_err(|e| e.to_string())
+        }
+        "code_edit_file" => {
+            let path = args
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing 'path'")?;
+            let old_text = args
+                .get("old_text")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing 'old_text'")?;
+            let new_text = args
+                .get("new_text")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing 'new_text'")?;
+            let project = args.get("project").and_then(|v| v.as_str());
+            let (proj, file_path) =
+                crate::project_workspace::resolve_project_path(&state.db, project, Some(path))?;
+            let current = std::fs::read_to_string(&file_path)
+                .map_err(|e| format!("Failed to read '{}': {}", file_path.display(), e))?;
+            let count = current.matches(old_text).count();
+            if count == 0 {
+                return Err(format!("'old_text' not found in '{}'", path));
+            }
+            if count > 1 {
+                return Err(format!(
+                    "'old_text' matched {} times in '{}'; include more surrounding lines to make it unique.",
+                    count, path
+                ));
+            }
+            let updated = current.replacen(old_text, new_text, 1);
+            std::fs::write(&file_path, updated.as_bytes())
+                .map_err(|e| format!("Failed to write '{}': {}", file_path.display(), e))?;
+            serde_json::to_string_pretty(&json!({
+                "status": "edited",
+                "project": proj.name,
+                "path": file_path.to_string_lossy()
+            }))
+            .map_err(|e| e.to_string())
+        }
+        "code_run_command" => {
+            let command = args
+                .get("command")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .ok_or("Missing 'command'")?;
+            let project = args.get("project").and_then(|v| v.as_str());
+            let timeout_secs = args
+                .get("timeout_secs")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(60)
+                .clamp(1, 180);
+            let proj = crate::project_workspace::resolve_project_dir(&state.db, project)?;
+
+            let mut cmd = if cfg!(target_os = "windows") {
+                let mut c = tokio::process::Command::new("cmd");
+                c.args(["/C", command]);
+                c
+            } else {
+                let mut c = tokio::process::Command::new("sh");
+                c.args(["-c", command]);
+                c
+            };
+            cmd.current_dir(&proj.path);
+            #[cfg(target_os = "windows")]
+            {
+                cmd.creation_flags(0x08000000);
+            }
+
+            let output = tokio::time::timeout(
+                std::time::Duration::from_secs(timeout_secs),
+                cmd.output(),
+            )
+            .await
+            .map_err(|_| format!("Command timed out after {}s", timeout_secs))?
+            .map_err(|e| format!("Failed to execute command: {}", e))?;
+
+            let stdout_full = String::from_utf8_lossy(&output.stdout);
+            let stderr_full = String::from_utf8_lossy(&output.stderr);
+            let stdout: String = stdout_full.chars().take(12_000).collect();
+            let stderr: String = stderr_full.chars().take(12_000).collect();
+
+            serde_json::to_string_pretty(&json!({
+                "project": proj.name,
+                "cwd": proj.path,
+                "exit_code": output.status.code(),
+                "success": output.status.success(),
+                "stdout": stdout,
+                "stderr": stderr
+            }))
+            .map_err(|e| e.to_string())
         }
         "media_queue_list" => {
             let st = state
@@ -897,5 +1720,158 @@ async fn run_mcp_http_loop(
                 }
             }
         });
+    }
+}
+
+fn supported_languages() -> Vec<(&'static str, &'static str, &'static str)> {
+    vec![
+        ("english", "English", "English"),
+        ("japanese", "Japanese", "日本語"),
+        ("korean", "Korean", "한국어"),
+        ("russian", "Russian", "Русский"),
+        ("german", "German", "Deutsch"),
+        ("indonesian", "Indonesian", "Bahasa Indonesia"),
+        ("mandarin", "Mandarin Chinese", "中文"),
+        ("spanish", "Spanish", "Español"),
+        ("french", "French", "Français"),
+        ("arabic", "Arabic", "العربية"),
+    ]
+}
+
+fn normalize_language_key(raw: &str) -> (String, String) {
+    let low = raw.trim().to_lowercase();
+    match low.as_str() {
+        "en" | "eng" | "english" | "inggris" => ("english".into(), "English".into()),
+        "ja" | "jp" | "japanese" | "jepang" => ("japanese".into(), "Japanese (日本語)".into()),
+        "ko" | "kr" | "korean" | "korea" => ("korean".into(), "Korean (한국어)".into()),
+        "ru" | "rus" | "russian" | "rusia" => ("russian".into(), "Russian (Русский)".into()),
+        "de" | "ger" | "german" | "germany" | "deutsch" | "jerman" => ("german".into(), "German (Deutsch)".into()),
+        "id" | "ind" | "indonesian" | "indonesia" | "bahasa indonesia" => ("indonesian".into(), "Indonesian".into()),
+        "zh" | "cn" | "mandarin" | "chinese" | "china" => ("mandarin".into(), "Mandarin (中文)".into()),
+        "es" | "spanish" | "spanyol" => ("spanish".into(), "Spanish (Español)".into()),
+        "fr" | "french" | "prancis" => ("french".into(), "French (Français)".into()),
+        "ar" | "arabic" | "arab" => ("arabic".into(), "Arabic (العربية)".into()),
+        _ => {
+            let clean: String = low
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .collect();
+            let key = if clean.is_empty() { "english".to_string() } else { clean };
+            let title = raw.trim().to_string();
+            (key, if title.is_empty() { "English".to_string() } else { title })
+        }
+    }
+}
+
+fn get_syllabus_lesson(unit: u32, lesson: u32) -> Value {
+    match (unit, lesson) {
+        (1, 1) => json!({
+            "unit": "Unit 1: Everyday & Campus Life (A1-A2)",
+            "id": "1.1",
+            "title": "Warm Greetings, Small Talk & Moods",
+            "cefr": "A1",
+            "story_hook": "We just bumped into each other in the morning breeze and are catching up before the day starts.",
+            "grammar_focus": "Present tense for current feelings & moods",
+            "goal": "Practice natural greetings, describing how you feel, and asking back smoothly."
+        }),
+        (1, 2) => json!({
+            "unit": "Unit 1: Everyday & Campus Life (A1-A2)",
+            "id": "1.2",
+            "title": "Ordering Coffee & Street Food Together",
+            "cefr": "A1-A2",
+            "story_hook": "It started drizzling outside, so we ducked into a cozy cafe and are looking at the menu together.",
+            "grammar_focus": "Polite requests & food/drink quantities",
+            "goal": "Order food/drinks politely and customize an order naturally."
+        }),
+        (1, 3) => json!({
+            "unit": "Unit 1: Everyday & Campus Life (A1-A2)",
+            "id": "1.3",
+            "title": "Daily Routines, Hobbies & Late Nights",
+            "cefr": "A2",
+            "story_hook": "Relaxing after a long day, talking about daily habits, sleep schedules, and favorite hobbies.",
+            "grammar_focus": "Frequency adverbs + habitual tense",
+            "goal": "Describe daily routines and hobbies smoothly without word-for-word translation."
+        }),
+        (2, 1) => json!({
+            "unit": "Unit 2: Feelings, Plans & Stories (A2-B1)",
+            "id": "2.1",
+            "title": "Giving Compliments & Reacting Naturally",
+            "cefr": "A2",
+            "story_hook": "Getting ready to head out together and trading playful compliments and banter.",
+            "grammar_focus": "Adjectives, adverbs & natural compliment responses",
+            "goal": "Give warm, natural compliments and respond without sounding stiff."
+        }),
+        (2, 2) => json!({
+            "unit": "Unit 2: Feelings, Plans & Stories (A2-B1)",
+            "id": "2.2",
+            "title": "Making Plans, Invitations & Weekend Hangouts",
+            "cefr": "B1",
+            "story_hook": "Planning a weekend hangout—deciding between a movie, night market, or quiet picnic.",
+            "grammar_focus": "Future forms & polite invitations",
+            "goal": "Propose ideas, accept/decline politely, and negotiate plans."
+        }),
+        (2, 3) => json!({
+            "unit": "Unit 2: Feelings, Plans & Stories (A2-B1)",
+            "id": "2.3",
+            "title": "Sharing Stories & Past Experiences",
+            "cefr": "B1",
+            "story_hook": "Sitting over warm drinks at night, sharing funny or memorable moments from the past.",
+            "grammar_focus": "Past tense storytelling & sequence connectors",
+            "goal": "Tell a short story in the past tense clearly."
+        }),
+        (3, 1) => json!({
+            "unit": "Unit 3: Real-World Situations & Travel (B1)",
+            "id": "3.1",
+            "title": "At the Airport, Hotel & Asking Directions",
+            "cefr": "B1",
+            "story_hook": "We just landed in a new city, checking into our hotel and finding a hidden food spot nearby.",
+            "grammar_focus": "Indirect polite questions & directions",
+            "goal": "Navigate travel situations and ask polite questions."
+        }),
+        (3, 2) => json!({
+            "unit": "Unit 3: Real-World Situations & Travel (B1)",
+            "id": "3.2",
+            "title": "Shopping, Preferences & Polite Returns",
+            "cefr": "B1",
+            "story_hook": "Strolling through a shopping district trying on clothes and comparing options.",
+            "grammar_focus": "Comparatives, preferences & polite requests",
+            "goal": "Compare items and handle shopping/returns naturally."
+        }),
+        (3, 3) => json!({
+            "unit": "Unit 3: Real-World Situations & Travel (B1)",
+            "id": "3.3",
+            "title": "Handling Problems & Asking for Help",
+            "cefr": "B1",
+            "story_hook": "A small mishap happened on our trip (dead battery or delayed train) and we figure it out together.",
+            "grammar_focus": "Modals of request & necessity",
+            "goal": "Stay calm in unexpected situations and ask for help."
+        }),
+        (4, 1) => json!({
+            "unit": "Unit 4: Study, Career & Persuasion (B1-B2)",
+            "id": "4.1",
+            "title": "Explaining Ideas, Projects & Passions",
+            "cefr": "B1-B2",
+            "story_hook": "Chatting at a cafe about a project, tech idea, or dream you are excited to build.",
+            "grammar_focus": "Cause/effect connectors & structured explanations",
+            "goal": "Explain complex ideas clearly in the target language."
+        }),
+        (4, 2) => json!({
+            "unit": "Unit 4: Study, Career & Persuasion (B1-B2)",
+            "id": "4.2",
+            "title": "Debating Opinions & Nuanced Agreement",
+            "cefr": "B2",
+            "story_hook": "Having a friendly late-night debate on work-life balance, AI, or travel styles.",
+            "grammar_focus": "Expressing nuance, concessions & hypotheticals",
+            "goal": "Agree/disagree diplomatically with supporting reasons."
+        }),
+        _ => json!({
+            "unit": "Unit 4: Study, Career & Persuasion (B1-B2)",
+            "id": "4.3",
+            "title": "Free-Flow Fluency & Storytelling",
+            "cefr": "B2+",
+            "story_hook": "Open-ended, natural friend-to-friend conversation on any topic you choose.",
+            "grammar_focus": "Natural idioms, tone & fluency",
+            "goal": "Hold an effortless, natural conversation like a native friend."
+        }),
     }
 }

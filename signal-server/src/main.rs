@@ -26,7 +26,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 const MAX_HTTP_BODY_BYTES: usize = 64 * 1024; // 64 KB max JSON body
-const MAX_WS_MESSAGE_BYTES: usize = 2 * 1024 * 1024; // 2 MB max WebSocket frame
+const MAX_WS_MESSAGE_BYTES: usize = 16 * 1024 * 1024; // 16 MB max WebSocket frame (supports vision & generated images)
 const PEER_CHANNEL_CAPACITY: usize = 1024; // Bounded per-peer queue to buffer high-throughput E2EE relay stream frames
 const AUTH_RATE_WINDOW_SECS: u64 = 300; // 5-minute window
 const MAX_AUTH_ATTEMPTS_PER_WINDOW: u32 = 10; // Max 10 failed login/register attempts per 5 mins per IP
@@ -496,7 +496,7 @@ async fn main() {
             post(llm_http_relay_handler)
                 .get(llm_http_relay_handler)
                 .options(llm_http_options_handler)
-                .layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
+                .layer(DefaultBodyLimit::max(16 * 1024 * 1024)),
         )
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .layer(CorsLayer::permissive())
@@ -1825,7 +1825,7 @@ async fn handle_socket(socket: WebSocket, client_ip: String, state: ServerState)
                             warn!("Blocked spoofed RELAY_CONTROL from {authed_id}");
                             continue;
                         }
-                        if payload_json.len() > 2 * 1024 * 1024 {
+                        if payload_json.len() > 16 * 1024 * 1024 {
                             warn!("Blocked oversized RELAY_CONTROL payload ({} bytes) from {authed_id}", payload_json.len());
                             continue;
                         }

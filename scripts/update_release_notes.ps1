@@ -1,6 +1,6 @@
 # Update GitHub Release notes with rich formatting, logo, and release details (UTF-8 safe)
 param(
-    [string]$Tag = "v1.2.6"
+    [string]$Tag = "v1.2.96"
 )
 $ErrorActionPreference = "Stop"
 

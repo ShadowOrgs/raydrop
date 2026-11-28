@@ -156,6 +156,39 @@ pub async fn skills_add_source(
     Ok(src)
 }
 
+const RAYBOT_SKILLS_KEY: &str = "raybot_enabled_skills_json";
+
+pub fn load_raybot_enabled_skill_ids(db: &crate::db::storage::Database) -> Vec<String> {
+    db.get_setting(RAYBOT_SKILLS_KEY)
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub async fn skills_get_raybot_enabled(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<String>, String> {
+    Ok(load_raybot_enabled_skill_ids(&state.db))
+}
+
+#[tauri::command]
+pub async fn skills_toggle_raybot(
+    state: State<'_, Arc<AppState>>,
+    skill_id: String,
+    enabled: bool,
+) -> Result<Vec<String>, String> {
+    let mut ids = load_raybot_enabled_skill_ids(&state.db);
+    ids.retain(|id| id != &skill_id);
+    if enabled {
+        ids.push(skill_id);
+    }
+    let raw = serde_json::to_string(&ids).map_err(|e| e.to_string())?;
+    state.db.set_setting(RAYBOT_SKILLS_KEY, &raw)?;
+    Ok(ids)
+}
+
 #[tauri::command]
 pub async fn skills_toggle_source(
     state: State<'_, Arc<AppState>>,

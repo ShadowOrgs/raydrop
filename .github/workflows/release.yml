@@ -90,6 +90,10 @@ jobs:
             ---
 
             ### 🚀 Features & Highlights
+            - **RayBot Persistent Coding Workspace & Cross-Project Relations:** Configurable projects root (default `~`), persistent SQLite project registry & relation graph, Chat UI workspace bar, and 13 scoped `project_*` / `code_*` MCP tools for Chat UI & Telegram Bot.
+            - **Direct RayBot Skills, MCP & Language Tutor Skill:** Install Skills & MCP servers directly onto RayBot across any LLM provider, plus a built-in `language-tutor` skill with dynamic CEFR syllabus and persistent per-language SQLite progress.
+            - **LLM Bridge CLI Execution Modes & Extra Flags:** Per-provider execution modes (`YOLO`, `Auto-Edit`, `Safe` with read-only prompt guard) across `agy`, `claude`, `codex`, `gemini`, and `opencode`/custom CLIs, plus custom extra flags.
+            - **Image Bridge, Local Vision & ComfyUI + Waifu Persona:** Host-side image storage & local path forwarding to CLIs, automatic Local LLM vision routing, ComfyUI image generation in RayBot Chat UI & Telegram Bot, and a **Waifu Companion** persona style.
             - **All-in-One Web Debugger & Analyzer (Chrome Extension + Desktop):** On-demand web debugging (0% overhead when idle) with **Run Full Audit** (UI/Responsive overflow scan, Web Vitals, Security Headers, Endpoint Ping), **Start/Stop Live Flow Debug**, Overall & Category Score Gauges, SVG Latency/Payload Charts, Rust HTTP Speedtest, and actionable fix recommendations.
             - **Universal Web Share Over Internet (Public Relay Tunnel):** Zero-app browser downloads anywhere in the world via dynamic QR code or web link (`https://stun.raydrop.web.id/share/...`).
             - **1-Click Copy QR Code Image & Social Share:** Direct bitmap copying to clipboard ready to paste into WhatsApp, Telegram, Discord, and 1-tap social share buttons.

@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.77"
+    tag = clean_args[0] if clean_args else "v1.2.96"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: RayAmp Audio/Video Player, Full MCP Server & Telegram AI Bot"
+    title = f"Raydrop {tag}: RayBot Coding Workspace, CLI Execution Modes, ComfyUI & Language Tutor"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/ShadowOrgs/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: RayAmp Audio/Video Player, Full MCP Server & Telegram AI Bot</h2>
+<h2 align="center">Raydrop {tag}: RayBot Coding Workspace, CLI Execution Modes, ComfyUI & Language Tutor</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -126,15 +126,16 @@ if __name__ == "__main__":
 
 ### 🚀 What's New & Highlights in {tag}
 
-#### 🎵 RayAmp (Winamp-Style Audio/Video Player & YouTube Music)
-- **Audio + Video Playback & Visualizer:** Draggable floating deck with real-time Web Audio spectrum visualizer, inline Video mode, Queue management, and persistent SQLite playlists.
-- **YouTube Music Search & Auto `yt-dlp`:** Search songs and music videos directly inside RayAmp with automatic first-time `yt-dlp` download so streaming works out of the box.
+#### 💻 RayBot Multi-Project Coding Workspace & Cross-Project Relations
+- **Persistent Project Registry & Relations:** Configurable projects root folder (default `~`), auto-scan tech stacks, persistent SQLite memory & cross-project relations (`raybot_projects`, `raybot_project_relations`), and a quick Project Workspace bar in RayBot Chat UI.
+- **Scoped Coding & Workspace MCP Tools:** 13 new `project_*` and `code_*` tools (`project_set_root`, `project_scan`, `project_select`, `project_add_relation`, `project_save_memory`, `code_list_files`, `code_search`, `code_read_file`, `code_write_file`, `code_edit_file`, `code_run_command`) usable from both RayBot Chat UI and Telegram Bot.
 
-#### 🤖 Full MCP Server & Telegram AI Bot
-- **RayDrop MCP Server (`http://127.0.0.1:48765/mcp`):** Standard JSON-RPC 2.0 MCP server exposing RayAmp playback/playlists, Wake-on-LAN, system telemetry, devices, clipboard history, notes, and shared folders.
-- **Telegram AI Bot + Bot Persona + Custom LLM:** Long-polling Telegram bot with multiple allowed User IDs whitelist, customizable Bot Persona (name, style preset, language, custom system instructions), and preset/custom OpenAI-compatible LLM providers (OpenAI, Gemini, Claude, DeepSeek, Groq, OpenRouter, Ollama).
+#### 🧠 Direct RayBot Skills, MCP & Persistent Language Tutor
+- **Provider-Agnostic Skills & MCP:** Enable Skills & MCP servers directly on RayBot regardless of LLM provider (Ollama, LM Studio, KoboldCPP, OpenAI, Gemini, Claude, LLM Bridge).
+- **Language Tutor Skill (`language-tutor`):** Pre-existing installable skill supporting English, Japanese, Korean, Russian, German, Indonesian, and more with dynamic CEFR syllabus & persistent per-language SQLite progress.
 
-#### ⚡ Wake-on-LAN Settings, Auto-MAC & Setup Guide
-- **Per-Device WoL Config in Settings:** Configure MAC, DDNS host, and UDP port directly in Settings with automatic local MAC detection + Copy button and a built-in English BIOS/OS/Free-DDNS setup guide.
+#### ⚙️ LLM Bridge CLI Execution Modes, Image Bridge, Local Vision & ComfyUI
+- **CLI Execution Modes & Extra Flags:** Per-provider `YOLO`, `Auto-Edit`, and `Safe` (read-only prompt guard) modes across `agy`, `claude`, `codex`, `gemini`, and `opencode`/custom CLIs, plus custom extra flags.
+- **Image Bridge, Local Vision & ComfyUI + Waifu Persona:** Host-side image storage & local path forwarding to CLIs, automatic Local LLM vision routing, ComfyUI image generation in RayBot Chat UI & Telegram Bot, and a new **Waifu Companion** persona style.
 """
     update_release(tag=tag, title=title, body=body, wait_for_assets=wait_flag)

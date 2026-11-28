@@ -81,6 +81,12 @@ Unlike traditional file-sharing or cloud meeting services that upload your perso
 
 ## ✨ Key Features
 
+### 🆕 RayBot Coding Workspace, CLI Modes, ComfyUI & Language Tutor (New in v1.2.96)
+- **RayBot Persistent Coding Workspace & Cross-Project Relations:** Set a projects root folder (default `~`), auto-scan projects & tech stacks, track persistent cross-project relations (`raybot_projects`, `raybot_project_relations`), and code directly from RayBot Chat UI or Telegram Bot using scoped `project_*` and `code_*` MCP tools.
+- **Direct RayBot Skills, MCP & Language Tutor Skill:** Install Skills & MCP servers directly onto RayBot across any LLM provider (Ollama, LM Studio, KoboldCPP, OpenAI, Gemini, Claude, LLM Bridge), including a built-in `language-tutor` skill with dynamic CEFR syllabus and persistent per-language SQLite progress.
+- **LLM Bridge CLI Execution Modes & Extra Flags:** Per-provider headless execution modes (`YOLO`, `Auto-Edit`, `Safe` with read-only prompt guard) across `agy`, `claude`, `codex`, `gemini`, and `opencode`/custom CLIs, plus custom extra flags.
+- **Image Bridge, Local Vision & ComfyUI + Waifu Persona:** Host-side image storage & local path forwarding to CLIs, automatic Local LLM vision routing, ComfyUI image generation in RayBot Chat UI & Telegram Bot, and a new **Waifu Companion** persona style.
+
 ### 🆕 Multi-CLI LLM Bridge, AI MCP Library & GitHub Skills Sync (New in v1.2.95)
 - **OpenAI-Compatible Multi-CLI LLM Bridge:** Turn local coding CLIs into OpenAI-compatible `/v1/models`, `/v1/chat/completions`, and `/v1/images/generations` endpoints on dynamic ports (`48811–48815`), with Tailscale IP support, Public/Private contact access toggle, live peer bridge discovery, and P2P WAN/LAN relay proxies.
 - **AI-Assisted MCP Library & 15+ Popular Presets:** Paste any MCP endpoint URL (e.g. `https://mcp.sehatierp.com/`), GitHub repo, `npx`/`uvx` command, or JSON—Raydrop auto-detects transport (`http`/`sse`/`stdio`) and API key fields, runs live `Test Connection`, installs to 8+ Coding Agents, and plugs external MCP tools straight into Raydrop Bot & Telegram Bot. Ships with 15+ built-in presets including **MySQL**, **PostgreSQL**, **SQLite**, **Supabase**, **Context7**, **Playwright**, **GitHub**, **Figma**, **Notion**, **Brave Search**, and **Firecrawl**.
@@ -289,10 +295,10 @@ Pre-built native packages for **Windows**, **macOS**, **Linux**, and **Android**
 
 | Platform | Format | Architecture | Description | Download |
 | :--- | :---: | :---: | :--- | :---: |
-| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.95/Raydrop_1.2.95_x64_en-US.msi) |
-| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.95/Raydrop_1.2.95_universal.dmg) |
-| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.95/Raydrop_1.2.95_amd64.deb) |
-| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.95/Raydrop_1.2.95_amd64.AppImage) |
+| **Windows** | `.msi` | x64 (64-bit) | Official Windows 10/11 installer with desktop shortcut, background tray, and Explorer context menu integration. | [Download MSI](https://github.com/asepindrak/raydrop/releases/download/v1.2.96/Raydrop_1.2.96_x64_en-US.msi) |
+| **macOS** | `.dmg` | Universal (Apple Silicon & Intel) | Drag-and-drop installer for macOS 11.0+. Native Universal binary supporting Apple Silicon (M1-M4) & Intel. | [Download DMG](https://github.com/asepindrak/raydrop/releases/download/v1.2.96/Raydrop_1.2.96_universal.dmg) |
+| **Linux (Debian / Ubuntu)** | `.deb` | x64 (amd64) | Debian, Ubuntu, and Linux Mint package with application menu integration and native WebKitGTK runtime. | [Download DEB](https://github.com/asepindrak/raydrop/releases/download/v1.2.96/Raydrop_1.2.96_amd64.deb) |
+| **Linux (Universal)** | `.AppImage` | x64 (amd64) | Standalone portable executable for Fedora, Arch Linux, openSUSE, and any standard Linux distribution. | [Download AppImage](https://github.com/asepindrak/raydrop/releases/download/v1.2.96/Raydrop_1.2.96_amd64.AppImage) |
 | **Android** | `.apk` | ARM64 (`arm64-v8a`) | Native Android APK for phones and tablets. Direct high-speed local Wi-Fi transfer, mobile bottom navigation, and universal clipboard. | [Download APK](https://github.com/asepindrak/raydrop/releases/download/v1.2.23/Raydrop-arm64-v8a.apk) |
 
 👉 **[View All Release Assets on GitHub Releases](https://github.com/asepindrak/raydrop/releases/latest)** &bull; **[Visit Raydrop Website (raydrop.web.id)](https://raydrop.web.id)**
