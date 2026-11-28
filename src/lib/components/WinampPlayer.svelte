@@ -155,7 +155,36 @@
       }
     });
 
-    startVisualizerLoop();
+    const unsubVis = mediaPlayerState.subscribe((st) => {
+      if (st.is_playing && !st.video_mode && !document.hidden) {
+        startVisualizerLoop();
+      } else {
+        if (animFrameId !== null) {
+          cancelAnimationFrame(animFrameId);
+          animFrameId = null;
+        }
+        drawVisualizerFrame(st);
+      }
+    });
+    const onVisChange = () => {
+      const st = get(mediaPlayerState);
+      if (!document.hidden && st.is_playing && !st.video_mode) {
+        startVisualizerLoop();
+      } else if (animFrameId !== null) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+      }
+    };
+    document.addEventListener("visibilitychange", onVisChange);
+    unlistenRemote = (() => {
+      const prev = unlistenRemote;
+      return () => {
+        if (prev) prev();
+        unsubVis();
+        document.removeEventListener("visibilitychange", onVisChange);
+      };
+    })();
+    drawVisualizerFrame(get(mediaPlayerState));
   });
 
   onDestroy(() => {
@@ -209,55 +238,63 @@
     }
   }
 
-  function startVisualizerLoop() {
-    const render = () => {
-      if (canvasEl) {
-        const ctx = canvasEl.getContext("2d");
-        if (ctx) {
-          const w = canvasEl.width;
-          const h = canvasEl.height;
-          ctx.clearRect(0, 0, w, h);
+  function drawVisualizerFrame(st = get(mediaPlayerState)) {
+    if (!canvasEl) return;
+    const ctx = canvasEl.getContext("2d");
+    if (!ctx) return;
+    const w = canvasEl.width;
+    const h = canvasEl.height;
+    ctx.clearRect(0, 0, w, h);
 
-          const st = get(mediaPlayerState);
-          const barCount = 24;
-          const gap = 2;
-          const barW = Math.max(2, Math.floor((w - gap * (barCount - 1)) / barCount));
+    const barCount = 24;
+    const gap = 2;
+    const barW = Math.max(2, Math.floor((w - gap * (barCount - 1)) / barCount));
 
-          let freqData: Uint8Array | null = null;
-          if (analyser && st.is_playing && st.current_track?.source_type === "local") {
-            freqData = new Uint8Array(analyser.frequencyBinCount);
-            analyser.getByteFrequencyData(freqData);
-          }
+    let freqData: Uint8Array | null = null;
+    if (analyser && st.is_playing && st.current_track?.source_type === "local") {
+      freqData = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(freqData);
+    }
 
-          const t = Date.now() / 180;
-          for (let i = 0; i < barCount; i++) {
-            let norm = 0.06;
-            if (st.is_playing) {
-              if (freqData && i < freqData.length) {
-                norm = Math.max(0.08, freqData[i] / 255);
-              } else {
-                // Smooth fallback visualizer for remote streams
-                norm =
-                  0.18 +
-                  0.62 *
-                    Math.abs(
-                      Math.sin(t + i * 0.45) * Math.cos(t * 0.7 - i * 0.25),
-                    );
-              }
-            }
-            const barH = Math.max(2, Math.round(norm * h));
-            const x = i * (barW + gap);
-            const y = h - barH;
+    const grad = ctx.createLinearGradient(0, h, 0, 0);
+    grad.addColorStop(0, "#06b6d4");
+    grad.addColorStop(0.6, "#22d3ee");
+    grad.addColorStop(1, "#f59e0b");
+    ctx.fillStyle = grad;
 
-            const grad = ctx.createLinearGradient(0, h, 0, 0);
-            grad.addColorStop(0, "#06b6d4");
-            grad.addColorStop(0.6, "#22d3ee");
-            grad.addColorStop(1, "#f59e0b");
-            ctx.fillStyle = grad;
-            ctx.fillRect(x, y, barW, barH);
-          }
+    const t = Date.now() / 180;
+    for (let i = 0; i < barCount; i++) {
+      let norm = 0.06;
+      if (st.is_playing) {
+        if (freqData && i < freqData.length) {
+          norm = Math.max(0.08, freqData[i] / 255);
+        } else {
+          // Smooth fallback visualizer for remote streams
+          norm =
+            0.18 +
+            0.62 *
+              Math.abs(
+                Math.sin(t + i * 0.45) * Math.cos(t * 0.7 - i * 0.25),
+              );
         }
       }
+      const barH = Math.max(2, Math.round(norm * h));
+      const x = i * (barW + gap);
+      const y = h - barH;
+      ctx.fillRect(x, y, barW, barH);
+    }
+  }
+
+  function startVisualizerLoop() {
+    if (animFrameId !== null) return;
+    const render = () => {
+      const st = get(mediaPlayerState);
+      if (!st.is_playing || st.video_mode || document.hidden) {
+        drawVisualizerFrame(st);
+        animFrameId = null;
+        return;
+      }
+      drawVisualizerFrame(st);
       animFrameId = requestAnimationFrame(render);
     };
     animFrameId = requestAnimationFrame(render);

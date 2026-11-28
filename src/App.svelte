@@ -273,7 +273,7 @@
       refreshLanStatuses();
       const lanStatusPollTimer = setInterval(() => {
         refreshLanStatuses();
-      }, 5000);
+      }, 10000);
       initPresenceNotifications();
 
       await raydropApi.listenEvent("cloud_state_changed", async () => {
@@ -366,7 +366,7 @@
         ]);
       }
 
-      // 3. Periodic synchronization timer (every 4s) to ensure signaling & network status never get stuck
+      // 3. Periodic synchronization timer (every 10s) to ensure signaling & network status never get stuck
       statusSyncTimer = setInterval(async () => {
         try {
           const activeFeatures: string[] = [];
@@ -378,7 +378,7 @@
           }
           const updatedExp = await raydropApi.recordActivityTick(
             activeFeatures,
-            4,
+            10,
           );
           if (typeof updatedExp === "number") {
             myRankExp.set(updatedExp);
@@ -394,7 +394,7 @@
             wanReflexiveAddr: fresh.wan_reflexive_addr || n.wanReflexiveAddr,
           }));
         } catch (_) {}
-      }, 4000);
+      }, 10000);
 
       await raydropApi.listenEvent<IncomingTransferEvent>(
         "incoming_transfer_request",

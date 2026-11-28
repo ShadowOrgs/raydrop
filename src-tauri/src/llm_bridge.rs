@@ -345,6 +345,10 @@ impl LlmBridgeManager {
                         }
                         p.supports_image_gen = s.supports_image_gen;
                         p.is_public = s.is_public;
+                        if !s.execution_mode.trim().is_empty() {
+                            p.execution_mode = s.execution_mode;
+                        }
+                        p.extra_args = s.extra_args;
                     }
                 }
             }

@@ -465,11 +465,12 @@ pub fn run() {
                 });
             }
 
-            // Background Periodic Torrent Stats Broadcast
+            // Background Periodic Torrent Stats Broadcast (UI session only)
+            if !is_system_agent {
             let handle_for_torrents = handle.clone();
             let state_for_torrents = state_for_setup.clone();
             tauri::async_runtime::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_millis(1200));
+                let mut interval = tokio::time::interval(std::time::Duration::from_millis(2000));
                 let mut recorded_completed = std::collections::HashSet::<String>::new();
                 let mut initialized = false;
                 loop {
@@ -503,11 +504,11 @@ pub fn run() {
                 }
             });
 
-            // Background Periodic HTTP Download Stats Broadcast
+            // Background Periodic HTTP Download Stats Broadcast (UI session only)
             let handle_for_http = handle.clone();
             let state_for_http = state_for_setup.clone();
             tauri::async_runtime::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_millis(1000));
+                let mut interval = tokio::time::interval(std::time::Duration::from_millis(1500));
                 let mut recorded_completed = std::collections::HashSet::<String>::new();
                 loop {
                     interval.tick().await;
@@ -553,6 +554,7 @@ pub fn run() {
                     }
                 }
             });
+            }
 
             // Start Background Networking Daemons (TCP + QUIC + mDNS + WAN Signaling/STUN)
             start_transport_listeners(handle.clone(), state_for_setup.clone());
@@ -589,7 +591,11 @@ pub fn run() {
                 let handle_llm = handle.clone();
                 let state_llm = state_for_setup.clone();
                 tauri::async_runtime::spawn(async move {
-                    state_llm.llm_bridge.init_from_db(&handle_llm, &state_llm.db);
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    let _ = tokio::task::spawn_blocking(move || {
+                        state_llm.llm_bridge.init_from_db(&handle_llm, &state_llm.db);
+                    })
+                    .await;
                 });
                 browser_bridge::start_browser_bridge_daemon(handle, state_for_setup);
             }

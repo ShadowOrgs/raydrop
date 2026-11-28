@@ -95,15 +95,15 @@ def update_release(tag="v1.2.15", title=None, body=None, wait_for_assets=False):
 if __name__ == "__main__":
     wait_flag = "--wait" in sys.argv
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tag = clean_args[0] if clean_args else "v1.2.96"
+    tag = clean_args[0] if clean_args else "v1.2.97"
     ver = tag.lstrip("v")
-    title = f"Raydrop {tag}: RayBot Coding Workspace, CLI Execution Modes, ComfyUI & Language Tutor"
+    title = f"Raydrop {tag}: Startup Freeze Hotfix, RayBot Coding Workspace & CLI Modes"
     
     body = f"""<p align="center">
   <img src="https://raw.githubusercontent.com/ShadowOrgs/raydrop/main/assets/logo.png" alt="Raydrop Logo" width="220" />
 </p>
 
-<h2 align="center">Raydrop {tag}: RayBot Coding Workspace, CLI Execution Modes, ComfyUI & Language Tutor</h2>
+<h2 align="center">Raydrop {tag}: Startup Freeze Hotfix, RayBot Coding Workspace & CLI Modes</h2>
 
 <p align="center">
   <strong>Fast, Resumable, End-to-End Encrypted File Sharing Across Devices with Zero Server Storage, BitTorrent Swarm Engine & High-Speed Multi-Threaded Download Accelerator.</strong><br/>
@@ -125,6 +125,10 @@ if __name__ == "__main__":
 ---
 
 ### 🚀 What's New & Highlights in {tag}
+
+#### ⚡ Startup Freeze & WebView2 CPU Hotfix
+- **Zero-Idle-CPU RayAmp Visualizer:** Stopped the 60fps `requestAnimationFrame` canvas gradient loop when RayAmp is paused/idle or hidden, eliminating background WebView2 GPU/Renderer CPU spikes on Windows.
+- **Non-Blocking Startup & Throttled Polling:** Moved `llm_bridge::init_from_db` off the Tokio async worker into `spawn_blocking`, disabled UI torrent/HTTP broadcast loops inside `--system-agent`, and relaxed frontend status/LAN polling to `10s`.
 
 #### 💻 RayBot Multi-Project Coding Workspace & Cross-Project Relations
 - **Persistent Project Registry & Relations:** Configurable projects root folder (default `~`), auto-scan tech stacks, persistent SQLite memory & cross-project relations (`raybot_projects`, `raybot_project_relations`), and a quick Project Workspace bar in RayBot Chat UI.
